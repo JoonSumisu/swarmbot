@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+env.bak/
+venv.bak/
+.deps/
+workspace/
+*.egg-info/
+.coverage
+htmlcov/
+.pytest_cache/
+dist/
+build/
+*.spec
+# User requested exclusion in previous step, but standard repos include tests. 
+# We will include tests but ensure no sensitive data is in them.
+# tests/ 
+# Zip files
+*.zip
+OPTIMIZATION_PLAN.md
