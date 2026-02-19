@@ -1,5 +1,7 @@
 # Swarmbot
 
+[中文](README.md) | [English](README_EN.md)
+
 Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Multi-Agent Swarm System)**。
 
 它基于 **[nanobot](https://github.com/HKUDS/nanobot)** 的框架，深度融合了 **[swarms](https://github.com/kyegomez/swarms)** 的多智能体编排能力与 **[qmd](https://github.com/tobi/qmd)** 的三层记忆系统，旨在为本地模型（如 Kimi, vLLM, Ollama）提供强大的任务规划与执行能力。
