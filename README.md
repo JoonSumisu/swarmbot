@@ -1,30 +1,47 @@
 # Swarmbot
 
-Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Multi-Agent Swarm System)**。它深度整合了 **nanobot**（单体智能与工具能力）、**swarms**（多智能体编排架构）与 **qmd**（三层记忆系统），旨在为本地模型（如 Kimi, vLLM, Ollama）提供强大的任务规划与执行能力。
+Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Multi-Agent Swarm System)**。
+
+它基于 **[nanobot](https://github.com/HKUDS/nanobot)** 的框架，深度融合了 **[swarms](https://github.com/kyegomez/swarms)** 的多智能体编排能力与 **[qmd](https://github.com/tobi/qmd)** 的三层记忆系统，旨在为本地模型（如 Kimi, vLLM, Ollama）提供强大的任务规划与执行能力。
+
+> **核心理念**: 将 nanobot 的单体执行力扩展为 Swarm 的集体智慧，并通过 Horizon Middleware 实现长程任务规划。
 
 ---
 
 ## 🌟 核心架构
 
-Swarmbot 的设计理念是 **"集体智慧 + 长期记忆 + 深度工具集成"**。
+Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合：
 
-### 1. 三位一体组件
-*   **Core Agent (Nanobot Inside)**
-    *   底层复用 `nanobot` 框架，具备 Gateway（飞书/Slack/Email）、Heartbeat、Skill/Plugin 等原生能力。
-    *   通过 `NanobotSkillAdapter`，Swarm 中的 Agent 可以直接调用本地 Python 技能和系统工具。
-*   **Swarm Orchestration (Swarms)**
-    *   支持多种编排架构：Sequential（顺序）、Concurrent（并发）、Hierarchical（层级）、State Machine（状态机）等。
-    *   内置 `AutoSwarmBuilder`，可根据用户任务自动选择最佳架构。
-*   **Tri-Layer Memory (QMD)**
-    *   **LocalMD (Short-term)**: 本地 Markdown 日志缓存，记录每日会话。
-    *   **MemoryMap (Whiteboard)**: 内存中的共享白板，存储任务全局状态与决策快照。
-    *   **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持语义检索。
+### 1. Core Agent (Nanobot Inside)
+*   **来源**: 基于 `nanobot` 核心代码构建。
+*   **作用**: 作为 Swarm 中的执行单元。
+*   **特性**: 
+    *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行、飞书/Slack 消息）都被封装为 OpenAI 格式的 Tool，供 Swarm 中的 Planner/Coder 自动调用。
+    *   **Gateway**: 复用 nanobot 强大的多渠道网关，支持飞书、Slack、Telegram 等。
 
-### 2. Long Horizon Middleware
-针对复杂长程任务，Swarmbot 引入了 **Long Horizon** 中间件：
-*   **Hierarchical Task Graph**: 自动将用户目标分解为有向无环图 (DAG) 任务链。
-*   **WorkMap Memory**: 维护“技能地图”，根据子任务需求自动检索最佳 Skill（或决定在线搜索）。
-*   **Skill Executor**: 调度 Agent 执行具体子任务，并处理任务间的依赖关系与结果传递。
+### 2. Swarm Orchestration (Swarms Integrated)
+*   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
+*   **作用**: 管理 Agent 间的协作流。
+*   **架构支持**:
+    *   `Sequential`: 线性流水线（适合 SOP）。
+    *   `Concurrent`: 并行执行（适合批量任务）。
+    *   `Hierarchical`: 层级指挥（Director -> Workers）。
+    *   `State Machine`: 动态状态机（适合 Code Review 循环）。
+    *   **AutoSwarmBuilder**: 内置智能判断，根据用户任务自动选择最佳架构。
+
+### 3. Tri-Layer Memory (QMD Powered)
+*   **来源**: 基于 `qmd` 提供的本地向量检索引擎。
+*   **作用**: 为 Agent 提供不同时间跨度的记忆支持。
+*   **三层体系**:
+    1.  **LocalMD (Short-term)**: 本地 Markdown 日志缓存，实时记录每日会话，作为短期工作记忆。
+    2.  **MemoryMap (Whiteboard)**: 内存中的共享白板，存储任务全局状态、关键决策快照，确保多 Agent 信息同步。
+    3.  **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持对历史文档和笔记的语义检索。
+
+### 4. Long Horizon Middleware
+针对复杂长程任务（如“开发一个完整的贪吃蛇游戏”），Swarmbot 在上层引入了中间件：
+*   **Hierarchical Task Graph**: 自动将用户目标拆解为有向无环图 (DAG) 任务链。
+*   **WorkMap Memory**: 维护“技能地图”，根据子任务需求自动匹配本地最佳 Skill。
+*   **Skill Executor**: 调度 Agent 执行具体子任务，处理任务依赖与上下文传递。
 
 ---
 
@@ -33,7 +50,7 @@ Swarmbot 的设计理念是 **"集体智慧 + 长期记忆 + 深度工具集成"
 ### 1. 安装
 ```bash
 # 克隆仓库
-git clone https://github.com/your-repo/swarmbot.git
+git clone https://github.com/JoonSumisu/swarmbot.git
 cd swarmbot
 
 # 运行独立环境安装脚本（自动安装 Python 依赖与 npm qmd）
@@ -60,54 +77,76 @@ swarmbot provider add \
 # 启动自动模式（推荐）
 swarmbot run
 ```
-在此模式下，Swarmbot 会先分析你的任务，自动决定是使用顺序流、层级流还是状态机流。
 
 ---
 
-## 📚 进阶使用
+## 📖 CLI 功能详解
 
-### 切换架构
-你可以强制指定 Swarm 运行的架构：
+Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 
-```bash
-# 启用 Long Horizon 模式（适合复杂规划任务）
-swarmbot config --architecture long_horizon
+### 1. `swarmbot onboard`
+*   **功能**: 初始化工作区。
+*   **作用**: 创建 `~/.swarmbot` 配置文件，初始化 nanobot 核心，准备 workspace 目录。
+*   **何时使用**: 初次安装后。
 
-# 启用状态机模式（适合代码 Review 等循环流程）
-swarmbot config --architecture state_machine
+### 2. `swarmbot run`
+*   **功能**: 启动本地对话会话。
+*   **作用**: 进入交互式终端，与 Swarm 集群直接对话。
+*   **默认行为**: 启动 AutoSwarmBuilder，根据你的输入自动决定使用哪种 Swarm 架构。
 
-# 启用并行模式（适合批量处理）
-swarmbot config --architecture concurrent
-```
+### 3. `swarmbot config`
+*   **功能**: 调整 Swarm 工作模式。
+*   **选项**:
+    *   `--agent-count <int>`: 设置集群中 Agent 的数量（默认 4）。
+    *   `--architecture <str>`: 强制指定架构模式。
+        *   `auto`: 自动选择（默认）。
+        *   `long_horizon`: 启用长程任务规划中间件。
+        *   `state_machine`: 启用动态状态机。
+        *   `sequential`: 强制线性执行。
+        *   `concurrent`: 强制并行执行。
+        *   `hierarchical`: 强制层级执行。
+    *   `--max-turns <int>`: 设置最大对话轮数。
+*   **示例**:
+    ```bash
+    # 切换到长程规划模式
+    swarmbot config --architecture long_horizon
+    ```
 
-### 使用 Nanobot 原生功能
-Swarmbot CLI 透传了 nanobot 的所有核心命令：
+### 4. `swarmbot gateway`
+*   **功能**: 启动多渠道网关。
+*   **作用**: 透传调用 `nanobot gateway`。
+*   **意义**: 让 Swarmbot 接管飞书、Slack 等聊天软件的消息，在后台使用集群智慧回复。
 
-```bash
-# 启动飞书/Slack 网关
-swarmbot gateway
+### 5. `swarmbot provider`
+*   **功能**: 管理模型供应商。
+*   **子命令**:
+    *   `add`: 添加/更新模型配置（base_url, api_key, model, max_tokens）。
+    *   `delete`: 删除当前配置，重置为默认。
+*   **注意**: Swarmbot 目前设计为单 Provider 模式，所有 Agent 共用同一个底层 LLM 以确保一致性。
 
-# 查看已安装技能
-swarmbot skill list
-
-# 执行心跳检测
-swarmbot heartbeat
-```
-
-### 记忆系统交互
-*   **自动记录**：所有对话会自动写入 `workspace/cache/chat_log_YYYY-MM-DD.md`。
-*   **知识检索**：Agent 在推理时会根据 `QMDMemory` 提示主动索取知识。你也可以通过 `qmd search` 手动查询。
+### 6. `swarmbot skill` / `tool` / `heartbeat` ...
+*   **功能**: 原生命令透传。
+*   **作用**: 直接调用 nanobot 的对应命令，管理本地技能、工具和心跳服务。
 
 ---
 
-## 🛠️ Long Horizon 工作原理
+## � 进阶使用：Long Horizon 工作原理
 
-当你在 `config` 中选择 `long_horizon` 架构，或 AutoSwarmBuilder 自动选择它时，流程如下：
+当你在 `config` 中选择 `long_horizon` 架构，或 AutoSwarmBuilder 自动选择它时，系统进入**长程规划模式**：
 
-1.  **Plan (规划)**: `HierarchicalTaskGraph` 调用 LLM，将用户输入（如“开发一个贪吃蛇游戏”）拆解为 `[设计结构, 编写核心逻辑, 编写UI, 测试]` 等依赖任务。
-2.  **Skill Match (技能匹配)**: `WorkMapMemory` 扫描本地技能库，为每个子任务推荐最佳工具（如 `file_write`, `python_exec`）。
-3.  **Execute (执行)**: `SwarmManager` 按照 DAG 拓扑顺序调度 Agent，将前置任务的结果（Context）和推荐技能注入 Prompt，Agent 执行并产出结果。
-4.  **Loop (循环)**: 直到所有任务状态变为 `completed`。
+1.  **Plan (规划)**: 
+    `HierarchicalTaskGraph` 调用 LLM，将用户输入拆解为依赖任务链。
+    > 用户: "帮我分析这三份财报并生成汇总报告"
+    > 计划: [读取财报A -> 读取财报B -> 读取财报C] -> [数据对比分析] -> [生成报告]
+
+2.  **Skill Match (技能匹配)**: 
+    `WorkMapMemory` 扫描本地技能库，发现 `file_read` 技能适合读取任务，`python_exec` 适合分析任务。
+
+3.  **Execute (执行)**: 
+    `SwarmManager` 调度 Agent 依次执行。在执行“读取财报”时，Agent 会自动调用 `file_read` 工具；在执行“分析”时，Agent 会获得前置任务读取到的数据作为 Context。
+
+4.  **Loop (循环)**: 
+    直到所有任务状态变为 `completed`。
 
 ---
 
@@ -116,4 +155,6 @@ MIT
 
 ---
 
-**Acknowledgement**: All code generated by Trae & Tomoko.
+**Acknowledgement**: 
+*   This project is built upon the excellent work of [nanobot](https://github.com/HKUDS/nanobot), [swarms](https://github.com/kyegomez/swarms), and [qmd](https://github.com/tobi/qmd).
+*   All code generated by **Trae & Tomoko**.
