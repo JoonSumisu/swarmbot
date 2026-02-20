@@ -130,9 +130,16 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   **功能**: 原生命令透传。
 *   **作用**: 直接调用 nanobot 的对应命令，管理本地技能、工具和心跳服务。
 
+### 7. `swarmbot overthinking`
+*   **功能**: 管理后台思考循环 (Overthinking Loop)。
+*   **子命令**:
+    *   `setup --enabled true --interval 30 --steps 10`: 配置思考参数（默认 30 分钟一次，每次 10 步）。
+    *   `start`: 手动启动思考循环（前台运行，生产环境建议配合后台服务）。
+*   **工作原理**: 空闲时自动清理短期记忆、精简 QMD 知识库、拓展思考并利用本地浏览器进行网络搜索以完善记忆。
+
 ---
 
-## � 进阶使用：Long Horizon 工作原理
+## 📚 进阶使用：Long Horizon 工作原理
 
 当你在 `config` 中选择 `long_horizon` 架构，或 AutoSwarmBuilder 自动选择它时，系统进入**长程规划模式**：
 

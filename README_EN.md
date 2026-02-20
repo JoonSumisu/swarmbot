@@ -130,6 +130,13 @@ Swarmbot provides a complete CLI to manage your Agent Swarm.
 *   **Function**: Native command passthrough.
 *   **Usage**: Directly calls corresponding nanobot commands to manage local skills, tools, and heartbeat.
 
+### 7. `swarmbot overthinking`
+*   **Function**: Manage the background Overthinking Loop.
+*   **Subcommands**:
+    *   `setup --enabled true --interval 30 --steps 10`: Configure parameters (default 30 mins, 10 steps).
+    *   `start`: Start the loop manually.
+*   **Mechanism**: Automatically consolidates short-term memory, refines QMD knowledge base, expands thoughts, and performs web searches to enrich memory during idle times.
+
 ---
 
 ## 📚 Advanced: Long Horizon Workflow
