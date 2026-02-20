@@ -45,12 +45,66 @@ def cmd_run() -> None:
         turn += 1
 
 
+import socket
+import os
+
+def check_port(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) != 0
+
+def get_available_port(start_port: int, step: int = 20, max_tries: int = 5) -> int:
+    current_port = start_port
+    for _ in range(max_tries):
+        if check_port(current_port):
+            return current_port
+        print(f"Port {current_port} is busy, trying {current_port + step}...")
+        current_port += step
+    raise RuntimeError(f"Could not find available port starting from {start_port}")
+
 def cmd_gateway() -> None:
-    # 直接透传 nanobot gateway 命令
+    # 检查端口冲突并自动递增
+    # Default nanobot gateway port is 18990
     try:
-        subprocess.run(["nanobot", "gateway"], check=True)
+        # Load config to inject environment variables for nanobot
+        cfg = load_config()
+        env = os.environ.copy()
+        
+        # Inject API credentials if custom/openai provider is set
+        if cfg.provider.api_key and cfg.provider.base_url:
+            env["OPENAI_API_BASE"] = cfg.provider.base_url
+            env["OPENAI_API_KEY"] = cfg.provider.api_key
+            # We don't override LITELLM_MODEL here as nanobot config handles it,
+            # but ensuring base/key env vars usually fixes "Connection error" for openai-compatible providers.
+
+        port = get_available_port(18990)
+        env["OPENCLAW_GATEWAY_PORT"] = str(port)
+        
+        # Enable Agent Interceptor
+        # We need to tell nanobot to route messages to our interceptor script instead of default processing
+        # Or better: Swarmbot Gateway runs as a standalone process that wraps nanobot.
+        # But here we are just running 'nanobot gateway'.
+        
+        # To intercept messages without modifying nanobot code, we can use the 'agent' hook in nanobot config?
+        # Nanobot doesn't have a plugin hook for message routing easily exposed yet.
+        # However, we can use the fact that we control the `nanobot` environment.
+        
+        # STRATEGY: 
+        # We will point nanobot's agent loop to use a custom agent implementation or middleware.
+        # Since nanobot 0.1.4+ might support custom agent class loading via config, 
+        # but for now, the most reliable way is to monkeypatch or use a wrapper script.
+        
+        # SIMPLER STRATEGY for this task:
+        # We create a 'gateway_wrapper.py' that imports nanobot and injects our SwarmManager logic.
+        # Then we run `python gateway_wrapper.py` instead of `nanobot gateway`.
+        
+        wrapper_path = os.path.join(os.path.dirname(__file__), "gateway_wrapper.py")
+        
+        print(f"Starting Swarmbot Gateway on port {port}...")
+        subprocess.run([sys.executable, wrapper_path], env=env, check=True)
     except FileNotFoundError:
         print("未找到 nanobot 命令，请先安装 nanobot-ai。", file=sys.stderr)
+    except Exception as e:
+        print(f"Gateway failed: {e}", file=sys.stderr)
 
 def cmd_heartbeat() -> None:
     # 透传 nanobot heartbeat 命令
@@ -70,6 +124,35 @@ def cmd_tool() -> None:
     except FileNotFoundError:
         print("未找到 nanobot 命令，请先安装 nanobot-ai。", file=sys.stderr)
 
+from .loops.overthinking import OverthinkingLoop
+import threading
+
+def cmd_overthinking(args: argparse.Namespace) -> None:
+    cfg = load_config()
+    if args.action == "setup":
+        if args.enabled is not None:
+            cfg.overthinking.enabled = args.enabled
+        if args.interval is not None:
+            cfg.overthinking.interval_minutes = args.interval
+        if args.steps is not None:
+            cfg.overthinking.max_steps = args.steps
+        save_config(cfg)
+        print("Overthinking configuration updated.")
+        print(json.dumps(cfg.overthinking.__dict__, indent=2))
+    elif args.action == "start":
+        print("Starting Overthinking Loop in background...")
+        # Note: This starts a loop in the foreground for CLI usage, 
+        # or implies daemon start. For CLI simple run, we just start it.
+        stop_event = threading.Event()
+        loop = OverthinkingLoop(stop_event)
+        loop.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            stop_event.set()
+            print("Stopping overthinking loop...")
+
 def cmd_status() -> None:
     cfg = load_config()
     print("Swarmbot 状态:")
@@ -79,6 +162,10 @@ def cmd_status() -> None:
     print()
     print("Swarm:")
     print(json.dumps({"swarm": cfg.swarm.__dict__}, ensure_ascii=False, indent=2))
+    print()
+    print("Overthinking:")
+    print(json.dumps({"overthinking": cfg.overthinking.__dict__}, ensure_ascii=False, indent=2))
+
 
 
 def cmd_provider_add(args: argparse.Namespace) -> None:
@@ -208,6 +295,14 @@ def main() -> None:
 
     subparsers.add_parser("skill", help="查看当前可用的技能（透传到 nanobot skill list）")
 
+    overthink_parser = subparsers.add_parser("overthinking", help="管理 Overthinking 后台思考循环")
+    overthink_sub = overthink_parser.add_subparsers(dest="action", required=True)
+    overthink_setup = overthink_sub.add_parser("setup", help="配置 Overthinking 参数")
+    overthink_setup.add_argument("--enabled", type=lambda x: x.lower() in ("true", "1", "yes"), help="是否开启 (true/false)")
+    overthink_setup.add_argument("--interval", type=int, help="工作周期（分钟）")
+    overthink_setup.add_argument("--steps", type=int, help="每次思考步数")
+    overthink_sub.add_parser("start", help="手动启动 Overthinking 循环（前台运行）")
+
     args, _ = parser.parse_known_args()
 
     if args.command == "onboard":
@@ -238,3 +333,5 @@ def main() -> None:
         cmd_config(args)
     elif args.command == "skill":
         cmd_passthrough("skill", sys.argv[2:])
+    elif args.command == "overthinking":
+        cmd_overthinking(args)

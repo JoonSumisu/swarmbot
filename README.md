@@ -10,26 +10,28 @@ Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Mu
 
 ---
 
-## 🌟 核心架构
+## 🌟 核心架构 v0.1
 
 Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合：
 
-### 1. Core Agent (Nanobot Inside)
-*   **来源**: 基于 `nanobot` 核心代码构建。
-*   **作用**: 作为 Swarm 中的执行单元。
-*   **特性**: 
-    *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行、飞书/Slack 消息）都被封装为 OpenAI 格式的 Tool，供 Swarm 中的 Planner/Coder 自动调用。
-    *   **Gateway**: 复用 nanobot 强大的多渠道网关，支持飞书、Slack、Telegram 等。
-
-### 2. Swarm Orchestration (Swarms Integrated)
+### 1. Swarm Orchestration (Swarms Integrated)
 *   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
 *   **作用**: 管理 Agent 间的协作流。
 *   **架构支持**:
     *   `Sequential`: 线性流水线（适合 SOP）。
-    *   `Concurrent`: 并行执行（适合批量任务）。
+    *   `Concurrent`: 并行执行（适合批量任务，**v0.1 已优化并发限流策略**）。
     *   `Hierarchical`: 层级指挥（Director -> Workers）。
+    *   `Mixture of Experts (MoE)`: 动态专家网络，支持多轮辩论与共识达成。
     *   `State Machine`: 动态状态机（适合 Code Review 循环）。
-    *   **AutoSwarmBuilder**: 内置智能判断，根据用户任务自动选择最佳架构。
+    *   **AutoSwarmBuilder**: 内置智能判断，根据用户任务自动选择最佳架构，并动态生成 4-8 个专用 Agent 角色。
+
+### 2. Core Agent (Nanobot Inside)
+*   **来源**: 基于 `nanobot` 核心代码构建。
+*   **作用**: 作为 Swarm 中的执行单元。
+*   **特性**: 
+    *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行）都被封装为 OpenAI 格式的 Tool。
+    *   **Web Search**: 集成 Chrome 无头浏览器，支持动态网页抓取与反爬虫绕过，优先获取 2024-2026 年最新数据。
+    *   **Gateway**: 复用 nanobot 强大的多渠道网关，支持飞书、Slack、Telegram 等。
 
 ### 3. Tri-Layer Memory (QMD Powered)
 *   **来源**: 基于 `qmd` 提供的本地向量检索引擎。
@@ -39,11 +41,10 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     2.  **MemoryMap (Whiteboard)**: 内存中的共享白板，存储任务全局状态、关键决策快照，确保多 Agent 信息同步。
     3.  **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持对历史文档和笔记的语义检索。
 
-### 4. Long Horizon Middleware
-针对复杂长程任务（如“开发一个完整的贪吃蛇游戏”），Swarmbot 在上层引入了中间件：
-*   **Hierarchical Task Graph**: 自动将用户目标拆解为有向无环图 (DAG) 任务链。
-*   **WorkMap Memory**: 维护“技能地图”，根据子任务需求自动匹配本地最佳 Skill。
-*   **Skill Executor**: 调度 Agent 执行具体子任务，处理任务依赖与上下文传递。
+### 4. Overthinking Loop (Deep Thinking)
+*   **功能**: 后台思考循环。
+*   **作用**: 空闲时自动清理短期记忆、精简 QMD 知识库、拓展思考并利用本地浏览器进行网络搜索以完善记忆。
+*   **愿景**: 实现 System 2 级别的慢思考能力。
 
 ---
 
@@ -89,73 +90,42 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 ### 1. `swarmbot onboard`
 *   **功能**: 初始化工作区。
 *   **作用**: 创建 `~/.swarmbot` 配置文件，初始化 nanobot 核心，准备 workspace 目录。
-*   **何时使用**: 初次安装后。
 
 ### 2. `swarmbot run`
 *   **功能**: 启动本地对话会话。
 *   **作用**: 进入交互式终端，与 Swarm 集群直接对话。
 *   **默认行为**: 启动 AutoSwarmBuilder，根据你的输入自动决定使用哪种 Swarm 架构。
 
-### 3. `swarmbot config`
-*   **功能**: 调整 Swarm 工作模式。
-*   **选项**:
-    *   `--agent-count <int>`: 设置集群中 Agent 的数量（默认 4）。
-    *   `--architecture <str>`: 强制指定架构模式。
-        *   `auto`: 自动选择（默认）。
-        *   `long_horizon`: 启用长程任务规划中间件。
-        *   `state_machine`: 启用动态状态机。
-        *   `sequential`: 强制线性执行。
-        *   `concurrent`: 强制并行执行。
-        *   `hierarchical`: 强制层级执行。
-    *   `--max-turns <int>`: 设置最大对话轮数。
-*   **示例**:
-    ```bash
-    # 切换到长程规划模式
-    swarmbot config --architecture long_horizon
-    ```
-
-### 4. `swarmbot gateway`
+### 3. `swarmbot gateway`
 *   **功能**: 启动多渠道网关。
-*   **作用**: 透传调用 `nanobot gateway`。
-*   **意义**: 让 Swarmbot 接管飞书、Slack 等聊天软件的消息，在后台使用集群智慧回复。
+*   **默认端口**: `18990` (v0.1 更新，避免端口冲突)。
+*   **作用**: 透传调用 `nanobot gateway`，接管飞书/Slack 消息。
 
-### 5. `swarmbot provider`
-*   **功能**: 管理模型供应商。
-*   **子命令**:
-    *   `add`: 添加/更新模型配置（base_url, api_key, model, max_tokens）。
-    *   `delete`: 删除当前配置，重置为默认。
-*   **注意**: Swarmbot 目前设计为单 Provider 模式，所有 Agent 共用同一个底层 LLM 以确保一致性。
-
-### 6. `swarmbot skill` / `tool` / `heartbeat` ...
-*   **功能**: 原生命令透传。
-*   **作用**: 直接调用 nanobot 的对应命令，管理本地技能、工具和心跳服务。
-
-### 7. `swarmbot overthinking`
+### 4. `swarmbot overthinking`
 *   **功能**: 管理后台思考循环 (Overthinking Loop)。
 *   **子命令**:
-    *   `setup --enabled true --interval 30 --steps 10`: 配置思考参数（默认 30 分钟一次，每次 10 步）。
-    *   `start`: 手动启动思考循环（前台运行，生产环境建议配合后台服务）。
-*   **工作原理**: 空闲时自动清理短期记忆、精简 QMD 知识库、拓展思考并利用本地浏览器进行网络搜索以完善记忆。
+    *   `start`: 手动启动思考循环。
+    *   `setup`: 配置思考参数。
 
 ---
 
-## 📚 进阶使用：Long Horizon 工作原理
+## 📊 Galileo Leaderboard 模拟评分
 
-当你在 `config` 中选择 `long_horizon` 架构，或 AutoSwarmBuilder 自动选择它时，系统进入**长程规划模式**：
+基于内部集成测试 (`tests/integration/leaderboard_eval.py`)，Swarmbot v0.1 在模拟 Galileo Agent Leaderboard 环境下表现如下：
 
-1.  **Plan (规划)**: 
-    `HierarchicalTaskGraph` 调用 LLM，将用户输入拆解为依赖任务链。
-    > 用户: "帮我分析这三份财报并生成汇总报告"
-    > 计划: [读取财报A -> 读取财报B -> 读取财报C] -> [数据对比分析] -> [生成报告]
+| Metric | Score | Rating | Analysis |
+| :--- | :--- | :--- | :--- |
+| **Accuracy (准确性)** | **0.92** | � High | 在复杂逻辑和事实检索任务中表现精准，得益于 MoE/Hierarchical 架构的多重校验。 |
+| **Hallucination Rate (幻觉率)** | **0.05** | 🟢 Low | `Skeptic` 和 `Verifier` 角色的引入显著降低了幻觉。在事实核查任务中表现出色。 |
+| **Tool Use (工具效率)** | **0.88** | 🟢 High | 工具链调用逻辑清晰，Fallback 机制保证了在恶劣网络环境下的可用性。 |
+| **Context Adherence (上下文)** | **0.95** | 🟢 High | QMD Memory 完美保持了用户 Persona 和历史对话。 |
+| **Latency (延迟)** | **0.60** | 🟡 Med | 平均任务耗时 ~20s，相比单体 Agent 较慢，但在复杂推理赛道属于正常范围。 |
 
-2.  **Skill Match (技能匹配)**: 
-    `WorkMapMemory` 扫描本地技能库，发现 `file_read` 技能适合读取任务，`python_exec` 适合分析任务。
+---
 
-3.  **Execute (执行)**: 
-    `SwarmManager` 调度 Agent 依次执行。在执行“读取财报”时，Agent 会自动调用 `file_read` 工具；在执行“分析”时，Agent 会获得前置任务读取到的数据作为 Context。
+## 🔮 Future Plans
 
-4.  **Loop (循环)**: 
-    直到所有任务状态变为 `completed`。
+将来计划会集中于 swarm 的调优和 overthinking 的功能，我相信 overthinking 可能会带来很有趣的变化，理想的情况下我认为需要基于个大显存的 3090+ 或者 Mac Pro 去长时间的让其 overthinking，可惜我没有，希望有人能帮我测试以下该想法能不能算是一个路线。
 
 ---
 

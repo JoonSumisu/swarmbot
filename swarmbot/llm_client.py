@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 import httpx
+from litellm import completion as litellm_completion, acompletion as litellm_acompletion
 
 from .config import LLMConfig
 from .config_manager import ProviderConfig, load_config
@@ -12,9 +13,6 @@ from .config_manager import ProviderConfig, load_config
 class OpenAICompatibleClient:
     def __init__(self, config: Optional[LLMConfig] = None) -> None:
         self.config = config or LLMConfig()
-        # We don't initialize a long-lived client here to avoid event loop issues
-        # with asyncio.run() being called multiple times.
-        # Each request will create its own client or we use a sync client for sync calls.
 
     @classmethod
     def from_provider(cls, provider: Optional[ProviderConfig] = None) -> "OpenAICompatibleClient":
@@ -37,37 +35,24 @@ class OpenAICompatibleClient:
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
-        async with httpx.AsyncClient(
-            base_url=self.config.base_url,
-            timeout=self.config.timeout
-        ) as client:
-            payload: Dict[str, Any] = {
-                "model": self.config.model,
-                "messages": messages,
-                "stream": stream,
-            }
-            if temperature is not None:
-                payload["temperature"] = temperature
-            if max_tokens is not None:
-                payload["max_tokens"] = max_tokens
-            if tools is not None:
-                payload["tools"] = tools
-                payload["tool_choice"] = "auto"
+        # Delegate to litellm for robust handling of base_url and providers
+        params = {
+            "model": self.config.model,
+            "messages": messages,
+            "stream": stream,
+            "api_key": self.config.api_key,
+            "base_url": self.config.base_url,
+        }
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+        if tools is not None:
+            params["tools"] = tools
+            params["tool_choice"] = "auto"
             
-            headers = {
-                "Authorization": f"Bearer {self.config.api_key}",
-            }
-            resp = await client.post("/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            if stream:
-                # Note: streaming with async context manager closing might be tricky 
-                # if we yield out of it. For now, we assume simple usage.
-                # If stream is needed, we'd need to keep client open.
-                # But for now, let's just return lines (this might fail if client closes)
-                # Actually, for this simple implementation, we might not support stream properly in async
-                # unless we yield.
-                return resp.aiter_lines()
-            return resp.json()
+        # litellm handles the call
+        return await litellm_acompletion(**params)
 
     def completion(
         self,
@@ -77,29 +62,47 @@ class OpenAICompatibleClient:
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
-        # Use synchronous httpx.Client to avoid asyncio loop issues
-        with httpx.Client(
-            base_url=self.config.base_url,
-            timeout=self.config.timeout
-        ) as client:
-            payload: Dict[str, Any] = {
-                "model": self.config.model,
-                "messages": messages,
-                "stream": stream,
-            }
-            if temperature is not None:
-                payload["temperature"] = temperature
-            if max_tokens is not None:
-                payload["max_tokens"] = max_tokens
-            if tools is not None:
-                payload["tools"] = tools
-                payload["tool_choice"] = "auto"
+        params = {
+            "model": self.config.model,
+            "messages": messages,
+            "stream": stream,
+            "api_key": self.config.api_key,
+            "base_url": self.config.base_url,
+        }
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+        if tools is not None:
+            params["tools"] = tools
+            params["tool_choice"] = "auto"
 
-            headers = {
-                "Authorization": f"Bearer {self.config.api_key}",
-            }
-            resp = client.post("/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            if stream:
-                return resp.iter_lines()
-            return resp.json()
+        # Implement exponential backoff for rate limits
+        import time
+        import random
+        from litellm import RateLimitError
+        
+        max_retries = 7
+        base_delay = 2.0
+        
+        for attempt in range(max_retries):
+            try:
+                return litellm_completion(**params)
+            except RateLimitError as e:
+                if attempt == max_retries - 1:
+                    raise e
+                
+                # Calculate delay with jitter: base * 2^attempt + jitter
+                delay = (base_delay * (2 ** attempt)) + (random.random() * 0.5)
+                print(f"[LLMClient] Rate limit hit. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(delay)
+            except Exception as e:
+                # Also catch Quota Exceeded as it might be transient if concurrency related
+                if "quota" in str(e).lower() or "429" in str(e):
+                    if attempt == max_retries - 1:
+                        raise e
+                    delay = (base_delay * (2 ** attempt)) + 1.0
+                    print(f"[LLMClient] Quota/429 error. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    raise e

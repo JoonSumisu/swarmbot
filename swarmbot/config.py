@@ -15,8 +15,8 @@ class LLMConfig:
 @dataclass
 class SwarmConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
-    max_agents: int = 4
-    max_turns: int = 16
+    max_agents: int = 8
+    max_turns: int = 32
 
 
 DEFAULT_CONFIG = SwarmConfig()

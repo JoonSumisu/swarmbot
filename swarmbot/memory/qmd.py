@@ -4,7 +4,8 @@ import json
 import os
 import subprocess
 import time
-from typing import Any, Dict, List
+import fcntl
+from typing import Any, Dict, List, Optional
 
 from .base import MemoryStore
 from ..config_manager import WORKSPACE_PATH
@@ -33,6 +34,7 @@ class LocalMDStore:
     """
     本地 MD（Short-term Cache）：
     以 Markdown 文件形式存储在本地，作为短期缓存或草稿箱。
+    支持文件锁以防止多进程/线程写入冲突。
     """
     def __init__(self, root_path: str) -> None:
         self.root = root_path
@@ -41,24 +43,42 @@ class LocalMDStore:
     def write(self, filename: str, content: str) -> None:
         path = os.path.join(self.root, filename)
         with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                f.write(content)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
             
     def read(self, filename: str) -> str:
         path = os.path.join(self.root, filename)
         if not os.path.exists(path):
             return ""
         with open(path, "r", encoding="utf-8") as f:
-            return f.read()
+            try:
+                fcntl.flock(f, fcntl.LOCK_SH)
+                return f.read()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+    def append(self, filename: str, content: str) -> None:
+        """Atomic append"""
+        path = os.path.join(self.root, filename)
+        with open(path, "a", encoding="utf-8") as f:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                f.write(content)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
 
 class QMDMemoryStore(MemoryStore):
     """
     三层记忆系统：
     1. MemoryMap (Whiteboard): 内存中的共享状态，用于协作同步。
-    2. LocalMD (Short-term): 本地 Markdown 文件，作为短期缓存。
-    3. QMD (Long-term): 真正的知识库索引，用于长短期记忆的持久化与检索。
+    2. LocalMD (Short-term): 本地 Markdown 文件，作为短期缓存，支持文件锁。
+    3. QMD (Long-term): 真正的知识库索引，用于长短期记忆的持久化与检索，支持 Collection 隔离。
     """
-    def __init__(self) -> None:
+    def __init__(self, default_collection: str = "default") -> None:
         # 1. MemoryMap
         self.whiteboard = MemoryMap()
         
@@ -69,11 +89,31 @@ class QMDMemoryStore(MemoryStore):
         # 3. QMD Setup
         self._qmd_root = os.path.join(WORKSPACE_PATH, "qmd")
         os.makedirs(self._qmd_root, exist_ok=True)
+        self.default_collection = default_collection
+        
+        # Ensure collection exists
+        self._ensure_collection(default_collection)
         
         # In-memory buffer for fast context retrieval (part of QMD/Short-term mix)
         self._events: Dict[str, List[Dict[str, Any]]] = {}
 
+    def _ensure_collection(self, name: str) -> None:
+        """Create QMD collection if not exists"""
+        # Ideally check list first, but 'add' is usually idempotent or fails safely
+        try:
+            subprocess.run(
+                ["qmd", "collection", "add", os.path.join(self._qmd_root, name), "--name", name],
+                check=False,
+                capture_output=True
+            )
+        except FileNotFoundError:
+            pass
+
     def add_event(self, agent_id: str, content: str, meta: Dict[str, Any] | None = None) -> None:
+        # Validation: Do not store empty content
+        if not content or not content.strip():
+            return
+            
         # 1. Update In-memory buffer
         if agent_id not in self._events:
             self._events[agent_id] = []
@@ -85,19 +125,38 @@ class QMDMemoryStore(MemoryStore):
         }
         self._events[agent_id].append(event)
         
-        # 2. Persist to LocalMD (Daily/Session Log)
+        # 2. Persist to LocalMD (Daily/Session Log) using Atomic Append
         date_str = time.strftime("%Y-%m-%d")
         log_file = f"chat_log_{date_str}.md"
         log_entry = f"\n## [{time.strftime('%H:%M:%S')}] {agent_id}\n{content}\n"
-        
-        # Append to daily log
-        current_log = self.local_cache.read(log_file)
-        self.local_cache.write(log_file, current_log + log_entry)
+        self.local_cache.append(log_file, log_entry)
         
         # 3. Update Whiteboard (if meta contains 'update_map')
         if meta and "update_map" in meta:
             for k, v in meta["update_map"].items():
                 self.whiteboard.update(k, v)
+
+    def persist_to_qmd(self, content: str, collection: Optional[str] = None) -> None:
+        """
+        Explicitly write refined memory to QMD Long-term storage.
+        This is usually called by Overthinking Loop or explicit 'save' action.
+        """
+        target_coll = collection or self.default_collection
+        # Create a temp md file for QMD to index or use qmd's add command if available
+        # QMD usually indexes files in the collection path.
+        # We write to the collection directory.
+        filename = f"memory_{int(time.time())}.md"
+        coll_path = os.path.join(self._qmd_root, target_coll, filename)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(coll_path), exist_ok=True)
+        
+        with open(coll_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            
+        # Trigger embed/index (optional, qmd might need manual trigger or auto-watch)
+        # qmd embed
+        subprocess.run(["qmd", "embed"], cwd=self._qmd_root, check=False)
 
     def get_context(self, agent_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """

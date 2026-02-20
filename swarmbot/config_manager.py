@@ -27,12 +27,21 @@ class SwarmSettings:
     architecture: str = "auto"  # 默认使用 AutoSwarmBuilder 风格
     max_turns: int = 16
     auto_builder: bool = False
+    display_mode: str = "simple"  # simple or log
+
+
+@dataclass
+class OverthinkingConfig:
+    enabled: bool = False
+    interval_minutes: int = 30
+    max_steps: int = 10
 
 
 @dataclass
 class SwarmbotConfig:
     provider: ProviderConfig = field(default_factory=ProviderConfig)
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
+    overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
 
 
 def ensure_dirs() -> None:
@@ -51,6 +60,7 @@ def load_config() -> SwarmbotConfig:
     # robust load with defaults
     provider = data.get("provider", {})
     swarm = data.get("swarm", {})
+    overthinking = data.get("overthinking", {})
     
     # Load defaults first, then override with file data if present
     # We strip sensitive defaults from code to ensure clean distribution
@@ -69,6 +79,12 @@ def load_config() -> SwarmbotConfig:
             architecture=swarm.get("architecture", "auto"),
             max_turns=swarm.get("max_turns", 16),
             auto_builder=swarm.get("auto_builder", False),
+            display_mode=swarm.get("display_mode", "log"),  # Force log mode default for visibility
+        ),
+        overthinking=OverthinkingConfig(
+            enabled=overthinking.get("enabled", False),
+            interval_minutes=overthinking.get("interval_minutes", 30),
+            max_steps=overthinking.get("max_steps", 10),
         ),
     )
 
@@ -80,6 +96,7 @@ def save_config(cfg: SwarmbotConfig) -> None:
             {
                 "provider": asdict(cfg.provider),
                 "swarm": asdict(cfg.swarm),
+                "overthinking": asdict(cfg.overthinking),
             },
             f,
             ensure_ascii=False,
