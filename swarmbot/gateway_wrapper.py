@@ -174,14 +174,9 @@ try:
         if SWARM_MANAGER:
             try:
                 # INTEGRATION WITH NANOBOT LOOP
-                # We need to respect nanobot's async loop. SwarmManager.chat is synchronous.
-                # Running it in executor is correct.
-                
                 import asyncio
                 loop = asyncio.get_running_loop()
                 
-                # OPTIONAL: Send "Thinking..." signal or reaction?
-                # Nanobot uses on_progress callback if provided.
                 if on_progress:
                     await on_progress("⏳ Swarm is thinking...")
                 
@@ -189,8 +184,24 @@ try:
                 response_text = await loop.run_in_executor(None, SWARM_MANAGER.chat, msg.content)
                 logger.info(f"[SwarmRoute] Swarm response generated: {len(response_text)} chars")
                 
-                # We need to return an OutboundMessage
+                # Ensure response is a string
+                if not response_text:
+                    response_text = "(No response generated)"
+                response_text = str(response_text)
+
+                # Fix for Feishu "Blank Card":
+                # Feishu channel adapter in nanobot might expect 'content' to be just text,
+                # but sometimes it handles rich media.
+                # If we return OutboundMessage with content=text, it should work for text messages.
+                # However, if the text contains complex markdown or JSON, it might break card rendering.
+                # For safety, we treat it as plain text content for now.
+                
                 from nanobot.bus.events import OutboundMessage
+                
+                # IMPORTANT: Check if response is empty string or None, which causes blank card
+                if not response_text.strip():
+                    response_text = "..."
+
                 return OutboundMessage(
                     channel=msg.channel,
                     chat_id=msg.chat_id,

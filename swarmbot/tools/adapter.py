@@ -61,11 +61,20 @@ class NanobotSkillAdapter:
             print(f"[SkillAdapter] Failed to load OpenClaw tools: {e}")
 
     def _register_builtin(self, name: str, desc: str, args: List[str], func: Optional[callable] = None) -> None:
-        props = {arg: {"type": "string"} for arg in args}
+        props = {}
+        required = []
+        for arg in args:
+             if arg in ["interval", "steps"]:
+                 props[arg] = {"type": "integer"}
+                 # optional
+             else:
+                 props[arg] = {"type": "string"}
+                 required.append(arg)
+                 
         parameters = {
             "type": "object",
             "properties": props,
-            "required": args
+            "required": required
         }
         
         # Store for internal use (compatibility)
@@ -100,6 +109,45 @@ class NanobotSkillAdapter:
         
         # Add Whiteboard Tools
         self._register_builtin("whiteboard_update", "Update the shared Whiteboard memory with key information.", ["key", "value"], self._tool_whiteboard_update)
+
+        # Add Overthinking Control Tool
+        self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action"], self._tool_overthinking_control)
+
+    def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None) -> str:
+        """
+        Control the overthinking loop configuration.
+        action: 'start', 'stop', 'status', 'configure'
+        """
+        from ..config_manager import load_config, save_config
+        
+        cfg = load_config()
+        
+        if action == "start":
+            cfg.overthinking.enabled = True
+            save_config(cfg)
+            # In a real daemon, we might need to signal the process.
+            # For now, we update config which the loop polls.
+            return "Overthinking loop enabled. It will start in the background if running."
+            
+        elif action == "stop":
+            cfg.overthinking.enabled = False
+            save_config(cfg)
+            return "Overthinking loop disabled."
+            
+        elif action == "status":
+            status = "enabled" if cfg.overthinking.enabled else "disabled"
+            return f"Overthinking is {status}. Interval: {cfg.overthinking.interval_minutes}m, Steps: {cfg.overthinking.max_steps}"
+            
+        elif action == "configure":
+            if interval is not None:
+                cfg.overthinking.interval_minutes = int(interval)
+            if steps is not None:
+                cfg.overthinking.max_steps = int(steps)
+            save_config(cfg)
+            return f"Overthinking configuration updated. Interval: {cfg.overthinking.interval_minutes}m, Steps: {cfg.overthinking.max_steps}"
+            
+        else:
+            return f"Unknown action: {action}. Valid actions: start, stop, status, configure"
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Return OpenAI-compatible tool definitions."""
