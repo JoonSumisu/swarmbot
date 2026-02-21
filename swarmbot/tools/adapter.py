@@ -122,7 +122,7 @@ class NanobotSkillAdapter:
     def _tool_swarm_control(self, command: str, subcommand: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> str:
         """
         Execute Swarmbot CLI commands internally.
-        Supports: config, provider, onboard, update, status
+        Supports: config, provider, onboard, update, status, overthinking
         """
         from ..config_manager import load_config, save_config, SwarmbotConfig
         import subprocess
@@ -190,8 +190,18 @@ class NanobotSkillAdapter:
              except Exception as e:
                  return f"Onboard failed: {e}"
 
+        elif command == "overthinking":
+             # Proxy to _tool_overthinking_control
+             action = subcommand or "status"
+             interval = None
+             steps = None
+             if args:
+                 interval = args.get("interval")
+                 steps = args.get("steps")
+             return self._tool_overthinking_control(action, interval, steps)
+
         else:
-            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard"
+            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard, overthinking"
 
     def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None) -> str:
         """
