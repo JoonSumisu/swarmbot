@@ -38,10 +38,16 @@ class OverthinkingConfig:
 
 
 @dataclass
+class ToolConfig:
+    fs: Dict[str, Any] = field(default_factory=lambda: {"allow_read": [], "allow_write": []})
+    shell: Dict[str, Any] = field(default_factory=lambda: {"allow_commands": [], "deny_commands": ["rm", "sudo"]})
+
+@dataclass
 class SwarmbotConfig:
     provider: ProviderConfig = field(default_factory=ProviderConfig)
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
+    tools: ToolConfig = field(default_factory=ToolConfig)
 
 
 def ensure_dirs() -> None:
@@ -61,6 +67,7 @@ def load_config() -> SwarmbotConfig:
     provider = data.get("provider", {})
     swarm = data.get("swarm", {})
     overthinking = data.get("overthinking", {})
+    tools = data.get("tools", {})
     
     # Load defaults first, then override with file data if present
     # We strip sensitive defaults from code to ensure clean distribution
@@ -86,6 +93,10 @@ def load_config() -> SwarmbotConfig:
             interval_minutes=overthinking.get("interval_minutes", 30),
             max_steps=overthinking.get("max_steps", 10),
         ),
+        tools=ToolConfig(
+            fs=tools.get("fs", {}),
+            shell=tools.get("shell", {})
+        ),
     )
 
 
@@ -97,6 +108,7 @@ def save_config(cfg: SwarmbotConfig) -> None:
                 "provider": asdict(cfg.provider),
                 "swarm": asdict(cfg.swarm),
                 "overthinking": asdict(cfg.overthinking),
+                "tools": asdict(cfg.tools),
             },
             f,
             ensure_ascii=False,

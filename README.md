@@ -10,11 +10,15 @@ Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Mu
 
 ---
 
-## 🌟 核心架构 v0.1.2
+## 🌟 核心架构 v0.2.0
 
-Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合：
+Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.2.0 中引入了双 Boot 系统：
 
-### 1. Swarm Orchestration (Swarms Integrated)
+### 1. Dual Boot System (New in v0.2)
+- **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆。
+- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `HEARTBEAT.md` (情感) 进行二次解释与用户交互。
+
+### 2. Swarm Orchestration (Swarms Integrated)
 *   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
 *   **作用**: 管理 Agent 间的协作流。
 *   **架构支持**:
@@ -25,15 +29,16 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     *   `State Machine`: 动态状态机（适合 Code Review 循环）。
     *   `Auto`: 大模型可选；根据任务自动选择架构，并动态生成专用 Agent 角色（存在一定随机性）。
 
-### 2. Core Agent (Nanobot Inside)
+### 3. Core Agent (Nanobot Inside)
 *   **来源**: 基于 `nanobot` 核心代码构建。
 *   **作用**: 作为 Swarm 中的执行单元。
 *   **特性**: 
     *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行）都被封装为 OpenAI 格式的 Tool。
+    *   **OpenClaw Bridge**: [v0.2 新增] 支持动态加载 OpenClaw 生态工具。
     *   **Web Search**: 集成 Chrome 无头浏览器，支持动态网页抓取与反爬虫绕过，优先获取 2024-2026 年最新数据。
     *   **Gateway**: 复用 nanobot 强大的多渠道网关，支持飞书、Slack、Telegram 等。
 
-### 3. Tri-Layer Memory (QMD Powered)
+### 4. Tri-Layer Memory (QMD Powered)
 *   **来源**: 基于 `qmd` 提供的本地向量检索引擎。
 *   **作用**: 为 Agent 提供不同时间跨度的记忆支持。
 *   **三层体系**:
@@ -41,14 +46,23 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     2.  **MemoryMap (Whiteboard)**: 内存中的共享白板，存储任务全局状态、关键决策快照，确保多 Agent 信息同步。
     3.  **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持对历史文档和笔记的语义检索。
 
-### 4. Overthinking Loop (Deep Thinking)
-*   **功能**: 空闲时的后台整理循环（可选）。
-*   **作用**: 从 LocalMD 整理关键事实/经验/理论，写入 QMD；写入后会激进清理 LocalMD 以避免重复整理与磁盘堆积。
+### 5. Overthinking Loop (Deep Thinking)
+*   **功能**: 空闲时的后台深度思考循环（可选）。
+*   **能力**:
+    *   **记忆整理**: 从 LocalMD 提取关键事实与决策，沉淀为长期记忆 (QMD)。
+    *   **自我拓展**: 基于现有记忆进行逻辑推演，主动发现知识盲区，并生成新的假设与理论。
+    *   **经验沉淀**: 将单次任务的成功/失败经验转化为通用的方法论。
+*   **工作机制**: 
+    1.  监控用户空闲状态。
+    2.  启动思考者 (Thinker Agent) 对近期日志进行反思。
+    3.  生成 `# Reflection` 和 `# Insight` 并写入向量数据库。
+    4.  激进清理短期日志，保持系统轻量化。
 
-### 5. 记忆工作流（建议理解方式）
-*   **收到 Prompt**: 查询 QMD + 当日 LocalMD 摘要，并把结构化的 Prompt + 记忆注入 Whiteboard（`current_task_context`）。
+### 6. 记忆工作流（建议理解方式）
+*   **收到 Prompt**: 查询 QMD + 当日 LocalMD 摘要，读取 `swarmboot.md`，并把结构化的 Prompt + 记忆注入 Whiteboard（`current_task_context`）。
 *   **Swarm 执行中**: 各节点应优先读取 Whiteboard，确保对任务的共同理解；中间产物也会写入 Whiteboard。
 *   **对话结束**: 白板内容会被整理写入 LocalMD（摘要/结论），然后清空 Whiteboard。
+*   **Master 解释**: Master Agent 读取 `masteragentboot.md`，将 Swarm 的理性结果转化为符合人设的感性回复。
 *   **空闲时**: Overthinking 将 LocalMD 进一步整理为可检索的长期记忆写入 QMD，并进行记忆“经验化/理论化”扩展。
 
 ---
@@ -95,6 +109,12 @@ swarmbot config --architecture concurrent
 swarmbot config --architecture auto --auto-builder true
 ```
 
+### 5. 升级 (Update) [v0.2 新增]
+```bash
+# 拉取最新代码并保留个性化配置
+swarmbot update
+```
+
 ---
 
 ## 📖 CLI 功能详解
@@ -105,6 +125,7 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   **配置文件**：`~/.swarmbot/config.json`
 *   **Swarmbot 工作目录**：`~/.swarmbot/workspace`
 *   **本仓库目录**：本项目源代码所在目录（例如 `/root/swarmbot`）
+*   **Boot 配置目录**：`/root/swarmbot/swarmbot/boot/` (含 `SOUL.md`, `TOOLS.md` 等)
 
 ### 1. `swarmbot onboard`
 *   **功能**：初始化配置和工作区。
@@ -139,8 +160,12 @@ swarmbot config --architecture auto --auto-builder true
     *   `provider delete`：清空 provider 配置（恢复默认）
 
 ```bash
-swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model openai/local-model --max-tokens 8192
-swarmbot provider delete
+# 本地模型配置示例（支持 Ollama, vLLM, LM Studio 等）
+# 兼容 openai 格式，不再强制依赖 openai/ 前缀
+swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model llama3 --max-tokens 8192
+
+# 远程模型配置示例
+swarmbot provider add --base-url https://api.moonshot.cn/v1 --api-key YOUR_API_KEY --model kimi-k2-turbo-preview --max-tokens 126000
 ```
 
 ### 5. `swarmbot status`
@@ -163,10 +188,15 @@ swarmbot provider delete
 *   **说明**：这些命令会将参数原样转发给 nanobot，便于复用其生态能力。
 
 ### 9. `swarmbot overthinking`
-*   **功能**：管理空闲时的后台整理循环（Overthinking Loop）。
+*   **功能**：管理空闲时的后台深度思考循环。
+*   **特性**：支持事实整理、经验提炼与自我理论拓展。
 *   **子命令**：
     *   `overthinking setup`：配置开关/周期/步数
     *   `overthinking start`：前台启动循环（开发/调试用）
+
+### 10. `swarmbot update` [v0.2 新增]
+*   **功能**：更新核心代码。
+*   **特性**：保留 `swarmbot/boot/` 下的所有个性化配置（人格、工具策略等）。
 
 ---
 
@@ -176,6 +206,7 @@ swarmbot provider delete
 *   `swarmbot/`：Python 包主体（核心逻辑都在这里）
 *   `tests/`：集成测试与单元测试（含 leaderboard_eval）
 *   `scripts/`：安装/依赖脚本（例如安装 qmd、浏览器依赖）
+*   `docs/`：[v0.2 新增] 开发文档
 
 ### `swarmbot/` 包内模块
 *   [cli.py](file:///root/swarmbot/swarmbot/cli.py)：命令行入口与子命令实现（onboard/run/config/provider/gateway 等）
@@ -183,6 +214,12 @@ swarmbot provider delete
 *   [config.py](file:///root/swarmbot/swarmbot/config.py)：SwarmConfig/LLMConfig（给 SwarmManager 内部使用的配置结构）
 *   [llm_client.py](file:///root/swarmbot/swarmbot/llm_client.py)：OpenAI 兼容客户端封装（统一 completion 调用）
 *   [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py)：接管 nanobot gateway 的消息处理，将消息路由到 SwarmManager
+
+### 启动与认知 (Boot) [v0.2 新增]
+*   [boot/swarmboot.md](file:///root/swarmbot/swarmbot/boot/swarmboot.md)：Swarm 启动配置
+*   [boot/masteragentboot.md](file:///root/swarmbot/swarmbot/boot/masteragentboot.md)：Master Agent 启动配置
+*   [boot/SOUL.md](file:///root/swarmbot/swarmbot/boot/SOUL.md)：人格核心
+*   [boot/TOOLS.md](file:///root/swarmbot/swarmbot/boot/TOOLS.md)：工具权限策略
 
 ### 多智能体编排（Swarm）
 *   [swarm/manager.py](file:///root/swarmbot/swarmbot/swarm/manager.py)：SwarmManager（架构选择、并发执行、共识裁决、白板注入/清理）
@@ -197,6 +234,8 @@ swarmbot provider delete
 
 ### 工具系统（Tools）
 *   [tools/adapter.py](file:///root/swarmbot/swarmbot/tools/adapter.py)：工具适配器（file_read/file_write/web_search/shell_exec 等）
+*   [tools/policy.py](file:///root/swarmbot/swarmbot/tools/policy.py)：[v0.2 新增] 工具权限控制
+*   [tools/openclaw_bridge.py](file:///root/swarmbot/swarmbot/tools/openclaw_bridge.py)：[v0.2 新增] OpenClaw 桥接
 *   [tools/browser/local_browser.py](file:///root/swarmbot/swarmbot/tools/browser/local_browser.py)：本地无头浏览器/网页读取（用于 web_search/browser_read）
 
 ### 后台整理（Overthinking）

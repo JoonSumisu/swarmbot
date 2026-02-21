@@ -209,6 +209,38 @@ def cmd_config(args: argparse.Namespace) -> None:
     print(json.dumps(cfg.swarm.__dict__, ensure_ascii=False, indent=2))
 
 
+def cmd_update() -> None:
+    """
+    Update Swarmbot core code from git repository while preserving user configuration.
+    """
+    print("Updating Swarmbot...")
+    
+    # 1. Check if git is available and inside a git repo
+    try:
+        subprocess.run(["git", "status"], check=True, capture_output=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        print("Error: Not a git repository or git not installed. Cannot update via CLI.", file=sys.stderr)
+        return
+
+    # 2. Pull latest changes
+    try:
+        print("Pulling latest changes from remote...")
+        subprocess.run(["git", "pull"], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error pulling changes: {e}", file=sys.stderr)
+        return
+
+    # 3. Re-install dependencies (optional but recommended)
+    try:
+        print("Updating dependencies...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "."], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error updating dependencies: {e}", file=sys.stderr)
+        return
+
+    print("Update complete! Your configuration in ~/.swarmbot/ remains unchanged.")
+
+
 def cmd_passthrough(command: str, extra_args: list[str]) -> None:
     """Helper to passthrough commands to nanobot."""
     cmd = ["nanobot", command] + extra_args
@@ -303,10 +335,14 @@ def main() -> None:
     overthink_setup.add_argument("--steps", type=int, help="每次思考步数")
     overthink_sub.add_parser("start", help="手动启动 Overthinking 循环（前台运行）")
 
+    subparsers.add_parser("update", help="更新 Swarmbot 核心代码（保留配置）")
+
     args, _ = parser.parse_known_args()
 
     if args.command == "onboard":
         cmd_onboard()
+    elif args.command == "update":
+        cmd_update()
     elif args.command == "run":
         cmd_run()
     elif args.command == "gateway":

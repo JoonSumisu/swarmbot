@@ -71,13 +71,35 @@ class OpenAICompatibleClient:
             if content or m.get("tool_calls") or m.get("role") == "tool":
                 filtered_messages.append(m)
         
+        # --- Local Model Optimization ---
+        # If base_url is set, we assume it's an OpenAI-compatible endpoint unless it's a known provider.
+        model_name = self.config.model
+        custom_llm_provider = None
+        
+        known_providers = ["openai", "anthropic", "azure", "gemini", "vertex_ai", "bedrock", "ollama", "huggingface", "replicate", "openrouter"]
+        
+        if self.config.base_url:
+            # Check if model name starts with a known provider
+            is_known = any(model_name.startswith(p + "/") for p in known_providers)
+            
+            if not is_known:
+                # E.g. "openbmb/agentcpm-explore" -> Treat as OpenAI compatible
+                custom_llm_provider = "openai"
+            elif model_name.startswith("openai/"):
+                # Already prefixed, standard behavior
+                pass
+            
         params = {
-            "model": self.config.model,
+            "model": model_name,
             "messages": filtered_messages,
             "stream": stream,
-            "api_key": self.config.api_key,
+            "api_key": self.config.api_key or "sk-dummy", # Local models often need a dummy key
             "base_url": self.config.base_url,
         }
+        
+        if custom_llm_provider:
+            params["custom_llm_provider"] = custom_llm_provider
+            
         if temperature is not None:
             params["temperature"] = temperature
         if max_tokens is not None:

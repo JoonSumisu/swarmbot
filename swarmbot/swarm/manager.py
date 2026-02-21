@@ -137,7 +137,118 @@ class SwarmManager:
                 slot.agent.ctx.agent_id = f"agent-observer-{i}"
 
     def chat(self, user_input: str) -> str:
-        self._log("--- Phase 1: Memory Retrieval & Context Injection ---")
+        # Dual Boot Architecture:
+        # 1. Swarm Boot: Global Context Loading (Whiteboard + LocalMD + QMD)
+        self._boot_swarm_context(user_input)
+        
+        # 2. Master Agent Boot is handled lazily within CoreAgent._build_messages when the planner/master acts.
+        # However, for architecture selection and orchestration, the SwarmManager acts as the "System".
+        
+        self._log("--- Phase 2: Architecture Execution ---")
+        if self._architecture == "auto":
+            swarm_result = self._chat_auto(user_input)
+        elif self._architecture == "sequential":
+            swarm_result = self._chat_sequential(user_input)
+        elif self._architecture == "concurrent":
+            swarm_result = self._chat_concurrent(user_input)
+        elif self._architecture == "mixture":
+            swarm_result = self._chat_mixture(user_input)
+        elif self._architecture == "group_chat":
+            swarm_result = self._chat_group_chat(user_input)
+        elif self._architecture == "hierarchical":
+            swarm_result = self._chat_hierarchical(user_input)
+        elif self._architecture == "swarm_router":
+            swarm_result = self._chat_swarm_router(user_input)
+        elif self._architecture == "long_horizon":
+            swarm_result = self._chat_long_horizon(user_input)
+        elif self._architecture == "state_machine":
+            swarm_result = self._chat_state_machine(user_input)
+        else:
+            swarm_result = self._chat_concurrent(user_input)
+
+        self._log("--- Phase 3: Cleanup & Consolidation ---")
+        try:
+            import time as _time
+            date_str = _time.strftime("%Y-%m-%d")
+            log_file = f"chat_log_{date_str}.md"
+            snippet = swarm_result[:1200] if swarm_result else ""
+            
+            # Export Whiteboard content
+            whiteboard_data = {}
+            try:
+                if hasattr(self.memory.whiteboard, "_data"):
+                     whiteboard_data = self.memory.whiteboard._data.copy()
+                elif isinstance(self.memory.whiteboard, dict):
+                     whiteboard_data = self.memory.whiteboard.copy()
+            except:
+                pass
+            
+            whiteboard_dump = json.dumps(whiteboard_data, ensure_ascii=False, indent=2)
+            
+            entry = f"\n## [TASK_SUMMARY] {_time.strftime('%H:%M:%S')}\n### Prompt\n{user_input}\n\n### Result (snippet)\n{snippet}\n\n### Whiteboard Context\n```json\n{whiteboard_dump}\n```\n"
+            self.memory.local_cache.append(log_file, entry)
+        except Exception:
+            pass
+
+        try:
+            self.memory.whiteboard._data.clear()
+        except Exception:
+            pass
+
+        # --- Phase 4: Master Agent Re-Interpretation ---
+        # "masteragent二次解释（读取 masteragentboot.md 将swarm的结论按照设定进行转译，以及记忆）"
+        self._log("--- Phase 4: Master Agent Interpretation ---")
+        master_agent = self.agents[0].agent
+        # Force master role temporarily if not already
+        original_role = master_agent.ctx.role
+        master_agent.ctx.role = "master" 
+        
+        # Build Master Prompt
+        # Load masteragentboot.md
+        masterboot_content = ""
+        try:
+             boot_path = os.path.join(os.path.dirname(__file__), "../boot/masteragentboot.md")
+             if os.path.exists(boot_path):
+                 with open(boot_path, "r", encoding="utf-8") as f:
+                     masterboot_content = f.read()
+        except Exception:
+             pass
+
+        master_prompt = (
+            f"System Boot Configuration:\n{masterboot_content}\n\n"
+            f"User Input: {user_input}\n\n"
+            f"Swarm Execution Result:\n{swarm_result}\n\n"
+            "Task: Interpret the Swarm's result for the user. "
+            "Translate technical details into a response that matches your persona (SOUL.md). "
+            "If the result is an error, explain it kindly. "
+            "Do not just copy the result; synthesize it."
+        )
+        
+        final_response = master_agent.step(master_prompt)
+        
+        # Restore role
+        master_agent.ctx.role = original_role
+        
+        return final_response
+
+    def _boot_swarm_context(self, user_input: str) -> None:
+        """
+        Swarm Boot Phase:
+        Loads global context into MemoryMap (Whiteboard).
+        This includes QMD (Long-term) and LocalMD (Short-term) retrieval.
+        Also reads swarmboot.md to set cognitive context.
+        """
+        self._log("--- Phase 1: Swarm Boot (Memory Retrieval & Context Injection) ---")
+
+        # 1. Load swarmboot.md content
+        swarmboot_content = ""
+        try:
+            boot_path = os.path.join(os.path.dirname(__file__), "../boot/swarmboot.md")
+            if os.path.exists(boot_path):
+                with open(boot_path, "r", encoding="utf-8") as f:
+                    swarmboot_content = f.read()
+        except Exception as e:
+            self._log(f"Warning: Failed to load swarmboot.md: {e}")
 
         try:
             self.memory._events.clear()
@@ -170,50 +281,13 @@ class SwarmManager:
             md_excerpt = ""
 
         structured_context = {
+            "swarmboot_config": swarmboot_content,
             "prompt": user_input,
             "qmd": qmd_context,
             "md": md_excerpt,
         }
         self.memory.whiteboard.update("current_task_context", structured_context)
 
-        if self._architecture == "auto":
-            result = self._chat_auto(user_input)
-        elif self._architecture == "sequential":
-            result = self._chat_sequential(user_input)
-        elif self._architecture == "concurrent":
-            result = self._chat_concurrent(user_input)
-        elif self._architecture == "mixture":
-            result = self._chat_mixture(user_input)
-        elif self._architecture == "group_chat":
-            result = self._chat_group_chat(user_input)
-        elif self._architecture == "hierarchical":
-            result = self._chat_hierarchical(user_input)
-        elif self._architecture == "swarm_router":
-            result = self._chat_swarm_router(user_input)
-        elif self._architecture == "long_horizon":
-            result = self._chat_long_horizon(user_input)
-        elif self._architecture == "state_machine":
-            result = self._chat_state_machine(user_input)
-        else:
-            result = self._chat_concurrent(user_input)
-
-        self._log("--- Phase 3: Cleanup & Consolidation ---")
-        try:
-            import time as _time
-            date_str = _time.strftime("%Y-%m-%d")
-            log_file = f"chat_log_{date_str}.md"
-            snippet = result[:1200] if result else ""
-            entry = f"\n## [TASK_SUMMARY] {_time.strftime('%H:%M:%S')}\n### Prompt\n{user_input}\n\n### Result (snippet)\n{snippet}\n"
-            self.memory.local_cache.append(log_file, entry)
-        except Exception:
-            pass
-
-        try:
-            self.memory.whiteboard._data.clear()
-        except Exception:
-            pass
-
-        return result
 
     def _chat_state_machine(self, user_input: str) -> str:
         from ..statemachine.engine import StateMachine, State

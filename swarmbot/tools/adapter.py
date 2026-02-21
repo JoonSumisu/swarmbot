@@ -14,6 +14,9 @@ class ToolDefinition:
 
 from .browser.local_browser import LocalBrowserTool, BrowserConfig
 
+from .registry import get_registry
+from .openclaw_bridge import OpenClawBridge
+
 class NanobotSkillAdapter:
     """
     Adapter to bridge nanobot skills to Swarmbot agents.
@@ -23,41 +26,87 @@ class NanobotSkillAdapter:
     def __init__(self) -> None:
         self.skills: Dict[str, ToolDefinition] = {}
         self._browser = LocalBrowserTool(BrowserConfig())
+        self.registry = get_registry()
+        self.openclaw_bridge = OpenClawBridge()
         self._load_skills()
+        self._load_openclaw_tools()
 
-    def _register_builtin(self, name: str, desc: str, args: List[str]) -> None:
+    def _load_openclaw_tools(self) -> None:
+        """
+        Dynamically discover and register OpenClaw tools if available.
+        """
+        try:
+            oc_tools = self.openclaw_bridge.discover_tools()
+            for tool_def in oc_tools:
+                name = tool_def["function"]["name"]
+                desc = tool_def["function"]["description"]
+                schema = tool_def["function"]["parameters"]
+                
+                # Wrap execution to call bridge
+                # Use closure to capture tool name
+                def make_wrapper(tool_name):
+                    def wrapper(**kwargs):
+                        return self.openclaw_bridge.execute(tool_name, kwargs)
+                    return wrapper
+                
+                func = make_wrapper(name)
+                
+                # Register
+                self.registry.register(name, func, {
+                    "name": name,
+                    "description": desc,
+                    "parameters": schema
+                })
+        except Exception as e:
+            print(f"[SkillAdapter] Failed to load OpenClaw tools: {e}")
+
+    def _register_builtin(self, name: str, desc: str, args: List[str], func: Optional[callable] = None) -> None:
         props = {arg: {"type": "string"} for arg in args}
+        parameters = {
+            "type": "object",
+            "properties": props,
+            "required": args
+        }
+        
+        # Store for internal use (compatibility)
         self.skills[name] = ToolDefinition(
             name=name,
             description=desc,
-            parameters={
-                "type": "object",
-                "properties": props,
-                "required": args
-            }
+            parameters=parameters
         )
+        
+        # Register to global registry
+        if func:
+            schema = {
+                "name": name,
+                "description": desc,
+                "parameters": parameters
+            }
+            self.registry.register(name, func, schema)
         
     def _load_skills(self) -> None:
         """
         Load available skills.
         """
         # Always add core built-ins manually
-        self._register_builtin("file_read", "Read a file from local filesystem", ["path"])
-        self._register_builtin("file_write", "Write content to a file", ["path", "content"])
-        self._register_builtin("web_search", "Search the web for information using a search engine.", ["query"])
-        self._register_builtin("shell_exec", "Execute a shell command (Sandboxed)", ["command"])
+        self._register_builtin("file_read", "Read a file from local filesystem", ["path"], self._tool_file_read)
+        self._register_builtin("file_write", "Write content to a file", ["path", "content"], self._tool_file_write)
+        self._register_builtin("web_search", "Search the web for information using a search engine.", ["query"], self._tool_web_search)
+        self._register_builtin("shell_exec", "Execute a shell command (Sandboxed)", ["command"], self._tool_shell_exec)
         
         # Add Browser Tools
-        self._register_builtin("browser_open", "Open a URL in local browser to view content.", ["url"])
-        self._register_builtin("browser_read", "Read text content of a URL (headless). Use this to extract information from a specific webpage.", ["url"])
+        self._register_builtin("browser_open", "Open a URL in local browser to view content.", ["url"], self._tool_browser_open)
+        self._register_builtin("browser_read", "Read text content of a URL (headless). Use this to extract information from a specific webpage.", ["url"], self._tool_browser_read)
+        
+        # Add Whiteboard Tools
+        self._register_builtin("whiteboard_update", "Update the shared Whiteboard memory with key information.", ["key", "value"], self._tool_whiteboard_update)
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Return OpenAI-compatible tool definitions."""
         tools = []
+        # Use registry schemas if available, otherwise fallback to local skills
+        # But to ensure full compatibility with existing code that might rely on self.skills:
         for name, tool in self.skills.items():
-            # Ensure correct format for litellm/OpenAI
-            # tool definition should be:
-            # { "type": "function", "function": { "name": ..., "description": ..., "parameters": ... } }
             tools.append({
                 "type": "function",
                 "function": {
@@ -68,83 +117,86 @@ class NanobotSkillAdapter:
             })
         return tools
 
-    def execute(self, tool_name: str, arguments: Dict[str, Any]) -> str:
+    def execute(self, tool_name: str, arguments: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> str:
         """
         Execute a skill.
         """
         print(f"[ToolExec] Executing {tool_name} with {arguments}")
         
-        try:
-            if tool_name == "browser_open":
-                return self._browser.open_page(arguments.get("url", ""))
-                
-            if tool_name == "browser_read":
-                # Fallback: Use simple requests if browser fails (e.g. no chrome installed)
-                try:
-                    return self._browser.one_off_read(arguments.get("url", ""))
-                except Exception as e:
-                    print(f"[ToolExec] Browser read failed: {e}. Trying simple fetch.")
-                    return self._simple_web_fetch(arguments.get("url", ""))
+        # Try registry first
+        if self.registry.get_tool(tool_name):
+            try:
+                return self.registry.execute(tool_name, arguments, context=context)
+            except Exception as e:
+                print(f"[ToolExec] Registry execution failed: {e}")
+                return f"Tool execution error: {e}"
+        
+        return f"Tool {tool_name} not found in registry"
 
-            if tool_name == "web_search":
-                query = arguments.get("query", "")
-                
-                # Auto-append current year if query is time-sensitive but ambiguous
-                # Simple heuristic: if query doesn't have 4-digit year, append current year.
-                # Actually, better to just let the agent handle it via system prompt, 
-                # but we can force it for robustness.
-                import datetime
-                current_year = str(datetime.datetime.now().year)
-                if current_year not in query and any(k in query.lower() for k in ["latest", "current", "new", "price", "stock", "news"]):
-                    query += f" {current_year}"
-                
-                # 2. Try DuckDuckGo HTML search via Browser Tool
-                try:
-                    import urllib.parse
-                    encoded_query = urllib.parse.quote(query)
-                    search_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-                    return self._browser.one_off_read(search_url)
-                except Exception as e:
-                    print(f"[ToolExec] Browser search failed: {e}. Trying simple fetch.")
-                    
-                    # 3. Fallback: Simple Requests to DDG Lite
-                    try:
-                        import urllib.parse
-                        encoded_query = urllib.parse.quote(query)
-                        search_url = f"https://lite.duckduckgo.com/lite/?q={encoded_query}"
-                        return self._simple_web_fetch(search_url)
-                    except Exception as e2:
-                        return f"Search failed: {e2}"
-                
-            if tool_name == "shell_exec":
-                cmd = arguments.get("command", "")
-                # Security: Direct execution is risky, but required for this tool.
-                # In production, use nanobot's sandbox. Here we use subprocess for PoC.
-                return self._run_shell_cmd(cmd)
-                
-            if tool_name == "file_read":
-                path = arguments.get("path", "")
-                if not path: return "Error: path required"
-                with open(path, "r", encoding="utf-8") as f:
-                    return f.read()
-                
-            if tool_name == "file_write":
-                path = arguments.get("path", "")
-                content = arguments.get("content", "")
-                if not path: return "Error: path required"
-                if os.path.isabs(path) and path.startswith("/output/"):
-                    path = os.path.join(os.getcwd(), path.lstrip("/"))
-                parent = os.path.dirname(path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    f.write(content)
-                return f"Wrote to {path}"
-                
-            return f"Tool {tool_name} executed with {arguments} (Mock)"
+    def _tool_whiteboard_update(self, key: str, value: str, context: Optional[Dict[str, Any]] = None) -> str:
+        if not context or "memory_map" not in context:
+            return "Error: MemoryMap not available"
+        
+        memory_map = context["memory_map"]
+        # Assuming memory_map is a MemoryMap object or dict
+        if hasattr(memory_map, "update"):
+            memory_map.update(key, value)
+            return f"Whiteboard updated: {key}"
+        elif isinstance(memory_map, dict):
+            memory_map[key] = value
+            return f"Whiteboard updated: {key}"
+        return "Error: Invalid MemoryMap object"
+
+    def _tool_browser_open(self, url: str) -> str:
+        return self._browser.open_page(url)
+        
+    def _tool_browser_read(self, url: str) -> str:
+        try:
+            return self._browser.one_off_read(url)
         except Exception as e:
-            print(f"[ToolExec] Failed: {e}")
-            return f"Tool execution error: {e}"
+            print(f"[ToolExec] Browser read failed: {e}. Trying simple fetch.")
+            return self._simple_web_fetch(url)
+
+    def _tool_web_search(self, query: str) -> str:
+        # Auto-append current year logic...
+        import datetime
+        current_year = str(datetime.datetime.now().year)
+        if current_year not in query and any(k in query.lower() for k in ["latest", "current", "new", "price", "stock", "news"]):
+            query += f" {current_year}"
+        
+        try:
+            import urllib.parse
+            encoded_query = urllib.parse.quote(query)
+            search_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+            return self._browser.one_off_read(search_url)
+        except Exception as e:
+            print(f"[ToolExec] Browser search failed: {e}. Trying simple fetch.")
+            try:
+                import urllib.parse
+                encoded_query = urllib.parse.quote(query)
+                search_url = f"https://lite.duckduckgo.com/lite/?q={encoded_query}"
+                return self._simple_web_fetch(search_url)
+            except Exception as e2:
+                return f"Search failed: {e2}"
+
+    def _tool_shell_exec(self, command: str) -> str:
+        return self._run_shell_cmd(command)
+        
+    def _tool_file_read(self, path: str) -> str:
+        if not path: return "Error: path required"
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+        
+    def _tool_file_write(self, path: str, content: str) -> str:
+        if not path: return "Error: path required"
+        if os.path.isabs(path) and path.startswith("/output/"):
+            path = os.path.join(os.getcwd(), path.lstrip("/"))
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return f"Wrote to {path}"
 
     def _simple_web_fetch(self, url: str) -> str:
         """

@@ -1,1 +1,0 @@
-print("CLI Test Passed")

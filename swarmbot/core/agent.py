@@ -100,6 +100,8 @@ class CoreAgent:
         system_instructions = (
             "你具备一个名为 QMDMemory 的记忆技能，可以在需要时主动向用户索取检索关键词，"
             "用来搜索本地知识库（如笔记、文档、会议记录），并将检索到的内容整合进推理过程。\n"
+            "【关键】：你还可以使用 'whiteboard_update' 工具将你的推理过程中的关键结论、事实或计划写入共享白板 (MemoryMap)。"
+            "这对于多 Agent 协作至关重要，请确保及时更新白板。\n"
             "输出语言必须与用户输入保持一致（用户用中文就用中文，用户用英文就用英文）。\n"
             "如果你看到 Whiteboard/WorkMap 中的 current_task_context，请以其为最高优先级理解任务。\n"
             "IMPORTANT: When answering questions about current events, technology updates, or dynamic data, "
@@ -165,7 +167,11 @@ class CoreAgent:
                     except json.JSONDecodeError:
                         func_args = {}
 
-                    result = self._tool_adapter.execute(func_name, func_args)
+                    tool_context = {}
+                    if hasattr(self.memory, "whiteboard"):
+                        tool_context["memory_map"] = self.memory.whiteboard
+                        
+                    result = self._tool_adapter.execute(func_name, func_args, context=tool_context)
                     print(f"[CoT] Tool result: {str(result)[:100]}...")
 
                     messages.append(
