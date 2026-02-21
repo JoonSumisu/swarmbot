@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 
 @dataclass
@@ -64,12 +64,15 @@ class NanobotSkillAdapter:
         props = {}
         required = []
         for arg in args:
-             if arg in ["interval", "steps"]:
+             if arg in ["interval", "steps", "max_tokens"]:
                  props[arg] = {"type": "integer"}
                  # optional
+             elif arg in ["args"]: # Dict/Object types
+                 props[arg] = {"type": "object"}
              else:
                  props[arg] = {"type": "string"}
-                 required.append(arg)
+                 if arg not in ["subcommand"]: # subcommand is optional for some commands
+                     required.append(arg)
                  
         parameters = {
             "type": "object",
@@ -111,7 +114,84 @@ class NanobotSkillAdapter:
         self._register_builtin("whiteboard_update", "Update the shared Whiteboard memory with key information.", ["key", "value"], self._tool_whiteboard_update)
 
         # Add Overthinking Control Tool
-        self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action"], self._tool_overthinking_control)
+        self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps"], self._tool_overthinking_control)
+
+        # Add Swarm Control Tool (CLI Wrapper)
+        self._register_builtin("swarm_control", "Control Swarmbot configuration and lifecycle (CLI wrapper).", ["command", "subcommand", "args"], self._tool_swarm_control)
+
+    def _tool_swarm_control(self, command: str, subcommand: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Execute Swarmbot CLI commands internally.
+        Supports: config, provider, onboard, update, status
+        """
+        from ..config_manager import load_config, save_config, SwarmbotConfig
+        import subprocess
+        import sys
+        
+        # Security check: Limit commands to safe subset?
+        # User requested full control.
+        
+        if command == "update":
+            # Call CLI update logic
+            # Since CLI update uses subprocess to call git, we can just invoke it or replicate logic.
+            # Invoking subprocess 'swarmbot update' might be circular if not careful with env, but safe here.
+            # Better: replicate logic to capture output directly.
+            try:
+                # Re-use logic from cli.py if possible, or just subprocess
+                res = subprocess.run(["swarmbot", "update"], capture_output=True, text=True)
+                return f"Update Result:\n{res.stdout}\n{res.stderr}"
+            except Exception as e:
+                return f"Update failed: {e}"
+
+        elif command == "config":
+            cfg = load_config()
+            if not args:
+                return f"Current Swarm Config:\n{json.dumps(asdict(cfg.swarm), indent=2)}"
+            
+            # Apply updates
+            if "agent_count" in args: cfg.swarm.agent_count = int(args["agent_count"])
+            if "architecture" in args: cfg.swarm.architecture = str(args["architecture"])
+            if "max_turns" in args: cfg.swarm.max_turns = int(args["max_turns"])
+            if "auto_builder" in args: 
+                val = args["auto_builder"]
+                if isinstance(val, str): val = val.lower() in ("true", "1", "yes")
+                cfg.swarm.auto_builder = bool(val)
+            
+            save_config(cfg)
+            return f"Config updated:\n{json.dumps(asdict(cfg.swarm), indent=2)}"
+
+        elif command == "provider":
+            cfg = load_config()
+            if subcommand == "add" and args:
+                cfg.provider.base_url = args.get("base_url", cfg.provider.base_url)
+                cfg.provider.api_key = args.get("api_key", cfg.provider.api_key)
+                cfg.provider.model = args.get("model", cfg.provider.model)
+                if "max_tokens" in args: cfg.provider.max_tokens = int(args["max_tokens"])
+                save_config(cfg)
+                return "Provider updated."
+            elif subcommand == "delete":
+                from ..config_manager import ProviderConfig
+                cfg.provider = ProviderConfig()
+                save_config(cfg)
+                return "Provider reset to default."
+            else:
+                return f"Current Provider:\n{json.dumps(asdict(cfg.provider), indent=2)}"
+
+        elif command == "status":
+            cfg = load_config()
+            return f"Status:\n{json.dumps(asdict(cfg), indent=2)}"
+            
+        elif command == "onboard":
+             # This is tricky as it might reset things.
+             # Run subprocess
+             try:
+                 res = subprocess.run(["swarmbot", "onboard"], capture_output=True, text=True)
+                 return f"Onboard Result:\n{res.stdout}"
+             except Exception as e:
+                 return f"Onboard failed: {e}"
+
+        else:
+            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard"
 
     def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None) -> str:
         """

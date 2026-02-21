@@ -41,7 +41,7 @@ class OverthinkingConfig:
 @dataclass
 class ToolConfig:
     fs: Dict[str, Any] = field(default_factory=lambda: {"allow_read": [], "allow_write": []})
-    shell: Dict[str, Any] = field(default_factory=lambda: {"allow_commands": [], "deny_commands": ["rm", "sudo"]})
+    shell: Dict[str, Any] = field(default_factory=lambda: {"allow_commands": [], "deny_commands": []}) # Unrestricted by default
 
 @dataclass
 class SwarmbotConfig:

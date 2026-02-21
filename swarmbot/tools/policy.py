@@ -14,7 +14,7 @@ class ToolPolicy:
         self.fs_allow_read = self.config.get("fs", {}).get("allow_read", [])
         self.fs_allow_write = self.config.get("fs", {}).get("allow_write", [])
         self.shell_allow_commands = self.config.get("shell", {}).get("allow_commands", [])
-        self.shell_deny_commands = self.config.get("shell", {}).get("deny_commands", ["rm", "sudo", "su"])
+        self.shell_deny_commands = self.config.get("shell", {}).get("deny_commands", []) # Unrestricted by default
 
     def check_permission(self, tool_name: str, args: Dict[str, Any]) -> bool:
         """
@@ -63,8 +63,11 @@ class ToolPolicy:
     def _check_shell_exec(self, command: str) -> bool:
         if not command:
             return False
-        # Simple check: command starts with allowed prefix?
-        # Or check against deny list
+        
+        # If no allow/deny lists are configured, allow everything (Unrestricted Mode)
+        if not self.shell_allow_commands and not self.shell_deny_commands:
+            return True
+            
         cmd_base = command.split()[0]
         if cmd_base in self.shell_deny_commands:
             return False
