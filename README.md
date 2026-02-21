@@ -125,9 +125,15 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 
 ## 📊 Galileo Leaderboard 模拟评分
 
-基于内部集成测试 [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py)，在本地 OpenAI 兼容接口 + `openai/openbmb/agentcpm-explore` 模型条件下：
-*   **最佳成绩**：5/5（一次运行全通过）
-*   **说明**：并发协作与（可选的）自动分工存在随机性，不同运行可能会有波动
+基于内部集成测试 [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py)，在本地 OpenAI 兼容接口 + `openai/openbmb/agentcpm-explore` 模型条件下的“全通过”结果：
+*   总分：5/5
+*   明细：
+    *   Task 1 Reasoning (GPQA-style)：PASS
+    *   Task 2 Tool Chaining (GAIA-style)：PASS
+    *   Task 3 Coding (HumanEval-style)：PASS
+    *   Task 4 Memory & Persona：PASS
+    *   Task 5 Hallucination & Factuality：PASS
+*   说明：并发协作与（可选的）自动分工存在随机性，不同运行可能会有波动
 
 ### Evaluation 调整说明
 为减少误判与更贴近真实使用，本项目对评分脚本做了小幅鲁棒性调整：

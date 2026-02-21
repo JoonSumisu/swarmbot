@@ -115,9 +115,15 @@ swarmbot config --architecture auto --auto-builder true
 
 ## 📊 Galileo Leaderboard Simulation
 
-Based on internal integration tests [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py), with a local OpenAI-compatible server + `openai/openbmb/agentcpm-explore`:
-*   **Best score**: 5/5 (single run, all tasks passed)
-*   **Note**: Parallel coordination (and optional auto role selection) can be slightly stochastic across runs
+Based on internal integration tests [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py), here is a fully-passing run (local OpenAI-compatible server + `openai/openbmb/agentcpm-explore`):
+*   Total: 5/5
+*   Breakdown:
+    *   Task 1 Reasoning (GPQA-style): PASS
+    *   Task 2 Tool Chaining (GAIA-style): PASS
+    *   Task 3 Coding (HumanEval-style): PASS
+    *   Task 4 Memory & Persona: PASS
+    *   Task 5 Hallucination & Factuality: PASS
+*   Note: Parallel coordination (and optional auto role selection) can be slightly stochastic across runs
 
 ### Evaluation Adjustments
 To reduce false negatives and better reflect real usage:
