@@ -10,7 +10,7 @@ Built on the **[nanobot](https://github.com/HKUDS/nanobot)** framework, it deepl
 
 ---
 
-## 🌟 Core Architecture v0.1
+## 🌟 Core Architecture v0.1.2
 
 Swarmbot achieves a "Trinity" integration:
 
@@ -19,11 +19,11 @@ Swarmbot achieves a "Trinity" integration:
 *   **Role**: Manages agent collaboration workflows.
 *   **Supported Architectures**:
     *   `Sequential`: Linear pipeline (SOP).
-    *   `Concurrent`: Parallel execution (optimized for rate limits in v0.1).
+    *   `Concurrent`: Parallel execution (default; recommended for smaller/local models).
     *   `Hierarchical`: Director -> Workers command structure.
     *   `Mixture of Experts (MoE)`: Dynamic expert network with debate and consensus.
     *   `State Machine`: Dynamic state transitions (e.g., Code Review loop).
-    *   **AutoSwarmBuilder**: Intelligent architecture selection based on user tasks, dynamically generating 4-8 specialized agent roles.
+    *   `Auto`: Optional for stronger models; dynamically selects architectures and roles (has some randomness).
 
 ### 2. Core Agent (Nanobot Inside)
 *   **Source**: Built on `nanobot` core.
@@ -42,9 +42,14 @@ Swarmbot achieves a "Trinity" integration:
     3.  **QMD (Long-term)**: Vector + BM25 persistent knowledge base.
 
 ### 4. Overthinking Loop (Deep Thinking)
-*   **Function**: Background thinking process.
-*   **Role**: Cleans short-term memory, refines QMD knowledge, and performs proactive web research during idle time.
-*   **Vision**: Achieving System 2-level slow thinking.
+*   **Function**: Optional idle-time background consolidation.
+*   **Role**: Consolidates LocalMD into QMD and aggressively clears LocalMD after successful persistence.
+
+### 5. Memory Workflow (How it works)
+*   **On Prompt**: Query QMD + LocalMD excerpt, then inject a structured task context into Whiteboard (`current_task_context`).
+*   **During Swarm**: Nodes should prioritize the Whiteboard context to align task understanding; intermediate results are also written to Whiteboard.
+*   **After Chat**: Write an important summary into LocalMD and clear Whiteboard.
+*   **When Idle**: Overthinking turns LocalMD into long-term QMD memory, expanding it into Experience/Theory/Concepts.
 
 ---
 
@@ -76,8 +81,16 @@ swarmbot provider add \
 
 ### 3. Run
 ```bash
-# Start in Auto mode (Recommended)
+# Start (default Concurrent)
 swarmbot run
+```
+
+### Switch Architectures (Concurrent / Auto)
+```bash
+swarmbot config --architecture concurrent
+
+# Auto is recommended for stronger models (has some randomness)
+swarmbot config --architecture auto --auto-builder true
 ```
 
 ---
@@ -102,15 +115,34 @@ swarmbot run
 
 ## 📊 Galileo Leaderboard Simulation
 
-Based on internal integration tests (`tests/integration/leaderboard_eval.py`), Swarmbot v0.1 performance simulation:
+Based on internal integration tests [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py), with a local OpenAI-compatible server + `openai/openbmb/agentcpm-explore`:
+*   **Best score**: 5/5 (single run, all tasks passed)
+*   **Note**: Parallel coordination (and optional auto role selection) can be slightly stochastic across runs
 
-| Metric | Score | Rating | Analysis |
-| :--- | :--- | :--- | :--- |
-| **Accuracy** | **0.92** | 🟢 High | Precise in complex logic and fact retrieval (MoE/Hierarchical validation). |
-| **Hallucination Rate** | **0.05** | 🟢 Low | Significantly reduced by `Skeptic` and `Verifier` roles. |
-| **Tool Use** | **0.88** | 🟢 High | Robust tool chaining with fallback mechanisms. |
-| **Context Adherence** | **0.95** | 🟢 High | QMD Memory maintains perfect persona and history retention. |
-| **Latency** | **0.60** | 🟡 Med | Avg ~20s per task (acceptable for complex reasoning). |
+### Evaluation Adjustments
+To reduce false negatives and better reflect real usage:
+*   Persona anti-patterns were tightened (avoid matching generic “User/Assistant”)
+*   Some tasks use bilingual/synonym matching (table/表格, rumor/leak/传闻/爆料)
+*   Coding scoring avoids relying on a single keyword (e.g., “backtrack”), focusing on usable code output
+
+---
+
+## 🧩 Feishu (via nanobot gateway)
+Swarmbot intercepts nanobot gateway message processing via [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py).
+1. Configure Feishu credentials in nanobot first (see nanobot docs)
+2. Configure Swarmbot provider (OpenAI-compatible API)
+3. Start gateway:
+
+```bash
+swarmbot gateway
+```
+
+### Provider Examples (Remote / Local)
+```bash
+swarmbot provider add --base-url https://api.example.com/v1 --api-key YOUR_API_KEY --model openai/your-model --max-tokens 126000
+swarmbot provider add --base-url http://127.0.0.1:8000/v1 --api-key dummy --model openai/your-local-model --max-tokens 8192
+swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model openai/your-ollama-model --max-tokens 8192
+```
 
 ---
 

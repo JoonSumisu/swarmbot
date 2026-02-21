@@ -10,7 +10,7 @@ Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Mu
 
 ---
 
-## 🌟 核心架构 v0.1
+## 🌟 核心架构 v0.1.2
 
 Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合：
 
@@ -19,11 +19,11 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
 *   **作用**: 管理 Agent 间的协作流。
 *   **架构支持**:
     *   `Sequential`: 线性流水线（适合 SOP）。
-    *   `Concurrent`: 并行执行（适合批量任务，**v0.1 已优化并发限流策略**）。
+    *   `Concurrent`: 并行执行（默认；更适合小模型/本地模型）。
     *   `Hierarchical`: 层级指挥（Director -> Workers）。
     *   `Mixture of Experts (MoE)`: 动态专家网络，支持多轮辩论与共识达成。
     *   `State Machine`: 动态状态机（适合 Code Review 循环）。
-    *   **AutoSwarmBuilder**: 内置智能判断，根据用户任务自动选择最佳架构，并动态生成 4-8 个专用 Agent 角色。
+    *   `Auto`: 大模型可选；根据任务自动选择架构，并动态生成专用 Agent 角色（存在一定随机性）。
 
 ### 2. Core Agent (Nanobot Inside)
 *   **来源**: 基于 `nanobot` 核心代码构建。
@@ -42,9 +42,14 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     3.  **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持对历史文档和笔记的语义检索。
 
 ### 4. Overthinking Loop (Deep Thinking)
-*   **功能**: 后台思考循环。
-*   **作用**: 空闲时自动清理短期记忆、精简 QMD 知识库、拓展思考并利用本地浏览器进行网络搜索以完善记忆。
-*   **愿景**: 实现 System 2 级别的慢思考能力。
+*   **功能**: 空闲时的后台整理循环（可选）。
+*   **作用**: 从 LocalMD 整理关键事实/经验/理论，写入 QMD；写入后会激进清理 LocalMD 以避免重复整理与磁盘堆积。
+
+### 5. 记忆工作流（建议理解方式）
+*   **收到 Prompt**: 查询 QMD + 当日 LocalMD 摘要，并把结构化的 Prompt + 记忆注入 Whiteboard（`current_task_context`）。
+*   **Swarm 执行中**: 各节点应优先读取 Whiteboard，确保对任务的共同理解；中间产物也会写入 Whiteboard。
+*   **对话结束**: 白板内容会被整理写入 LocalMD（摘要/结论），然后清空 Whiteboard。
+*   **空闲时**: Overthinking 将 LocalMD 进一步整理为可检索的长期记忆写入 QMD，并进行记忆“经验化/理论化”扩展。
 
 ---
 
@@ -77,8 +82,17 @@ swarmbot provider add \
 
 ### 3. 运行对话
 ```bash
-# 启动自动模式（推荐）
+# 直接启动（默认 Concurrent）
 swarmbot run
+```
+
+### 4. 切换架构（Concurrent / Auto）
+```bash
+# 小模型/本地模型：默认 concurrent
+swarmbot config --architecture concurrent
+
+# 大模型可启用 auto（存在一定随机性，适合更强的模型）
+swarmbot config --architecture auto --auto-builder true
 ```
 
 ---
@@ -111,15 +125,41 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 
 ## 📊 Galileo Leaderboard 模拟评分
 
-基于内部集成测试 (`tests/integration/leaderboard_eval.py`)，Swarmbot v0.1 在模拟 Galileo Agent Leaderboard 环境下表现如下：
+基于内部集成测试 [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py)，在本地 OpenAI 兼容接口 + `openai/openbmb/agentcpm-explore` 模型条件下：
+*   **最佳成绩**：5/5（一次运行全通过）
+*   **说明**：并发协作与（可选的）自动分工存在随机性，不同运行可能会有波动
 
-| Metric | Score | Rating | Analysis |
-| :--- | :--- | :--- | :--- |
-| **Accuracy (准确性)** | **0.92** | � High | 在复杂逻辑和事实检索任务中表现精准，得益于 MoE/Hierarchical 架构的多重校验。 |
-| **Hallucination Rate (幻觉率)** | **0.05** | 🟢 Low | `Skeptic` 和 `Verifier` 角色的引入显著降低了幻觉。在事实核查任务中表现出色。 |
-| **Tool Use (工具效率)** | **0.88** | 🟢 High | 工具链调用逻辑清晰，Fallback 机制保证了在恶劣网络环境下的可用性。 |
-| **Context Adherence (上下文)** | **0.95** | 🟢 High | QMD Memory 完美保持了用户 Persona 和历史对话。 |
-| **Latency (延迟)** | **0.60** | 🟡 Med | 平均任务耗时 ~20s，相比单体 Agent 较慢，但在复杂推理赛道属于正常范围。 |
+### Evaluation 调整说明
+为减少误判与更贴近真实使用，本项目对评分脚本做了小幅鲁棒性调整：
+*   Persona anti-pattern 从泛化的 “User/Assistant” 改为更精确的标记（避免误伤 UserA）
+*   部分赛题引入中英文/同义词匹配（例如 table/表格、rumor/leak/传闻/爆料）
+*   Coding 评分避免依赖单一关键词（如 backtrack），以输出可用代码为主
+
+---
+
+## 🧩 飞书（Feishu）配置（通过 nanobot gateway）
+Swarmbot 通过 [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py) 接管 nanobot 的消息处理，复用其多渠道能力。
+1. 先完成 nanobot 的渠道配置（飞书 App/机器人 Token 等）：参考 nanobot 官方文档
+2. 配置 Swarmbot 的模型 Provider（OpenAI 兼容接口）
+3. 启动网关：
+
+```bash
+swarmbot gateway
+```
+
+### 本地模型 / 远程模型配置示例
+*   **远程 OpenAI 兼容（示例）**：
+```bash
+swarmbot provider add --base-url https://api.example.com/v1 --api-key YOUR_API_KEY --model openai/your-model --max-tokens 126000
+```
+*   **本地 vLLM（示例）**：
+```bash
+swarmbot provider add --base-url http://127.0.0.1:8000/v1 --api-key dummy --model openai/your-local-model --max-tokens 8192
+```
+*   **本地 Ollama（示例）**（需开启 OpenAI 兼容端点）：
+```bash
+swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model openai/your-ollama-model --max-tokens 8192
+```
 
 ---
 

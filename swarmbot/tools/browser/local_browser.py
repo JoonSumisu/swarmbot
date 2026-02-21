@@ -48,6 +48,9 @@ class LocalBrowserTool:
             "--no-first-run",
             "--no-default-browser-check",
             "--user-data-dir=/tmp/swarmbot_browser_profile", # Isolated profile
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
         ]
         
         if self.config.headless:
@@ -58,7 +61,9 @@ class LocalBrowserTool:
             if not self.config.executable_path:
                 # Simple detection logic
                 for browser in ["google-chrome", "chromium", "brave-browser", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]:
-                    if subprocess.run(["which", browser], capture_output=True).returncode == 0:
+                    # check if executable exists
+                    import shutil
+                    if shutil.which(browser):
                         cmd[0] = browser
                         break
             
@@ -123,20 +128,41 @@ class LocalBrowserTool:
             self.config.executable_path or "google-chrome",
             "--headless=new",
             "--dump-dom",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             url
         ]
-        # Detect browser again if needed
-        if not self.config.executable_path:
-             for browser in ["google-chrome", "chromium", "brave-browser"]:
-                if subprocess.run(["which", browser], capture_output=True).returncode == 0:
-                    cmd[0] = browser
-                    break
-                    
+        
         try:
+            # Simple detection logic
+            if not self.config.executable_path:
+                import shutil
+                for browser in ["google-chrome", "chromium", "brave-browser"]:
+                    if shutil.which(browser):
+                        cmd[0] = browser
+                        break
+            
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
-                # Simple HTML to Text conversion could happen here
-                return result.stdout[:10000] # Truncate
+                # Basic HTML cleanup: Remove scripts and styles for cleaner text
+                # We can't use BeautifulSoup here as we want to minimize deps, but simple regex helps
+                import re
+                html = result.stdout
+                
+                # Check for "canonical" redirection loop or empty body (bot detection)
+                if "canonical" in html and len(html) < 500:
+                     return f"Possible bot detection or redirect loop. Raw content: {html[:200]}..."
+
+                # Remove script and style tags
+                clean_text = re.sub(r'<(script|style).*?</\1>', '', html, flags=re.DOTALL)
+                # Remove HTML tags
+                clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+                # Collapse whitespace
+                clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                
+                return clean_text[:10000] # Truncate
             return f"Error reading page: {result.stderr}"
         except Exception as e:
             return f"Execution error: {e}"

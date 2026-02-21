@@ -13,10 +13,10 @@ os.environ["SWARMBOT_TEST"] = "1"
 def setup_config():
     """Setup a valid configuration for testing."""
     cfg = load_config()
-    cfg.provider.base_url = "https://api.moonshot.cn/v1"
-    # Note: Using key from env or config file
-    cfg.provider.model = "kimi-k2-turbo-preview"
-    cfg.provider.max_tokens = 126000
+    cfg.provider.base_url = "http://127.0.0.1:11434/v1"
+    cfg.provider.api_key = "dummy"
+    cfg.provider.model = "openai/local-model"
+    cfg.provider.max_tokens = 8192
     save_config(cfg)
     return cfg
 

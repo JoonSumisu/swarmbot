@@ -119,6 +119,7 @@ class OverthinkingLoop:
         
         # Save to QMD
         self.memory.persist_to_qmd(f"# Memory Consolidation {date_str}\n\n{summary}", collection="core_memory")
+        self.memory.local_cache.write(log_file, "")
 
     def _step_compress_qmd(self) -> None:
         """2. 精简压缩 QMD 记忆"""

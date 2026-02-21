@@ -24,7 +24,7 @@ class ProviderConfig:
 class SwarmSettings:
     agent_count: int = 4
     roles: List[str] = field(default_factory=lambda: ["planner", "coder", "critic", "summarizer"])
-    architecture: str = "auto"  # 默认使用 AutoSwarmBuilder 风格
+    architecture: str = "concurrent"
     max_turns: int = 16
     auto_builder: bool = False
     display_mode: str = "simple"  # simple or log
@@ -76,7 +76,7 @@ def load_config() -> SwarmbotConfig:
         swarm=SwarmSettings(
             agent_count=swarm.get("agent_count", 4),
             roles=swarm.get("roles", ["planner", "coder", "critic", "summarizer"]),
-            architecture=swarm.get("architecture", "auto"),
+            architecture=swarm.get("architecture", "concurrent"),
             max_turns=swarm.get("max_turns", 16),
             auto_builder=swarm.get("auto_builder", False),
             display_mode=swarm.get("display_mode", "log"),  # Force log mode default for visibility

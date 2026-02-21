@@ -62,9 +62,18 @@ class OpenAICompatibleClient:
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
+        # Filter out empty messages to prevent "Invalid request: message must not be empty" errors
+        # Some local models/litellm are strict about this.
+        filtered_messages = []
+        for m in messages:
+            content = m.get("content")
+            # Keep if content is non-empty OR if it's a tool call (content can be null) OR tool output
+            if content or m.get("tool_calls") or m.get("role") == "tool":
+                filtered_messages.append(m)
+        
         params = {
             "model": self.config.model,
-            "messages": messages,
+            "messages": filtered_messages,
             "stream": stream,
             "api_key": self.config.api_key,
             "base_url": self.config.base_url,

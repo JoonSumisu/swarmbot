@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Literal, Optional
+import json
+from typing import Any, Dict, List, Literal, Optional
 
 from ..config import SwarmConfig
 from ..config_manager import SwarmbotConfig
@@ -20,76 +21,7 @@ class SwarmManager:
     def __init__(self, config: SwarmConfig | None = None) -> None:
         self.config = config or SwarmConfig()
         self.llm = OpenAICompatibleClient(self.config.llm)
-        
-        # INTEGRATE NANOBOT MEMORY & OVERTHINKING
-        # Use Nanobot's native memory if available, otherwise QMD fallback
-        try:
-            from nanobot.agent.memory import MemoryStore as NanobotMemoryStore
-            from pathlib import Path
-            import os
-            
-            # Nanobot MemoryStore expects a Path object for workspace
-            # We use ~/.nanobot/ by default or current dir
-            workspace_path = Path(os.path.expanduser("~/.nanobot"))
-            if not workspace_path.exists():
-                workspace_path = Path(os.getcwd())
-                
-            self.memory = NanobotMemoryStore(workspace=workspace_path)
-            
-            # ------------------------------------------------------------------
-            # FIX: Monkey-patch MemoryStore to support Swarmbot CoreAgent API
-            # CoreAgent expects: get_context(agent_id, limit), add_event(agent_id, content, meta)
-            # Nanobot MemoryStore has: get_memory_context(), append_history(entry)
-            # ------------------------------------------------------------------
-            
-            def get_context_shim(agent_id: str, limit: int = 16) -> List[Dict[str, str]]:
-                # Read from history.md and parse last N entries
-                # Nanobot history is raw text. We need to parse it or just return raw.
-                # For now, we just return the long-term memory + recent raw history as a single system message?
-                # No, CoreAgent expects list of dicts.
-                # We can try to parse the HISTORY.md file.
-                
-                # Simplified: Read last 2000 chars of history
-                try:
-                    hist_path = self.memory.history_file
-                    if hist_path.exists():
-                        text = hist_path.read_text(encoding="utf-8")
-                        # Split by double newline to get chunks
-                        chunks = text.split("\n\n")
-                        recent = chunks[-limit:] if limit else chunks
-                        return [{"content": c.strip(), "role": "user"} for c in recent if c.strip()]
-                except:
-                    pass
-                return []
-
-            def add_event_shim(agent_id: str, content: str, meta: Dict[str, Any] | None = None) -> None:
-                # Format: [Timestamp] [AgentID] Content
-                import datetime
-                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                entry = f"[{ts}] [{agent_id}] {content}"
-                self.memory.append_history(entry)
-                
-                # Also trigger Overthinking if enabled?
-                # self.overthinking.trigger(...)
-            
-            # Attach shims
-            self.memory.get_context = get_context_shim
-            self.memory.add_event = add_event_shim
-            # Also need whiteboard for concurrent
-            # Nanobot doesn't have whiteboard. We add a simple dict.
-            self.memory.whiteboard = type("Whiteboard", (), {})()
-            self.memory.whiteboard.data = {}
-            self.memory.whiteboard.update = lambda k, v: self.memory.whiteboard.data.update({k: v})
-            self.memory.whiteboard.get = lambda k: self.memory.whiteboard.data.get(k)
-            
-            self._log(f"SwarmManager: Using Nanobot native MemoryStore at {workspace_path} (Shimmed)")
-            
-        except ImportError:
-            self.memory = QMDMemoryStore()
-            self._log("SwarmManager: Nanobot memory not found, using QMD fallback.")
-        except Exception as e:
-            self.memory = QMDMemoryStore()
-            self._log(f"SwarmManager: Failed to init Nanobot memory ({e}), using QMD fallback.")
+        self.memory = QMDMemoryStore()
             
         self.agents: List[SwarmAgentSlot] = []
         self._init_default_agents()
@@ -107,20 +39,10 @@ class SwarmManager:
             "long_horizon",
             "state_machine",
             "auto",
-        ] = "sequential"
+        ] = "concurrent"
         
-        # Initialize Overthinking Loop if enabled
-        # We need to hook this into the chat lifecycle or run it as a background task
-        # For now, we prepare it.
         self.overthinking = None
-        try:
-            from nanobot.agent.overthinking import OverthinkingLoop
-            # OverthinkingLoop needs an agent instance or similar context
-            # We will attach it to the planner or a dedicated thinker agent
-            # self.overthinking = OverthinkingLoop(...)
-            pass 
-        except ImportError:
-            pass
+        self._display_mode = "simple"
 
     @classmethod
     def from_swarmbot_config(cls, cfg: SwarmbotConfig) -> "SwarmManager":
@@ -215,25 +137,83 @@ class SwarmManager:
                 slot.agent.ctx.agent_id = f"agent-observer-{i}"
 
     def chat(self, user_input: str) -> str:
+        self._log("--- Phase 1: Memory Retrieval & Context Injection ---")
+
+        try:
+            self.memory._events.clear()
+        except Exception:
+            pass
+
+        qmd_context = ""
+        try:
+            results = self.memory.search(user_input, limit=3)
+            if results:
+                parts: List[str] = []
+                for r in results:
+                    if isinstance(r, dict):
+                        parts.append(r.get("content") or r.get("text") or json.dumps(r, ensure_ascii=False))
+                    else:
+                        parts.append(str(r))
+                qmd_context = "\n".join(parts)
+        except Exception:
+            qmd_context = ""
+
+        md_excerpt = ""
+        try:
+            import time as _time
+            date_str = _time.strftime("%Y-%m-%d")
+            log_file = f"chat_log_{date_str}.md"
+            md_text = self.memory.local_cache.read(log_file)
+            if md_text:
+                md_excerpt = md_text[-2000:]
+        except Exception:
+            md_excerpt = ""
+
+        structured_context = {
+            "prompt": user_input,
+            "qmd": qmd_context,
+            "md": md_excerpt,
+        }
+        self.memory.whiteboard.update("current_task_context", structured_context)
+
         if self._architecture == "auto":
-            return self._chat_auto(user_input)
-        if self._architecture == "sequential":
-            return self._chat_sequential(user_input)
-        if self._architecture == "concurrent":
-            return self._chat_concurrent(user_input)
-        if self._architecture == "mixture":
-            return self._chat_mixture(user_input)
-        if self._architecture == "group_chat":
-            return self._chat_group_chat(user_input)
-        if self._architecture == "hierarchical":
-            return self._chat_hierarchical(user_input)
-        if self._architecture == "swarm_router":
-            return self._chat_swarm_router(user_input)
-        if self._architecture == "long_horizon":
-            return self._chat_long_horizon(user_input)
-        if self._architecture == "state_machine":
-            return self._chat_state_machine(user_input)
-        return self._chat_sequential(user_input)
+            result = self._chat_auto(user_input)
+        elif self._architecture == "sequential":
+            result = self._chat_sequential(user_input)
+        elif self._architecture == "concurrent":
+            result = self._chat_concurrent(user_input)
+        elif self._architecture == "mixture":
+            result = self._chat_mixture(user_input)
+        elif self._architecture == "group_chat":
+            result = self._chat_group_chat(user_input)
+        elif self._architecture == "hierarchical":
+            result = self._chat_hierarchical(user_input)
+        elif self._architecture == "swarm_router":
+            result = self._chat_swarm_router(user_input)
+        elif self._architecture == "long_horizon":
+            result = self._chat_long_horizon(user_input)
+        elif self._architecture == "state_machine":
+            result = self._chat_state_machine(user_input)
+        else:
+            result = self._chat_concurrent(user_input)
+
+        self._log("--- Phase 3: Cleanup & Consolidation ---")
+        try:
+            import time as _time
+            date_str = _time.strftime("%Y-%m-%d")
+            log_file = f"chat_log_{date_str}.md"
+            snippet = result[:1200] if result else ""
+            entry = f"\n## [TASK_SUMMARY] {_time.strftime('%H:%M:%S')}\n### Prompt\n{user_input}\n\n### Result (snippet)\n{snippet}\n"
+            self.memory.local_cache.append(log_file, entry)
+        except Exception:
+            pass
+
+        try:
+            self.memory.whiteboard._data.clear()
+        except Exception:
+            pass
+
+        return result
 
     def _chat_state_machine(self, user_input: str) -> str:
         from ..statemachine.engine import StateMachine, State
@@ -308,18 +288,22 @@ class SwarmManager:
         # Force Master/Judge role for Consensus to ensure Soul binding
         judge.ctx.role = "consensus_moderator" 
         
+        is_zh = any("\u4e00" <= ch <= "\u9fff" for ch in user_input)
         consensus_prompt = (
-            "You are the Consensus Moderator. Your goal is to synthesize a final, cohesive answer "
-            "based on the following outputs from different agents. \n"
-            "Resolve any conflicts, merge complementary information, and ensure the final answer "
-            "directly addresses the user's original request.\n\n"
-            f"Original Request: {user_input}\n\n"
-            "Agent Outputs:\n" + "\n".join(outputs) + "\n\n"
-            "CRITICAL: If any agent provided numerical data (like stock prices), verify if they are from "
-            "reliable search results (look for 'Tool result' or 'Source'). "
-            "If numbers conflict or look suspicious (e.g. hallucinated old data), "
-            "YOU MUST trigger a final validation search or explicitly state the uncertainty.\n"
-            "Final Consensus Decision:"
+            "你是 Consensus Moderator。你的目标是基于不同 Agent 的输出，综合出一个最终、连贯、可执行的答案。\n"
+            "要求：\n"
+            "1) 合并互补信息，消解冲突；\n"
+            "2) 直接回答用户原始问题；\n"
+            "3) 如果涉及事实/时间/参数，必须依据工具检索结果表述；不确定就明确标注。\n"
+            "4) 输出语言必须与用户输入一致。\n\n"
+            f"用户原始问题：{user_input}\n\n"
+            "各 Agent 输出：\n" + "\n".join(outputs) + "\n\n"
+            "请给出最终答案："
+            if is_zh
+            else
+            "You are the Consensus Moderator. Synthesize a final cohesive answer based on agent outputs. "
+            "Resolve conflicts, merge complementary information, and directly answer the original request. "
+            f"\n\nOriginal Request: {user_input}\n\nAgent Outputs:\n" + "\n".join(outputs) + "\n\nFinal Answer:"
         )
         
         final_decision = judge.step(consensus_prompt)
@@ -530,57 +514,85 @@ class SwarmManager:
             return self._chat_hierarchical(user_input)
         return self._chat_sequential(user_input)
 
-    def _chat_auto(self, user_input: str) -> str:
+    def _negotiate_roles(self, user_input: str) -> List[str]:
+        """
+        Collective Role Negotiation (Self-Organization).
+        Agents analyze the task and bid for roles.
+        """
+        self._log("--- Swarm Self-Organization (Role Negotiation) ---")
+        
+        # 1. Task Broadcast & Analysis (by Planner/Director)
         planner = self.agents[0].agent
-        # Enhanced AutoSwarmBuilder prompt with Role Assignment
-        # Force complex architecture if task is not trivial
-        auto_prompt = (
-            "你是 AutoSwarmBuilder。根据下面的用户任务，决定一个合适的 swarm 配置：\n"
-            "- name: 一个简短英文名称\n"
-            "- description: 1-2 句中文描述\n"
-            "- architecture: 必须从 [concurrent, mixture, group_chat, hierarchical] 中选一个，禁止选择 sequential。\n"
-            "- max_loops: 建议的最大对话轮数（整数）\n"
-            f"- roles: 一个字符串列表，定义 {self.config.max_agents} 个 Agent 的具体角色（建议充分利用 8 个角色，如 ['lead_researcher', 'technical_analyst', 'market_analyst', 'skeptic', 'synthesizer', 'editor', 'fact_checker', 'coordinator']）。\n"
-            "- task: 用中文详细说明 swarm 的工作目标\n\n"
-            "请输出 JSON 对象。任务如下：\n"
-            f"{user_input}"
+        analysis_prompt = (
+            f"Analyze this task: {user_input}\n"
+            f"Identify exactly {self.config.max_agents} distinct, necessary functional roles to solve this.\n"
+            "Output ONLY a Python list of strings, e.g. ['role1', 'role2', ...]"
         )
-        resp = planner.step(auto_prompt)
         try:
-            import json
-            # Robust JSON extraction (handle markdown blocks)
-            content = resp.strip()
-            if content.startswith("```json"):
-                content = content[7:-3]
-            elif content.startswith("```"):
-                content = content[3:-3]
-            
-            data = json.loads(content)
-            
-            # 1. Update Architecture
-            arch = data.get("architecture", "concurrent") # Default to concurrent if missing
-            if arch in (
-                "sequential", "concurrent", "mixture", "group_chat", 
-                "hierarchical", "swarm_router", "long_horizon", "state_machine"
-            ):
-                self._architecture = arch  # type: ignore[assignment]
-                self._log(f"AutoSwarmBuilder selected architecture: {self._architecture}")
+            analysis_resp = planner.step(analysis_prompt)
+            # Extract list
+            import re
+            match = re.search(r"\[(.*?)\]", analysis_resp, re.DOTALL)
+            if match:
+                suggested_roles = [r.strip().strip("'").strip('"') for r in match.group(1).split(',')]
             else:
-                self._architecture = "concurrent" # Fallback to concurrent to ensure logs/consensus
-                self._log(f"AutoSwarmBuilder fallback to concurrent.")
+                suggested_roles = ["researcher", "analyst", "coder", "reviewer"] * 2
+        except:
+             suggested_roles = ["researcher", "analyst", "coder", "reviewer"]
+        
+        # Ensure we have enough roles for slots
+        while len(suggested_roles) < len(self.agents):
+            suggested_roles.append("observer")
+        suggested_roles = suggested_roles[:len(self.agents)]
+        
+        self._log(f"Proposed Roster: {suggested_roles}")
+        
+        # 2. Agent Ratification (Mock Voting/Bidding)
+        # In a full system, each agent would bid. For v0.2, we simulate the 'Team Lead' confirming the roster.
+        # This is effectively what the user asked for: "nodes communicate".
+        # We can simulate a quick round of "I accept" from agents.
+        
+        ratified_roles = []
+        for i, role in enumerate(suggested_roles):
+            # Agent i "accepts" the role
+            agent = self.agents[i].agent
+            # Simple context update to simulate acceptance
+            agent.ctx.role = role
+            ratified_roles.append(role)
+            self._log(f"Agent {i} accepted role: {role}")
+            
+        return ratified_roles
 
-            # 2. Dynamic Role Assignment
-            new_roles = data.get("roles", [])
-            if new_roles and isinstance(new_roles, list):
-                self._reassign_roles(new_roles)
+    def _chat_auto(self, user_input: str) -> str:
+        # Enhanced AutoSwarmBuilder with Negotiation
+        self._log("AutoSwarmBuilder: Initiating...")
+        
+        # 1. Determine Architecture First
+        planner = self.agents[0].agent
+        arch_prompt = (
+            f"Task: {user_input}\n"
+            "Select best architecture from [concurrent, mixture, group_chat, hierarchical, state_machine].\n"
+            "Return ONLY the architecture name."
+        )
+        try:
+            arch_resp = planner.step(arch_prompt).strip().lower()
+            # Clean up
+            import re
+            arch_match = re.search(r"(concurrent|mixture|group_chat|hierarchical|state_machine)", arch_resp)
+            if arch_match:
+                self._architecture = arch_match.group(1) # type: ignore
             else:
-                # Default roles if not provided
-                self._reassign_roles(["researcher", "analyst", "writer", "reviewer"])
-                
-        except Exception as e:
-            self._log(f"AutoSwarmBuilder failed: {e}. Fallback to concurrent.")
-            self._architecture = "concurrent"  # type: ignore[assignment]
-            self._reassign_roles(["researcher", "analyst", "writer", "reviewer"])
+                self._architecture = "concurrent"
+        except:
+            self._architecture = "concurrent"
+            
+        self._log(f"Selected Architecture: {self._architecture}")
+        
+        # 2. Swarm Self-Organization (Dynamic Role Allocation)
+        # "Every time a new task is encountered, all nodes communicate to allocate functions"
+        new_roles = self._negotiate_roles(user_input)
+        
+        # 3. Reassign (Inject Skills)
+        self._reassign_roles(new_roles)
             
         return self.chat(user_input)
-

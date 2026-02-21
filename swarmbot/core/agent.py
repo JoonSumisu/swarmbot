@@ -100,6 +100,8 @@ class CoreAgent:
         system_instructions = (
             "你具备一个名为 QMDMemory 的记忆技能，可以在需要时主动向用户索取检索关键词，"
             "用来搜索本地知识库（如笔记、文档、会议记录），并将检索到的内容整合进推理过程。\n"
+            "输出语言必须与用户输入保持一致（用户用中文就用中文，用户用英文就用英文）。\n"
+            "如果你看到 Whiteboard/WorkMap 中的 current_task_context，请以其为最高优先级理解任务。\n"
             "IMPORTANT: When answering questions about current events, technology updates, or dynamic data, "
             "you MUST prioritize using the 'web_search' tool over your internal training data. "
             "Always verify the date of the information found."
@@ -131,60 +133,54 @@ class CoreAgent:
         print(f"[CoT] Agent {self.ctx.role} starting thought process...")
         
         try:
-            # First LLM call
-            completion_kwargs = {
-                "messages": messages,
-            }
+            completion_kwargs: Dict[str, Any] = {"messages": messages}
             if tools:
                 completion_kwargs["tools"] = tools
-            
-            resp = self.llm.completion(**completion_kwargs)
-            
-            # Extract choice
-            choice = resp.choices[0] 
-            message = choice.message
-            content = message.content or ""
-            tool_calls = message.tool_calls
-            
-            # Log Thought (First Pass)
-            if content:
-                print(f"[CoT] {self.ctx.role} thought: {content[:200]}...")
-            
-            # Handle tool calls
-            if tool_calls:
-                # Append assistant's tool call message
+
+            content = ""
+            max_tool_rounds = 3
+            for round_idx in range(max_tool_rounds):
+                resp = self.llm.completion(**completion_kwargs)
+                choice = resp.choices[0]
+                message = choice.message
+                content = message.content or ""
+                tool_calls = message.tool_calls
+
+                if round_idx == 0 and content:
+                    print(f"[CoT] {self.ctx.role} thought: {content[:200]}...")
+
+                if not tool_calls:
+                    if round_idx > 0:
+                        print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
+                    break
+
                 messages.append(message)
-                
-                # Execute all tool calls
                 for tool_call in tool_calls:
                     func_name = tool_call.function.name
                     func_args_str = tool_call.function.arguments
                     print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")
-                    
+
                     try:
                         func_args = json.loads(func_args_str)
                     except json.JSONDecodeError:
                         func_args = {}
-                    
-                    # Execute via adapter
+
                     result = self._tool_adapter.execute(func_name, func_args)
-                    
-                    # Log Tool Result
                     print(f"[CoT] Tool result: {str(result)[:100]}...")
-                    
-                    # Append tool result message
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": func_name,
-                        "content": str(result) # Ensure string
-                    })
-                
-                # Second LLM call with tool results
+
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": func_name,
+                            "content": str(result),
+                        }
+                    )
+
                 completion_kwargs["messages"] = messages
-                resp = self.llm.completion(**completion_kwargs)
-                content = resp.choices[0].message.content or ""
-                print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
+            else:
+                if content:
+                    print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
 
         except Exception as e:
             content = f"Error during execution: {str(e)}"

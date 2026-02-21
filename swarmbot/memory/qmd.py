@@ -136,6 +136,13 @@ class QMDMemoryStore(MemoryStore):
             for k, v in meta["update_map"].items():
                 self.whiteboard.update(k, v)
 
+    def add(self, content: str, meta: Dict[str, Any] | None = None) -> None:
+        """
+        API Compatibility for Overthinking Loop.
+        Writes consolidated memory to QMD (Long-term).
+        """
+        self.persist_to_qmd(content, collection=meta.get("collection") if meta else None)
+
     def persist_to_qmd(self, content: str, collection: Optional[str] = None) -> None:
         """
         Explicitly write refined memory to QMD Long-term storage.
@@ -158,21 +165,41 @@ class QMDMemoryStore(MemoryStore):
         # qmd embed
         subprocess.run(["qmd", "embed"], cwd=self._qmd_root, check=False)
 
-    def get_context(self, agent_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_context(self, agent_id: str, limit: int = 20, query: str = None) -> List[Dict[str, Any]]:
         """
         Get combined context:
-        - Recent events (Short-term)
-        - Whiteboard snapshot (Shared state)
+        - Whiteboard snapshot (Shared state) - High Priority
+        - Recent events (Short-term LocalMD) - Medium Priority
+        - QMD Search Results (Long-term) - Low Priority (if query provided)
         """
-        items = self._events.get(agent_id, [])
-        recent = items[-limit:] if items else []
-        
-        # Inject whiteboard state as a system message if not empty
+        # 1. Whiteboard
         snapshot = self.whiteboard.get_snapshot()
+        context = []
         if snapshot != "{}":
-            return [{"content": f"Current WorkMap (Whiteboard):\n{snapshot}", "role": "system"}] + recent
+            context.append({"content": f"Current WorkMap (Whiteboard):\n{snapshot}", "role": "system"})
             
-        return recent
+        # 2. LocalMD (Short-term)
+        # Use in-memory buffer for speed during session, or read file if empty
+        items = self._events.get(agent_id, [])
+        if not items:
+            # Try to read from local file if memory is empty (persistence)
+            # Simplified: just use what we have in memory for now
+            pass
+        
+        recent = items[-limit:] if items else []
+        # Convert internal event format to OpenAI message format
+        for r in recent:
+            context.append({"content": r["content"], "role": "user"}) # Default to user role for history
+            
+        # 3. QMD (Long-term)
+        # Only search if we have a query (usually the current user input)
+        if query:
+            qmd_results = self.search(query, limit=3)
+            if qmd_results:
+                knowledge = "\n".join([doc.get('content', '') for doc in qmd_results])
+                context.insert(0, {"content": f"Relevant Long-term Memory (QMD):\n{knowledge}", "role": "system"})
+                
+        return context
 
     def search(self, query: str, collection: str | None = None, limit: int = 5) -> List[Dict[str, Any]]:
         """

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -131,6 +132,11 @@ class NanobotSkillAdapter:
                 path = arguments.get("path", "")
                 content = arguments.get("content", "")
                 if not path: return "Error: path required"
+                if os.path.isabs(path) and path.startswith("/output/"):
+                    path = os.path.join(os.getcwd(), path.lstrip("/"))
+                parent = os.path.dirname(path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(content)
                 return f"Wrote to {path}"
