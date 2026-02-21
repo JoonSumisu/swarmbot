@@ -205,11 +205,17 @@ class SwarmManager:
         
         # Build Master Prompt
         # Load masteragentboot.md
+        # Strategy: Prioritize ~/.swarmbot/boot/, then fallback to package default
         masterboot_content = ""
+        user_boot_path = os.path.expanduser("~/.swarmbot/boot/masteragentboot.md")
+        pkg_boot_path = os.path.join(os.path.dirname(__file__), "../boot/masteragentboot.md")
+
         try:
-             boot_path = os.path.join(os.path.dirname(__file__), "../boot/masteragentboot.md")
-             if os.path.exists(boot_path):
-                 with open(boot_path, "r", encoding="utf-8") as f:
+             if os.path.exists(user_boot_path):
+                 with open(user_boot_path, "r", encoding="utf-8") as f:
+                     masterboot_content = f.read()
+             elif os.path.exists(pkg_boot_path):
+                 with open(pkg_boot_path, "r", encoding="utf-8") as f:
                      masterboot_content = f.read()
         except Exception:
              pass
@@ -241,12 +247,18 @@ class SwarmManager:
         self._log("--- Phase 1: Swarm Boot (Memory Retrieval & Context Injection) ---")
 
         # 1. Load swarmboot.md content
+        # Strategy: Prioritize ~/.swarmbot/boot/swarmboot.md, then fallback to package default
         swarmboot_content = ""
+        user_boot_path = os.path.expanduser("~/.swarmbot/boot/swarmboot.md")
+        pkg_boot_path = os.path.join(os.path.dirname(__file__), "../boot/swarmboot.md")
+        
         try:
-            boot_path = os.path.join(os.path.dirname(__file__), "../boot/swarmboot.md")
-            if os.path.exists(boot_path):
-                with open(boot_path, "r", encoding="utf-8") as f:
-                    swarmboot_content = f.read()
+            if os.path.exists(user_boot_path):
+                 with open(user_boot_path, "r", encoding="utf-8") as f:
+                     swarmboot_content = f.read()
+            elif os.path.exists(pkg_boot_path):
+                 with open(pkg_boot_path, "r", encoding="utf-8") as f:
+                     swarmboot_content = f.read()
         except Exception as e:
             self._log(f"Warning: Failed to load swarmboot.md: {e}")
 

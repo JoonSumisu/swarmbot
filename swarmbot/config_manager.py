@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 CONFIG_HOME = os.path.expanduser("~/.swarmbot")
 CONFIG_PATH = os.path.join(CONFIG_HOME, "config.json")
 WORKSPACE_PATH = os.path.join(CONFIG_HOME, "workspace")
+BOOT_CONFIG_PATH = os.path.join(CONFIG_HOME, "boot")
 
 
 @dataclass
@@ -53,6 +54,7 @@ class SwarmbotConfig:
 def ensure_dirs() -> None:
     os.makedirs(CONFIG_HOME, exist_ok=True)
     os.makedirs(WORKSPACE_PATH, exist_ok=True)
+    os.makedirs(BOOT_CONFIG_PATH, exist_ok=True)
 
 
 def load_config() -> SwarmbotConfig:

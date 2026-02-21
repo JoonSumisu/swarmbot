@@ -11,19 +11,37 @@ from .config_manager import (
     save_config,
     ensure_dirs,
     CONFIG_PATH,
+    BOOT_CONFIG_PATH,
 )
 from .swarm.manager import SwarmManager
+import shutil
 
 
 def cmd_onboard() -> None:
     ensure_dirs()
     cfg = load_config()
     save_config(cfg)
+    
+    # Init Boot Config: Copy default boot files to ~/.swarmbot/boot/ if not exist
+    pkg_boot_dir = os.path.join(os.path.dirname(__file__), "boot")
+    if os.path.exists(pkg_boot_dir):
+        print(f"Initializing boot configuration in {BOOT_CONFIG_PATH}...")
+        for filename in os.listdir(pkg_boot_dir):
+            if filename.endswith(".md"):
+                src = os.path.join(pkg_boot_dir, filename)
+                dst = os.path.join(BOOT_CONFIG_PATH, filename)
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"  Created {filename}")
+                else:
+                    print(f"  Skipped {filename} (already exists)")
+    
     try:
         subprocess.run(["nanobot", "onboard"], check=False)
     except FileNotFoundError:
         pass
     print(f"Swarmbot 已完成初始化，配置文件位于: {CONFIG_PATH}")
+    print(f"个性化 Boot 配置位于: {BOOT_CONFIG_PATH}")
 
 
 def cmd_run() -> None:
@@ -238,7 +256,9 @@ def cmd_update() -> None:
         print(f"Error updating dependencies: {e}", file=sys.stderr)
         return
 
-    print("Update complete! Your configuration in ~/.swarmbot/ remains unchanged.")
+    print("Update complete!")
+    print(f"User configuration preserved at: {CONFIG_PATH}")
+    print(f"User boot files preserved at: {BOOT_CONFIG_PATH}")
 
 
 def cmd_passthrough(command: str, extra_args: list[str]) -> None:
