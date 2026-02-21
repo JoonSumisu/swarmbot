@@ -101,27 +101,110 @@ swarmbot config --architecture auto --auto-builder true
 
 Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 
+### 0. 配置文件位置
+*   **配置文件**：`~/.swarmbot/config.json`
+*   **Swarmbot 工作目录**：`~/.swarmbot/workspace`
+*   **本仓库目录**：本项目源代码所在目录（例如 `/root/swarmbot`）
+
 ### 1. `swarmbot onboard`
-*   **功能**: 初始化工作区。
-*   **作用**: 创建 `~/.swarmbot` 配置文件，初始化 nanobot 核心，准备 workspace 目录。
+*   **功能**：初始化配置和工作区。
+*   **做什么**：
+    *   创建 `~/.swarmbot` 目录与 `config.json`
+    *   创建 `~/.swarmbot/workspace`
+    *   尝试调用 `nanobot onboard`（如果已安装 nanobot）
 
 ### 2. `swarmbot run`
-*   **功能**: 启动本地对话会话。
-*   **作用**: 进入交互式终端，与 Swarm 集群直接对话。
-*   **默认行为**: 启动 AutoSwarmBuilder，根据你的输入自动决定使用哪种 Swarm 架构。
+*   **功能**：启动交互式对话会话（本地调试）。
+*   **行为**：循环读取终端输入，调用 SwarmManager 执行并输出结果。
+*   **架构**：默认 `concurrent`（小模型更稳），可通过 `swarmbot config` 修改。
 
-### 3. `swarmbot gateway`
-*   **功能**: 启动多渠道网关。
-*   **默认端口**: `18990` (v0.1 更新，避免端口冲突)。
-*   **作用**: 透传调用 `nanobot gateway`，接管飞书/Slack 消息。
+### 3. `swarmbot config`
+*   **功能**：查看/修改 Swarm 工作模式（写入 `~/.swarmbot/config.json`）。
+*   **常用参数**：
+    *   `--agent-count <int>`：Swarm agent 数量
+    *   `--architecture <name>`：选择架构（`concurrent`/`sequential`/`mixture`/`hierarchical`/`state_machine`/`auto` 等）
+    *   `--max-turns <int>`：对话最大轮数（`0` 为不限制）
+    *   `--auto-builder <true|false>`：是否启用 AutoSwarmBuilder（通常配合 `--architecture auto`）
+*   示例：
 
-### 4. `swarmbot overthinking`
-*   **功能**: 管理后台思考循环 (Overthinking Loop)。
-*   **子命令**:
-    *   `start`: 手动启动思考循环。
-    *   `setup`: 配置思考参数。
+```bash
+swarmbot config --architecture concurrent --agent-count 4
+swarmbot config --architecture auto --auto-builder true
+```
+
+### 4. `swarmbot provider`
+*   **功能**：配置模型提供方（OpenAI 兼容接口）。
+*   **子命令**：
+    *   `provider add`：新增/覆盖 provider（仅保留一个）
+    *   `provider delete`：清空 provider 配置（恢复默认）
+
+```bash
+swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model openai/local-model --max-tokens 8192
+swarmbot provider delete
+```
+
+### 5. `swarmbot status`
+*   **功能**：打印当前 Swarmbot 状态（Provider/Swarm/Overthinking）。
+
+### 6. `swarmbot gateway`
+*   **功能**：启动多渠道网关（通过 wrapper 接管 nanobot gateway）。
+*   **说明**：用于飞书/Slack/Telegram 等渠道接入；具体渠道配置仍以 nanobot 为准。
+
+### 7. `swarmbot heartbeat`
+*   **功能**：透传 `nanobot heartbeat`。
+
+### 8. `swarmbot tool / channels / cron / agent / skill`
+*   **功能**：透传到 nanobot，对应：
+    *   `swarmbot tool ...` → `nanobot tool ...`
+    *   `swarmbot channels ...` → `nanobot channels ...`
+    *   `swarmbot cron ...` → `nanobot cron ...`
+    *   `swarmbot agent ...` → `nanobot agent ...`
+    *   `swarmbot skill ...` → `nanobot skill ...`
+*   **说明**：这些命令会将参数原样转发给 nanobot，便于复用其生态能力。
+
+### 9. `swarmbot overthinking`
+*   **功能**：管理空闲时的后台整理循环（Overthinking Loop）。
+*   **子命令**：
+    *   `overthinking setup`：配置开关/周期/步数
+    *   `overthinking start`：前台启动循环（开发/调试用）
 
 ---
+
+## 🗂️ 目录结构与模块说明
+
+### 顶层目录
+*   `swarmbot/`：Python 包主体（核心逻辑都在这里）
+*   `tests/`：集成测试与单元测试（含 leaderboard_eval）
+*   `scripts/`：安装/依赖脚本（例如安装 qmd、浏览器依赖）
+
+### `swarmbot/` 包内模块
+*   [cli.py](file:///root/swarmbot/swarmbot/cli.py)：命令行入口与子命令实现（onboard/run/config/provider/gateway 等）
+*   [config_manager.py](file:///root/swarmbot/swarmbot/config_manager.py)：配置文件读写与默认值（`~/.swarmbot/config.json`）
+*   [config.py](file:///root/swarmbot/swarmbot/config.py)：SwarmConfig/LLMConfig（给 SwarmManager 内部使用的配置结构）
+*   [llm_client.py](file:///root/swarmbot/swarmbot/llm_client.py)：OpenAI 兼容客户端封装（统一 completion 调用）
+*   [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py)：接管 nanobot gateway 的消息处理，将消息路由到 SwarmManager
+
+### 多智能体编排（Swarm）
+*   [swarm/manager.py](file:///root/swarmbot/swarmbot/swarm/manager.py)：SwarmManager（架构选择、并发执行、共识裁决、白板注入/清理）
+*   [swarm/agent_adapter.py](file:///root/swarmbot/swarmbot/swarm/agent_adapter.py)：与 swarms 侧的适配/桥接（如有）
+
+### Agent 核心（Core）
+*   [core/agent.py](file:///root/swarmbot/swarmbot/core/agent.py)：CoreAgent（组装消息、工具调用循环、把结果写入记忆）
+
+### 记忆系统（Memory）
+*   [memory/qmd.py](file:///root/swarmbot/swarmbot/memory/qmd.py)：三层记忆实现（Whiteboard/LocalMD/QMD 搜索）
+*   [memory/base.py](file:///root/swarmbot/swarmbot/memory/base.py)：记忆存储的接口基类
+
+### 工具系统（Tools）
+*   [tools/adapter.py](file:///root/swarmbot/swarmbot/tools/adapter.py)：工具适配器（file_read/file_write/web_search/shell_exec 等）
+*   [tools/browser/local_browser.py](file:///root/swarmbot/swarmbot/tools/browser/local_browser.py)：本地无头浏览器/网页读取（用于 web_search/browser_read）
+
+### 后台整理（Overthinking）
+*   [loops/overthinking.py](file:///root/swarmbot/swarmbot/loops/overthinking.py)：空闲时整理 LocalMD → 写入 QMD，并进行压缩/拓展
+
+### 中间件与状态机
+*   [middleware/long_horizon.py](file:///root/swarmbot/swarmbot/middleware/long_horizon.py)：长程任务规划实验（WorkMapMemory/HierarchicalTaskGraph）
+*   [statemachine/engine.py](file:///root/swarmbot/swarmbot/statemachine/engine.py)：状态机执行引擎（适合“写-评审-再写”循环）
 
 ## 📊 Galileo Leaderboard 模拟评分
 

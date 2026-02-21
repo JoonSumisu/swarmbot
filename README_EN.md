@@ -97,21 +97,99 @@ swarmbot config --architecture auto --auto-builder true
 
 ## 📖 CLI Features
 
+### 0. Config Locations
+*   **Config file**: `~/.swarmbot/config.json`
+*   **Swarmbot workspace**: `~/.swarmbot/workspace`
+*   **This repository**: the source checkout (e.g. `/root/swarmbot`)
+
 ### 1. `swarmbot onboard`
-*   Initializes workspace and config.
+*   Initializes config and workspace.
+*   Creates `~/.swarmbot/config.json` and `~/.swarmbot/workspace`.
+*   Tries to run `nanobot onboard` if nanobot is installed.
 
 ### 2. `swarmbot run`
-*   Starts interactive chat session.
-*   Default: AutoSwarmBuilder mode.
+*   Starts an interactive chat loop and routes every user message to SwarmManager.
+*   Default architecture is `concurrent` (more stable for smaller/local models).
 
-### 3. `swarmbot gateway`
-*   **Default Port**: `18990` (v0.1 update).
-*   Connects to Feishu/Slack gateways.
+### 3. `swarmbot config`
+*   View/update swarm settings (writes into `~/.swarmbot/config.json`).
+*   Common flags:
+    *   `--agent-count <int>`
+    *   `--architecture <name>` (`concurrent`/`sequential`/`mixture`/`hierarchical`/`state_machine`/`auto`…)
+    *   `--max-turns <int>` (`0` means unlimited)
+    *   `--auto-builder <true|false>`
 
-### 4. `swarmbot overthinking`
-*   Manages background thinking loops (`start`, `setup`).
+```bash
+swarmbot config --architecture concurrent --agent-count 4
+swarmbot config --architecture auto --auto-builder true
+```
+
+### 4. `swarmbot provider`
+*   Configure the OpenAI-compatible provider.
+*   Subcommands:
+    *   `provider add`
+    *   `provider delete`
+
+### 5. `swarmbot status`
+*   Prints current Provider/Swarm/Overthinking config.
+
+### 6. `swarmbot gateway`
+*   Starts the gateway wrapper to intercept nanobot gateway messages and route them into SwarmManager.
+
+### 7. `swarmbot heartbeat`
+*   Passthrough: `nanobot heartbeat`.
+
+### 8. `swarmbot tool / channels / cron / agent / skill`
+*   Passthrough to nanobot:
+    *   `swarmbot tool ...` → `nanobot tool ...`
+    *   `swarmbot channels ...` → `nanobot channels ...`
+    *   `swarmbot cron ...` → `nanobot cron ...`
+    *   `swarmbot agent ...` → `nanobot agent ...`
+    *   `swarmbot skill ...` → `nanobot skill ...`
+
+### 9. `swarmbot overthinking`
+*   Manages idle-time background consolidation.
+*   Subcommands:
+    *   `overthinking setup`
+    *   `overthinking start` (foreground, for debugging)
 
 ---
+
+## 🗂️ Repository Structure & Modules
+
+### Top-level
+*   `swarmbot/`: Python package (core logic)
+*   `tests/`: integration/unit tests (including leaderboard_eval)
+*   `scripts/`: installation/dependency helpers
+
+### Package modules (`swarmbot/`)
+*   [cli.py](file:///root/swarmbot/swarmbot/cli.py): CLI entrypoint and subcommands
+*   [config_manager.py](file:///root/swarmbot/swarmbot/config_manager.py): config read/write and defaults (`~/.swarmbot/config.json`)
+*   [config.py](file:///root/swarmbot/swarmbot/config.py): internal SwarmConfig/LLMConfig structs
+*   [llm_client.py](file:///root/swarmbot/swarmbot/llm_client.py): OpenAI-compatible client wrapper
+*   [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py): intercept nanobot gateway message loop and route to SwarmManager
+
+### Swarm orchestration
+*   [swarm/manager.py](file:///root/swarmbot/swarmbot/swarm/manager.py): SwarmManager (architectures, concurrency, consensus, whiteboard injection/cleanup)
+*   [swarm/agent_adapter.py](file:///root/swarmbot/swarmbot/swarm/agent_adapter.py): adapter/bridge layer (if needed)
+
+### Core agent
+*   [core/agent.py](file:///root/swarmbot/swarmbot/core/agent.py): CoreAgent (message building, tool-call loop, memory writes)
+
+### Memory
+*   [memory/qmd.py](file:///root/swarmbot/swarmbot/memory/qmd.py): tri-layer memory (Whiteboard/LocalMD/QMD search)
+*   [memory/base.py](file:///root/swarmbot/swarmbot/memory/base.py): memory store interface
+
+### Tools
+*   [tools/adapter.py](file:///root/swarmbot/swarmbot/tools/adapter.py): tool adapter (file_read/file_write/web_search/shell_exec…)
+*   [tools/browser/local_browser.py](file:///root/swarmbot/swarmbot/tools/browser/local_browser.py): local headless browser helpers
+
+### Overthinking (idle-time)
+*   [loops/overthinking.py](file:///root/swarmbot/swarmbot/loops/overthinking.py): consolidate LocalMD → QMD, plus compression/expansion steps
+
+### Middleware & state machine
+*   [middleware/long_horizon.py](file:///root/swarmbot/swarmbot/middleware/long_horizon.py): long-horizon planning experiments
+*   [statemachine/engine.py](file:///root/swarmbot/swarmbot/statemachine/engine.py): state machine engine (review loops, etc.)
 
 ## 📊 Galileo Leaderboard Simulation
 
