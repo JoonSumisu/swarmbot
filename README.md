@@ -16,7 +16,7 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
 
 ### 1. Dual Boot System (New in v0.2)
 - **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆。
-- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md` (身份) 进行二次解释与用户交互。
+- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md`  (身份) 进行二次解释与用户交互。
 
 ### 2. Swarm Orchestration (Swarms Integrated)
 *   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
@@ -293,7 +293,7 @@ swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --mod
 
 ## 🔮 Future Plans
 
-将来计划会集中于 swarm 的调优和 overthinking 的功能，我相信 overthinking 可能会带来很有趣的变化，理想的情况下我认为需要基于个大显存的 3090+ 或者 Mac Pro 去长时间的让其 overthinking，可惜我没有，希望有人能帮我测试以下该想法能不能算是一个路线。
+将来计划会集中于 swarm 的调优和 overthinking 的功能，我相信 overthinking 可能会带来很有趣的变化，理想的情况下我认为需要基于个大显存的 395+ 或者 Mac Pro等设备 去长时间的让其 overthinking，可惜我没有，希望有人能帮我测试以下该想法能不能算是一个有用。
 
 ---
 
