@@ -1,5 +1,7 @@
 # Swarmbot v0.2 开发文档
 
+本文件为历史版本开发说明，当前以 [development.md](file:///root/swarmbot/docs/development.md) 为准。
+
 ## 1. 系统概述
 Swarmbot 是一个本地优先的多 Agent 集群智能系统，v0.2 版本引入了 **双 Boot 架构**、**动态角色生成** 和 **深度记忆闭环**。
 
@@ -50,13 +52,17 @@ swarmbot/
 ```
 
 ## 5. 开发指南
+### 5.0 配置约束
+* 仅允许一个配置文件：`~/.swarmbot/config.json`
+* Provider 与 Channels 都从该文件读取
+
 ### 5.1 添加新工具
 1. 在 `swarmbot/tools/` 下实现工具逻辑。
 2. 在 `swarmbot/tools/registry.py` 中注册。
 3. 在 `swarmbot/boot/TOOLS.md` 中配置权限。
 
 ### 5.2 修改人格
-直接编辑 `swarmbot/boot/SOUL.md`，无需重启服务（Hot-reload via Boot process）。
+直接编辑 `swarmbot/boot/SOUL.md`（是否热更新取决于运行方式与加载策略）。
 
 ### 5.3 升级与维护
-使用 `swarmbot update` 命令可拉取最新代码，该命令会自动保留 `boot/` 目录下的个性化配置。
+当前推荐通过 git 手动更新代码，并保留 `~/.swarmbot/boot/` 下的个性化配置。

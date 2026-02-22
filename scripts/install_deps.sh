@@ -32,14 +32,12 @@ source "$VENV_DIR/bin/activate"
 # Upgrade pip inside venv
 pip install --upgrade pip
 
-# 2. Check Node.js and npm (Optional but recommended for nanobot extensions)
+# 2. Check Node.js and npm (Optional)
 if command -v npm &> /dev/null; then
     echo "Node.js detected."
-    # We no longer install QMD via npm globally to avoid issues.
-    # Swarmbot now includes an embedded python-based QMD implementation (SQLite).
-    echo "Using Embedded QMD (SQLite) - No external QMD installation required."
+    echo "Node.js is optional. Swarmbot does not require npm for installation."
 else
-    echo "Warning: npm is not installed. Some nanobot extensions might be limited."
+    echo "npm is not installed (optional)."
 fi
 
 # 3. Install Python dependencies inside venv

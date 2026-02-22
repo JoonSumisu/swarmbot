@@ -270,6 +270,7 @@ def cmd_gateway() -> None:
     # This prevents zombie processes or port conflicts
     try:
         subprocess.run(["pkill", "-f", "swarmbot gateway"], check=False, stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "gateway_wrapper.py"], check=False, stderr=subprocess.DEVNULL)
         # Also kill nanobot gateway if it was running independently
         subprocess.run(["pkill", "-f", "nanobot gateway"], check=False, stderr=subprocess.DEVNULL)
     except Exception:
@@ -291,6 +292,7 @@ def cmd_gateway() -> None:
 
         port = get_available_port(18990)
         env["OPENCLAW_GATEWAY_PORT"] = str(port)
+        env["PYTHONUNBUFFERED"] = "1"
         
         # SIMPLER STRATEGY for this task:
         # We create a 'gateway_wrapper.py' that imports nanobot and injects our SwarmManager logic.
@@ -308,7 +310,7 @@ def cmd_gateway() -> None:
         with open(log_file, "a") as f:
             # Use subprocess.Popen for non-blocking execution (background)
             subprocess.Popen(
-                [sys.executable, wrapper_path], 
+                [sys.executable, "-u", wrapper_path, "gateway", "--port", str(port)],
                 env=env, 
                 stdout=f, 
                 stderr=subprocess.STDOUT,

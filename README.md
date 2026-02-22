@@ -4,7 +4,9 @@
 
 Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Multi-Agent Swarm System)**。
 
-它基于 **[nanobot](https://github.com/HKUDS/nanobot)** 的框架，深度融合了 **[swarms](https://github.com/kyegomez/swarms)** 的多智能体编排能力与 **[qmd](https://github.com/tobi/qmd)** 的三层记忆系统，旨在为本地模型（如 Kimi, vLLM, Ollama）提供强大的任务规划与执行能力。
+它融合了 **nanobot（已内置源码，不再依赖 pip 安装）** 的网关/通道能力，并深度集成 **[swarms](https://github.com/kyegomez/swarms)** 的多智能体编排能力与 **QMD（三层记忆）**，旨在为本地/私有 OpenAI 兼容接口提供强大的任务规划与执行能力。
+
+开发文档见 [development.md](file:///root/swarmbot/docs/development.md)。
 
 > **核心理念**: 将 nanobot 的单体执行力扩展为 Swarm 的集体智慧，并通过 Horizon Middleware 实现长程任务规划。
 
@@ -16,11 +18,7 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
 
 ### 1. Dual Boot System (New in v0.2)
 - **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆。
-<<<<<<< HEAD
 - **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md` (身份) 进行二次解释与用户交互。
-=======
-- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md`  (身份) 进行二次解释与用户交互。
->>>>>>> 4f7f1a3bdf8e3bbc598921458b4cfa7d15706ccb
 
 ### 2. Swarm Orchestration (Swarms Integrated)
 *   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
@@ -92,7 +90,8 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
 3. **配置模型提供方**
    ```bash
    # 添加自定义 OpenAI 兼容接口（例如本地模型）
-   swarmbot provider add --base-url "http://localhost:8000/v1" --api-key "dummy" --model "your-model-name"
+   # 注意：请勿将真实 API Key / 内网地址提交到仓库
+   swarmbot provider add --base-url "http://127.0.0.1:8000/v1" --api-key "YOUR_API_KEY" --model "your-model-name" --max-tokens 8192
    ```
 
 4. **运行**
@@ -133,7 +132,7 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   **做什么**：
     *   创建 `~/.swarmbot` 目录与 `config.json`
     *   创建 `~/.swarmbot/workspace`
-    *   尝试调用 `nanobot onboard`（如果已安装 nanobot）
+    *   初始化内置 nanobot 网关所需目录（无需额外安装 nanobot）
 
 ### 2. `swarmbot run`
 *   **功能**：启动交互式对话会话（本地调试）。
@@ -173,11 +172,11 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   **功能**：打印当前 Swarmbot 状态（Provider/Swarm/Overthinking）。
 
 ### 6. `swarmbot gateway`
-*   **功能**：启动多渠道网关（通过 wrapper 接管 nanobot gateway）。
+*   **功能**：启动多渠道网关（由 Swarmbot 接管并路由到 SwarmManager）。
 *   **特性**：
     *   **默认后台运行**：v0.2+ 版本优化了启动逻辑，gateway 默认以守护进程（后台）方式运行，不占用当前终端。
     *   **日志输出**：启动后会提示日志文件位置（通常在 `~/.swarmbot/logs/gateway.log`）。
-    *   **多渠道支持**：无缝对接飞书、Slack、Telegram、微信等（复用 nanobot 配置）。
+    *   **多渠道支持**：飞书、Slack、Telegram 等（统一从 `~/.swarmbot/config.json` 读取渠道配置）。
 *   **使用方法**：
     ```bash
     # 启动网关（后台运行）
@@ -188,17 +187,8 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
     ```
 
 
-### 7. `swarmbot heartbeat`
-*   **功能**：透传 `nanobot heartbeat`。
-
-### 8. `swarmbot tool / channels / cron / agent / skill`
-*   **功能**：透传到 nanobot，对应：
-    *   `swarmbot tool ...` → `nanobot tool ...`
-    *   `swarmbot channels ...` → `nanobot channels ...`
-    *   `swarmbot cron ...` → `nanobot cron ...`
-    *   `swarmbot agent ...` → `nanobot agent ...`
-    *   `swarmbot skill ...` → `nanobot skill ...`
-*   **说明**：这些命令会将参数原样转发给 nanobot，便于复用其生态能力。
+### 7. `swarmbot tool / channels / cron / agent / skill`
+*   **功能**：管理内置 nanobot 的工具与通道能力（后续会逐步迁移为 Swarmbot 原生实现）。
 
 ### 9. `swarmbot overthinking`
 *   **功能**：管理空闲时的后台深度思考循环。
@@ -258,17 +248,9 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   [middleware/long_horizon.py](swarmbot/middleware/long_horizon.py)：长程任务规划实验（WorkMapMemory/HierarchicalTaskGraph）
 *   [statemachine/engine.py](swarmbot/statemachine/engine.py)：状态机执行引擎（适合“写-评审-再写”循环）
 
-## 📊 Galileo Leaderboard 模拟评分
-
-基于内部集成测试 [leaderboard_eval.py](tests/integration/leaderboard_eval.py)，在本地 OpenAI 兼容接口 + `openai/openbmb/agentcpm-explore` 模型条件下的“全通过”结果：
-*   总分：5/5
-*   明细：
-    *   Task 1 Reasoning (GPQA-style)：PASS
-    *   Task 2 Tool Chaining (GAIA-style)：PASS
-    *   Task 3 Coding (HumanEval-style)：PASS
-    *   Task 4 Memory & Persona：PASS
-    *   Task 5 Hallucination & Factuality：PASS
-*   说明：并发协作与（可选的）自动分工存在随机性，不同运行可能会有波动
+## 📊 测试与评估
+*   单元测试：`python -m unittest discover -s tests -p "test*.py" -v`
+*   评估脚本：`tests/integration/leaderboard_eval.py`（请使用你自己的模型与服务端点运行，避免在仓库中硬编码私有信息）
 
 ### Evaluation 调整说明
 为减少误判与更贴近真实使用，本项目对评分脚本做了小幅鲁棒性调整：
@@ -278,28 +260,37 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 
 ---
 
-## 🧩 飞书（Feishu）配置（通过 nanobot gateway）
-Swarmbot 通过 [gateway_wrapper.py](swarmbot/gateway_wrapper.py) 接管 nanobot 的消息处理，复用其多渠道能力。
-1. 先完成 nanobot 的渠道配置（飞书 App/机器人 Token 等）：参考 nanobot 官方文档
-2. 配置 Swarmbot 的模型 Provider（OpenAI 兼容接口）
+## 🧩 飞书（Feishu）配置
+Swarmbot 的唯一配置文件为 `~/.swarmbot/config.json`，飞书配置也在此处完成。
+1. 在飞书开放平台创建应用并获取 `app_id/app_secret`
+2. 将飞书配置写入 `~/.swarmbot/config.json` 的 `channels.feishu`
 3. 启动网关：
 
 ```bash
 swarmbot gateway
 ```
 
-### 本地模型 / 远程模型配置示例
-*   **远程 OpenAI 兼容（示例）**：
-```bash
-swarmbot provider add --base-url https://api.example.com/v1 --api-key YOUR_API_KEY --model openai/your-model --max-tokens 126000
-```
-*   **本地 vLLM（示例）**：
-```bash
-swarmbot provider add --base-url http://127.0.0.1:8000/v1 --api-key dummy --model openai/your-local-model --max-tokens 8192
-```
-*   **本地 Ollama（示例）**（需开启 OpenAI 兼容端点）：
-```bash
-swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model openai/your-ollama-model --max-tokens 8192
+示例（请替换为你自己的值）：
+
+```json
+{
+  "provider": {
+    "name": "custom",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "api_key": "YOUR_API_KEY",
+    "model": "your-model-name",
+    "max_tokens": 8192,
+    "temperature": 0.6
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "YOUR_APP_ID",
+      "appSecret": "YOUR_APP_SECRET",
+      "allowFrom": []
+    }
+  }
+}
 ```
 
 ---

@@ -286,9 +286,6 @@ except Exception as e:
 try:
     from nanobot.cli.commands import app
     if __name__ == "__main__":
-        # Mock sys.argv to run gateway command
-        sys.argv = [sys.argv[0], "gateway"]
         app()
 except ImportError:
-    # Fallback if structure is different
     logger.error("Could not import nanobot.cli.commands.app")

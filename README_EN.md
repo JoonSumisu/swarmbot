@@ -4,13 +4,15 @@
 
 Swarmbot is a local-first **Multi-Agent Swarm System**.
 
-Built on the **[nanobot](https://github.com/HKUDS/nanobot)** framework, it deeply integrates **[swarms](https://github.com/kyegomez/swarms)** orchestration capabilities and **[qmd](https://github.com/tobi/qmd)** tri-layer memory system, designed to empower local LLMs (like Kimi, vLLM, Ollama) with powerful task planning and execution abilities.
+Swarmbot includes a **vendored nanobot implementation (no pip dependency)** for gateway/channels, and deeply integrates **[swarms](https://github.com/kyegomez/swarms)** orchestration plus **QMD (tri-layer memory)** to empower OpenAI-compatible endpoints (local or private).
+
+Development notes: [development.md](file:///root/swarmbot/docs/development.md).
 
 > **Core Philosophy**: Extending nanobot's single-agent execution power into collective Swarm intelligence, utilizing Horizon Middleware for long-horizon task planning.
 
 ---
 
-## 🌟 Core Architecture v0.1.2
+## 🌟 Core Architecture
 
 Swarmbot achieves a "Trinity" integration:
 
@@ -60,7 +62,7 @@ Swarmbot achieves a "Trinity" integration:
 git clone https://github.com/JoonSumisu/swarmbot.git
 cd swarmbot
 
-# Install dependencies (Python + npm qmd)
+# Install dependencies (Python only)
 chmod +x scripts/install_deps.sh
 ./scripts/install_deps.sh
 
@@ -73,10 +75,10 @@ Swarmbot requires manual configuration for OpenAI-compatible APIs (e.g., Kimi, D
 
 ```bash
 swarmbot provider add \
-  --base-url https://api.moonshot.cn/v1 \
+  --base-url http://127.0.0.1:8000/v1 \
   --api-key YOUR_API_KEY \
-  --model kimi-k2-turbo-preview \
-  --max-tokens 126000
+  --model your-model-name \
+  --max-tokens 8192
 ```
 
 ### 3. Run
@@ -134,18 +136,11 @@ swarmbot config --architecture auto --auto-builder true
 *   Prints current Provider/Swarm/Overthinking config.
 
 ### 6. `swarmbot gateway`
-*   Starts the gateway wrapper to intercept nanobot gateway messages and route them into SwarmManager.
+*   Starts the gateway and routes inbound channel messages into SwarmManager.
+*   Reads all configs from `~/.swarmbot/config.json` (provider + channels).
 
-### 7. `swarmbot heartbeat`
-*   Passthrough: `nanobot heartbeat`.
-
-### 8. `swarmbot tool / channels / cron / agent / skill`
-*   Passthrough to nanobot:
-    *   `swarmbot tool ...` → `nanobot tool ...`
-    *   `swarmbot channels ...` → `nanobot channels ...`
-    *   `swarmbot cron ...` → `nanobot cron ...`
-    *   `swarmbot agent ...` → `nanobot agent ...`
-    *   `swarmbot skill ...` → `nanobot skill ...`
+### 7. `swarmbot tool / channels / cron / agent / skill`
+*   Manages the vendored nanobot tool/channel capabilities (gradually migrating to Swarmbot-native implementations).
 
 ### 9. `swarmbot overthinking`
 *   Manages idle-time background consolidation.
@@ -191,17 +186,9 @@ swarmbot config --architecture auto --auto-builder true
 *   [middleware/long_horizon.py](swarmbot/middleware/long_horizon.py): long-horizon planning experiments
 *   [statemachine/engine.py](swarmbot/statemachine/engine.py): state machine engine (review loops, etc.)
 
-## 📊 Galileo Leaderboard Simulation
-
-Based on internal integration tests [leaderboard_eval.py](tests/integration/leaderboard_eval.py), here is a fully-passing run (local OpenAI-compatible server + `openai/openbmb/agentcpm-explore`):
-*   Total: 5/5
-*   Breakdown:
-    *   Task 1 Reasoning (GPQA-style): PASS
-    *   Task 2 Tool Chaining (GAIA-style): PASS
-    *   Task 3 Coding (HumanEval-style): PASS
-    *   Task 4 Memory & Persona: PASS
-    *   Task 5 Hallucination & Factuality: PASS
-*   Note: Parallel coordination (and optional auto role selection) can be slightly stochastic across runs
+## ✅ Tests
+*   Unit tests: `python -m unittest discover -s tests -p "test*.py" -v`
+*   Eval script: `tests/integration/leaderboard_eval.py` (run with your own model/server; do not hardcode private endpoints/keys)
 
 ### Evaluation Adjustments
 To reduce false negatives and better reflect real usage:
@@ -211,26 +198,39 @@ To reduce false negatives and better reflect real usage:
 
 ---
 
-## 🧩 Feishu (via nanobot gateway)
-Swarmbot intercepts nanobot gateway message processing via [gateway_wrapper.py](swarmbot/gateway_wrapper.py).
-1. Configure Feishu credentials in nanobot first (see nanobot docs)
-2. Configure Swarmbot provider (OpenAI-compatible API)
-3. Start gateway:
+## 🧩 Feishu
+Swarmbot reads **provider + channels** from `~/.swarmbot/config.json`. Configure Feishu under `channels.feishu`, then start:
 
 ```bash
 swarmbot gateway
 ```
 
-### Provider Examples (Remote / Local)
-```bash
-swarmbot provider add --base-url https://api.example.com/v1 --api-key YOUR_API_KEY --model openai/your-model --max-tokens 126000
-swarmbot provider add --base-url http://127.0.0.1:8000/v1 --api-key dummy --model openai/your-local-model --max-tokens 8192
-swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model openai/your-ollama-model --max-tokens 8192
+Example (replace with your own values):
+
+```json
+{
+  "provider": {
+    "name": "custom",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "api_key": "YOUR_API_KEY",
+    "model": "your-model-name",
+    "max_tokens": 8192,
+    "temperature": 0.6
+  },
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "appId": "YOUR_APP_ID",
+      "appSecret": "YOUR_APP_SECRET",
+      "allowFrom": []
+    }
+  }
+}
 ```
 
 ---
 
-## � Future Plans
+## Future Plans
 
 Future plans will focus on Swarm tuning and Overthinking capabilities. I believe Overthinking could bring interesting changes. Ideally, it requires high VRAM GPUs (3090+ or Mac Pro) for long-duration thinking sessions. Unfortunately, I don't have such hardware yet. I hope someone can help test if this direction is viable.
 

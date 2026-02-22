@@ -3,7 +3,6 @@
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic.alias_generators import to_camel
-from pydantic_settings import BaseSettings
 
 
 class Base(BaseModel):
@@ -268,7 +267,7 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
-class Config(BaseSettings):
+class Config(Base):
     """Root configuration for nanobot."""
 
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
