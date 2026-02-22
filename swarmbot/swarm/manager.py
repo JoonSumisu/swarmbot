@@ -54,20 +54,22 @@ class SwarmManager:
         sw_cfg.llm.api_key = cfg.provider.api_key
         sw_cfg.llm.model = cfg.provider.model
         
+        # Inject max_tokens into LLM config
+        if hasattr(sw_cfg.llm, "max_tokens"):
+            sw_cfg.llm.max_tokens = cfg.provider.max_tokens
+            
+        # IMPORTANT: Force sync nanobot config if possible
+        # Swarmbot is the master of config. Nanobot might have its own ~/.nanobot/config.json
+        # which could conflict if the underlying nanobot agent reads it.
+        # We try to override environment variables to force nanobot to use our config.
+        os.environ["OPENAI_API_BASE"] = cfg.provider.base_url
+        os.environ["OPENAI_API_KEY"] = cfg.provider.api_key
+        os.environ["LITELLM_MODEL"] = cfg.provider.model
+        
         mgr = cls(sw_cfg)
         mgr._architecture = cfg.swarm.architecture  # type: ignore[assignment]
         mgr._display_mode = cfg.swarm.display_mode  # Inject display mode
         
-        # Inject max_tokens into LLM config for AutoSwarmBuilder and agents
-        if hasattr(sw_cfg.llm, "max_tokens"):
-            # If SwarmConfig.LLMConfig has this field
-            sw_cfg.llm.max_tokens = cfg.provider.max_tokens
-        else:
-            # Otherwise we monkey-patch or handle in CoreAgent creation
-            # Since CoreAgent uses OpenAICompatibleClient which reads from config/provider,
-            # we ensure the provider config passed down is correct.
-            pass
-            
         return mgr
 
     def _log(self, message: str) -> None:
