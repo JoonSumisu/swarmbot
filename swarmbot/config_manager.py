@@ -46,6 +46,11 @@ class ToolConfig:
 @dataclass
 class ChannelConfig:
     enabled: bool = False
+    app_id: str = ""
+    app_secret: str = ""
+    encrypt_key: str = ""
+    verification_token: str = ""
+    token: str = ""  # For Telegram/Discord/Slack
     config: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -131,19 +136,17 @@ def load_config() -> SwarmbotConfig:
     channels = {}
     for name, c_data in channels_data.items():
         # Support both simple dict (legacy nanobot style) and structured config
-        if isinstance(c_data, dict) and "enabled" in c_data:
+        if isinstance(c_data, dict):
              channels[name] = ChannelConfig(
                  enabled=c_data.get("enabled", False),
-                 config={k:v for k,v in c_data.items() if k != "enabled"}
+                 app_id=c_data.get("app_id", ""),
+                 app_secret=c_data.get("app_secret", ""),
+                 encrypt_key=c_data.get("encrypt_key", ""),
+                 verification_token=c_data.get("verification_token", ""),
+                 token=c_data.get("token", ""),
+                 config={k:v for k,v in c_data.items() if k not in ["enabled", "app_id", "app_secret", "encrypt_key", "verification_token", "token"]}
              )
-        else:
-             # If raw dict, assume enabled=True if not specified? Or just raw config storage
-             # Let's stick to nanobot structure compatibility: {"feishu": {"enabled": true, "appId": ...}}
-             channels[name] = ChannelConfig(
-                 enabled=c_data.get("enabled", False),
-                 config={k:v for k,v in c_data.items() if k != "enabled"}
-             )
-
+    
     return SwarmbotConfig(
         provider=provider,
         swarm=swarm,

@@ -6,6 +6,18 @@ from typing import Any, Dict
 # 1. Monkeypatch nanobot agent loop BEFORE importing nanobot
 # We need to intercept `nanobot.agent.loop.AgentLoop.process_message` or similar.
 
+# --- CRITICAL: Ensure we load the local VENDORED nanobot, not system one ---
+# The user wants to "get rid of import nanobot" dependency on pip package.
+# We inject the path to `swarmbot/nanobot` (which is in `swarmbot/swarmbot/`) into sys.path[0].
+# Current file is in /root/swarmbot/swarmbot/gateway_wrapper.py
+# We want /root/swarmbot/swarmbot to be in sys.path so `import nanobot` works.
+import sys
+from pathlib import Path
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+# --------------------------------------------------------------------------
+
 from swarmbot.config_manager import load_config
 from swarmbot.swarm.manager import SwarmManager
 
@@ -53,7 +65,17 @@ try:
     # Import nanobot modules to patch
     # Note: We need to find where _process_message is defined.
     # Based on user logs: nanobot.agent.loop:_process_message
+    
+    # Verify we are loading the local nanobot
+    import nanobot
+    logger.info(f"Loaded nanobot from: {nanobot.__file__}")
+    
     from nanobot.agent.loop import AgentLoop
+    from nanobot.bus.events import InboundMessage
+    
+    logger.info(f"InboundMessage fields: {list(InboundMessage.__dataclass_fields__.keys())}")
+    
+    original_process_message = AgentLoop._process_message
     
     # We need to patch the method that generates the response string.
     # Looking at nanobot source (implied), there might be a `_generate_response` or similar.
@@ -166,12 +188,15 @@ try:
 
     async def patched_process_message(self, msg, session_key=None, on_progress=None):
         logger.info(f"[SwarmRoute] Intercepted message from {msg.channel}:{msg.sender_id}: {msg.content[:50]}...")
+        logger.debug(f"[SwarmRoute] Full message details: chat_id={msg.chat_id}, session_key={session_key}")
         
         # System messages or commands might need bypass
         if msg.channel == "system":
+             logger.info(f"[SwarmRoute] Bypassing system message")
              return await original_process_message(self, msg, session_key, on_progress)
              
         if SWARM_MANAGER:
+            logger.info(f"[SwarmRoute] Routing to SwarmManager...")
             try:
                 # 1. Force Sync Config: Ensure SwarmManager LLM config overrides any environment variables
                 #    that might have been set by nanobot or previous runs.
@@ -238,40 +263,50 @@ try:
                      response_text = "..."
                      
                 # Create OutboundMessage explicitly
-                from nanobot.bus.events import OutboundMessage
+                # IMPORTANT: We must use the OutboundMessage class from the nanobot we imported
+                from nanobot.bus.events import OutboundMessage as LocalOutboundMessage
                 
-                # IMPORTANT: In nanobot 0.1.x, _process_message expects to return an OutboundMessage object
-                # or a list of them.
-                return OutboundMessage(
+                # Try to get message_id from metadata if not direct attribute
+                reply_message_id = getattr(msg, "message_id", None)
+                if not reply_message_id and msg.metadata:
+                    reply_message_id = msg.metadata.get("message_id")
+                
+                return LocalOutboundMessage(
                     chat_id=msg.chat_id,
                     content=response_text,
                     channel=msg.channel,
-                    reply_to=msg.message_id, # Reply to original message if possible
+                    reply_to=reply_message_id, # Reply to original message if possible
                     metadata=msg.metadata or {}
                 )
             except Exception as e:
                 logger.error(f"[SwarmRoute] Error: {e}", exc_info=True)
-                # DO NOT Fallback to original nanobot agent on error.
-                # If Swarm fails, we want to know why, not get a generic "I don't know" from the old agent.
-                # return await original_process_message(self, msg, session_key, on_progress)
                 
                 # Return error message to user so they know Swarm failed
                 error_msg = f"Swarmbot Execution Error: {str(e)}"
-                from nanobot.bus.events import OutboundMessage
-                return OutboundMessage(
+                from nanobot.bus.events import OutboundMessage as LocalOutboundMessage
+                
+                reply_message_id = getattr(msg, "message_id", None)
+                if not reply_message_id and msg.metadata:
+                    reply_message_id = msg.metadata.get("message_id")
+                    
+                return LocalOutboundMessage(
                     chat_id=msg.chat_id,
                     content=error_msg,
                     channel=msg.channel,
-                    reply_to=msg.message_id,
+                    reply_to=reply_message_id,
                     metadata=msg.metadata or {}
                 )
         else:
             # If SwarmManager failed to init, return error instead of fallback
+            reply_message_id = getattr(msg, "message_id", None)
+            if not reply_message_id and msg.metadata:
+                reply_message_id = msg.metadata.get("message_id")
+                
             return OutboundMessage(
                 chat_id=msg.chat_id,
                 content="Swarmbot System Error: Manager not initialized.",
                 channel=msg.channel,
-                reply_to=msg.message_id
+                reply_to=reply_message_id
             )
 
     AgentLoop._process_message = patched_process_message

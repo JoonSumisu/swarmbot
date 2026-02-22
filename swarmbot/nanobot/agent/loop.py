@@ -287,6 +287,86 @@ class AgentLoop:
         Returns:
             The response message, or None if no response needed.
         """
+        # --- Swarmbot Gateway Hook Point ---
+        # The gateway wrapper monkeypatches this method, but if that fails or is bypassed,
+        # we add a direct hook here to be safe.
+        # This ensures that even if the monkeypatch fails, the logic is present.
+        try:
+            # Check if we are running in a Swarmbot context with SWARM_MANAGER available
+            import sys
+            if "swarmbot.gateway_wrapper" in sys.modules:
+                wrapper = sys.modules["swarmbot.gateway_wrapper"]
+                if hasattr(wrapper, "SWARM_MANAGER") and wrapper.SWARM_MANAGER:
+                    logger.info(f"[SwarmRoute-Native] Intercepting message from {msg.sender_id}")
+                    # Call the wrapper's intercept logic manually if needed, 
+                    # OR just implement the bridge here directly.
+                    
+                    # Let's use the wrapper's patch logic to avoid duplication,
+                    # effectively invoking the patch function explicitly.
+                    # But the patch function expects `self` to be AgentLoop.
+                    
+                    # We can't easily call the patch function from here without circular deps or mess.
+                    # So we implement a minimal bridge here as a fallback/primary.
+                    
+                    if msg.channel == "system":
+                         pass # Fallthrough to original logic
+                    else:
+                        logger.info(f"[SwarmRoute-Native] Routing to SwarmManager...")
+                        
+                        # Use SwarmManager
+                        manager = wrapper.SWARM_MANAGER
+                        
+                        # Sync Config (Critical for LiteLLM/OpenAI env vars)
+                        import os
+                        if hasattr(manager.config, "llm"):
+                            os.environ["OPENAI_API_BASE"] = manager.config.llm.base_url
+                            os.environ["OPENAI_API_KEY"] = manager.config.llm.api_key
+                            os.environ["LITELLM_MODEL"] = manager.config.llm.model
+                        
+                        import asyncio
+                        loop = asyncio.get_running_loop()
+                        
+                        if on_progress:
+                            await on_progress("⏳ Swarm is thinking...")
+                        
+                        # Run Swarm
+                        response_text = await loop.run_in_executor(None, manager.chat, msg.content)
+                        response_text = str(response_text or "...")
+                        
+                        # Feishu cleaning
+                        if msg.channel == "feishu":
+                             if len(response_text) > 4000:
+                                 response_text = response_text[:4000] + "\n\n...（内容过长，已截断）"
+                             if response_text.strip().startswith("```") and response_text.strip().endswith("```"):
+                                 response_text = "\u200b\n" + response_text + "\n\u200b"
+
+                        reply_message_id = getattr(msg, "message_id", None)
+                        if not reply_message_id and msg.metadata:
+                            reply_message_id = msg.metadata.get("message_id")
+
+                        return OutboundMessage(
+                            chat_id=msg.chat_id,
+                            content=response_text,
+                            channel=msg.channel,
+                            reply_to=reply_message_id,
+                            metadata=msg.metadata or {}
+                        )
+        except Exception as e:
+            logger.error(f"[SwarmRoute-Native] Hook failed: {e}", exc_info=True)
+            # Fallthrough to original logic on error? 
+            # Or return error.
+            reply_message_id = getattr(msg, "message_id", None)
+            if not reply_message_id and msg.metadata:
+                reply_message_id = msg.metadata.get("message_id")
+                
+            return OutboundMessage(
+                 chat_id=msg.chat_id,
+                 content=f"Swarmbot Error: {e}",
+                 channel=msg.channel,
+                 reply_to=reply_message_id
+            )
+        # -----------------------------------
+
         # System messages route back via chat_id ("channel:chat_id")
         if msg.channel == "system":
             return await self._process_system_message(msg)

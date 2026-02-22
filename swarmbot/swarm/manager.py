@@ -118,10 +118,13 @@ class SwarmManager:
         skill_map = {
             "finance": ["web_search"], # Finance usually needs search
             "market": ["web_search"],
-            "research": ["web_search", "browser_open"],
-            "code": ["file_write", "shell_exec"],
-            "developer": ["file_write", "shell_exec"],
-            "data": ["python_exec"] # Assuming python skill exists or mapped
+            "research": ["web_search", "browser_open", "browser_read"],
+            "code": ["file_write", "shell_exec", "file_read"],
+            "developer": ["file_write", "shell_exec", "file_read"],
+            "data": ["python_exec"], # Assuming python skill exists or mapped
+            "writer": ["web_search"],
+            "analyst": ["web_search", "browser_read"],
+            "reviewer": ["file_read"]
         }
         
         for i, slot in enumerate(self.agents):
@@ -129,15 +132,27 @@ class SwarmManager:
                 role = new_roles[i]
                 slot.agent.ctx.role = role
                 slot.agent.ctx.agent_id = f"agent-{role}"
+                slot.agent.ctx.skills = {} # Reset skills
                 
                 # Dynamic Skill Injection
+                # 1. Base skills for everyone
+                slot.agent.ctx.skills["whiteboard_update"] = True
+                
+                # 2. Role specific skills
+                injected_tools = []
                 for key, tools in skill_map.items():
                     if key in role.lower():
-                        self._log(f"Injecting skills {tools} into {role}...")
-                        # In a real system we would enable these tools here
+                        for tool in tools:
+                            slot.agent.ctx.skills[tool] = True
+                            injected_tools.append(tool)
+                
+                if injected_tools:
+                    self._log(f"Injecting skills {injected_tools} into {role}...")
+                        
             else:
                 slot.agent.ctx.role = "observer"
                 slot.agent.ctx.agent_id = f"agent-observer-{i}"
+                slot.agent.ctx.skills = {}
 
     def chat(self, user_input: str) -> str:
         # Dual Boot Architecture:
@@ -193,9 +208,29 @@ class SwarmManager:
         except Exception:
             pass
 
-        # IMPORTANT: Clear Whiteboard AFTER persistence.
-        # Whiteboard is ephemeral context for the *current* task only.
-        # Once persisted to LocalMD log, it must be wiped to prevent hallucination in next turn.
+        # IMPORTANT: Do NOT clear Whiteboard here if we are in a multi-turn Loop context.
+        # But since SwarmManager.chat() is currently stateless per call (HTTP request),
+        # we persist it to MD above and clear it to be safe for next independent request.
+        # HOWEVER, User requested: "extend whiteboard life to loop end".
+        # If this is called from a persistent Loop (like overthinking or interactive session),
+        # we should let the caller manage lifecycle or use a session ID.
+        # For now, we assume 'chat' is a discrete task unit.
+        # To support loop-level persistence, we only clear if explicitly told or if it's truly the end.
+        # Let's keep it cleared for now to avoid pollution between unrelated requests,
+        # UNLESS we implement a session manager.
+        # 
+        # Refined Logic: If we are in 'auto' mode, we might have multiple internal steps.
+        # But 'chat' wraps the whole thing.
+        # The user's "Loop" likely refers to the "Overthinking Loop" or "Conversation Session".
+        # Since SwarmManager is instantiated PER REQUEST in Gateway (stateless),
+        # we can't keep memory in RAM across requests unless we use a persistent store.
+        # But wait, Gateway initializes SwarmManager ONCE globally?
+        # Check gateway_wrapper.py: "SWARM_MANAGER = SwarmManager..." -> Global instance.
+        # So memory IS persistent across requests!
+        # Thus, we MUST clear whiteboard between unrelated user requests.
+        # But if the user request triggers a multi-step loop, that loop happens inside `_chat_auto`.
+        # So clearing at the end of `chat` is actually correct for "End of Loop".
+        
         try:
             if hasattr(self.memory.whiteboard, "clear"):
                 self.memory.whiteboard.clear()
@@ -499,8 +534,12 @@ class SwarmManager:
         )
         try:
             r_resp = planner.step(plan_prompt)
-            rounds = int(''.join(filter(str.isdigit, r_resp)))
-            rounds = max(1, min(10, rounds))
+            import re
+            match = re.search(r"\b([1-9]|10)\b", r_resp)
+            if match:
+                rounds = int(match.group(1))
+            else:
+                rounds = 5
             self._log(f"Planner decided on {rounds} rounds.")
         except:
             rounds = 5
@@ -555,7 +594,21 @@ class SwarmManager:
         )
         try:
             ext_resp = judge.step(final_check_prompt)
-            ext_rounds = int(''.join(filter(str.isdigit, ext_resp)) or 0)
+            # Robust extraction: find first single digit or small number
+            import re
+            match = re.search(r"\b([0-9])\b", ext_resp) # Look for single digit 0-9
+            if match:
+                ext_rounds = int(match.group(1))
+            else:
+                # Fallback: check if the whole string is a number
+                if ext_resp.strip().isdigit():
+                    ext_rounds = int(ext_resp.strip())
+                else:
+                    ext_rounds = 0
+            
+            # Hard cap for safety
+            ext_rounds = min(ext_rounds, 3)
+            
             if ext_rounds > 0:
                 self._log(f"Extending workflow by {ext_rounds} rounds...")
                 # Run extension loop (simplified reuse of logic)

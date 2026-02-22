@@ -364,6 +364,8 @@ class FeishuChannel(BaseChannel):
             chat_type = message.chat_type  # "p2p" or "group"
             msg_type = message.message_type
             
+            logger.info(f"[Feishu] Received message {message_id} from {sender_id} in {chat_id} (type: {chat_type})")
+            
             # Add reaction to indicate "seen"
             await self._add_reaction(message_id, "THUMBSUP")
             
@@ -383,14 +385,21 @@ class FeishuChannel(BaseChannel):
                 content = MSG_TYPE_MAP.get(msg_type, f"[{msg_type}]")
             
             if not content:
+                logger.warning(f"[Feishu] Empty content for message {message_id}")
                 return
             
             # Forward to message bus
-            reply_to = chat_id if chat_type == "group" else sender_id
+            # IMPORTANT: For p2p chat, we must reply to chat_id (which is the DM ID), not sender_id (open_id).
+            # Nanobot/Gateway expects chat_id to be the routing key for reply.
+            reply_to = chat_id 
+            
+            logger.info(f"[Feishu] Forwarding to bus: {content[:50]}...")
+            
             await self._handle_message(
                 sender_id=sender_id,
                 chat_id=reply_to,
                 content=content,
+                message_id=message_id,  # Explicitly pass message_id
                 metadata={
                     "message_id": message_id,
                     "chat_type": chat_type,
@@ -399,4 +408,4 @@ class FeishuChannel(BaseChannel):
             )
             
         except Exception as e:
-            logger.error(f"Error processing Feishu message: {e}")
+            logger.error(f"Error processing Feishu message: {e}", exc_info=True)

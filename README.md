@@ -12,11 +12,18 @@ Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Mu
 
 ---
 
-## 🌟 核心架构 v0.2.0
+## 🌟 核心架构 v0.2.6
 
-Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.2.0 中引入了双 Boot 系统：
+Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.2.6 中引入了内置 Gateway 与双 Boot 系统：
 
-### 1. Dual Boot System (New in v0.2)
+### 1. Built-in Gateway (Native Integration)
+*   **特性**: 彻底摆脱对外部 nanobot 包的依赖，直接内置并增强了 Gateway 模块。
+*   **能力**: 
+    *   **Native Hook**: 通过 Monkeypatch 与原生 Hook 双重机制，无缝接管消息流，确保所有请求都经过 SwarmManager 处理。
+    *   **WebSocket**: 飞书通道采用 WebSocket 长连接，无需公网 IP，内网即可部署。
+    *   **配置统一**: 自动同步 Swarmbot 配置到 Gateway，无需维护两套配置文件。
+
+### 2. Dual Boot System (Cognitive Engine)
 - **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆。
 - **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md` (身份) 进行二次解释与用户交互。
 
@@ -197,9 +204,11 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
     *   `overthinking setup`：配置开关/周期/步数
     *   `overthinking start`：前台启动循环（开发/调试用）
 
-### 10. `swarmbot update` [v0.2 新增]
+### 10. `swarmbot update` [v0.2.6]
 *   **功能**：更新核心代码。
-*   **特性**：保留 `swarmbot/boot/` 下的所有个性化配置（人格、工具策略等）。
+*   **特性**：
+    *   保留 `swarmbot/boot/` 下的所有个性化配置。
+    *   自动处理依赖更新与内置 Gateway 的迁移。
 
 ---
 

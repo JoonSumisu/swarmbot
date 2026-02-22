@@ -61,9 +61,18 @@ swarmbot provider add --base-url "http://127.0.0.1:8000/v1" --api-key "YOUR_API_
 }
 ```
 
-## 内置 nanobot（配置桥接）
-Swarmbot 内置 nanobot 实现用于复用网关/通道能力，并在运行时将 SwarmbotConfig 映射为 nanobot 的 Config。
-该映射逻辑位于 [loader.py](file:///root/swarmbot/swarmbot/nanobot/config/loader.py)。
+## 内置 nanobot（架构升级 v0.2.6）
+Swarmbot 现已彻底集成 nanobot 源码（vendored），不再依赖外部 pip 包。
+
+### Gateway 架构
+1.  **Wrapper**: `gateway_wrapper.py` 作为入口，负责 Monkeypatch `AgentLoop` 和 `ChannelManager`。
+2.  **Config Sync**: `swarmbot.nanobot.config.loader` 负责实时将 `SwarmbotConfig` 映射为内存中的 nanobot 配置，不再生成临时文件。
+3.  **Hook 机制**:
+    *   **External Patch**: 在 Gateway 启动前拦截 `AgentLoop._process_message`。
+    *   **Native Hook**: 在 `nanobot/agent/loop.py` 内部硬编码检查 `SWARM_MANAGER`，作为兜底防线。
+    *   **Message Fix**: 修复了 `InboundMessage` 缺失 `message_id` 的问题，确保消息回执可靠。
+
+该设计确保了 Swarmbot 拥有对消息流的完全控制权，同时复用了成熟的通道适配器。
 
 ## 测试
 运行全部单测：

@@ -289,7 +289,8 @@ class NanobotSkillAdapter:
 
     def _tool_whiteboard_update(self, key: str, value: str, context: Optional[Dict[str, Any]] = None) -> str:
         if not context or "memory_map" not in context:
-            return "Error: MemoryMap not available"
+            # Fallback to direct access if possible (hacky)
+            return "Error: MemoryMap not available in context"
         
         memory_map = context["memory_map"]
         # Assuming memory_map is a MemoryMap object or dict

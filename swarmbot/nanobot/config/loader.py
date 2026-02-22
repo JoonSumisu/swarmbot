@@ -19,13 +19,28 @@ def get_data_dir() -> Path:
 
 def _swarmbot_to_nanobot_dict() -> dict:
     from swarmbot.config_manager import WORKSPACE_PATH, load_config as load_swarmbot_config
-
+    import logging
+    logger = logging.getLogger("nanobot.config")
+    
     cfg = load_swarmbot_config()
 
     channels: dict[str, dict] = {}
     for name, c in (cfg.channels or {}).items():
         payload = dict(c.config or {})
         payload["enabled"] = bool(c.enabled)
+        
+        # Merge top-level fields from ChannelConfig
+        if hasattr(c, "app_id") and c.app_id:
+            payload["app_id"] = c.app_id
+        if hasattr(c, "app_secret") and c.app_secret:
+            payload["app_secret"] = c.app_secret
+        if hasattr(c, "encrypt_key") and c.encrypt_key:
+            payload["encrypt_key"] = c.encrypt_key
+        if hasattr(c, "verification_token") and c.verification_token:
+            payload["verification_token"] = c.verification_token
+        if hasattr(c, "token") and c.token:
+            payload["token"] = c.token
+
         if name == "feishu":
             if "appId" in payload and "app_id" not in payload:
                 payload["app_id"] = payload.pop("appId")
@@ -37,6 +52,9 @@ def _swarmbot_to_nanobot_dict() -> dict:
                 payload["verification_token"] = payload.pop("verificationToken")
             if "allowFrom" in payload and "allow_from" not in payload:
                 payload["allow_from"] = payload.pop("allowFrom")
+            
+            logger.info(f"Loaded Feishu config: enabled={payload.get('enabled')}, app_id={payload.get('app_id', '')[:5]}...")
+        
         channels[name] = payload
 
     port_raw = os.environ.get("OPENCLAW_GATEWAY_PORT")

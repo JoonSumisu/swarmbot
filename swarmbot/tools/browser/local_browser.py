@@ -123,9 +123,53 @@ class LocalBrowserTool:
     def one_off_read(self, url: str) -> str:
         """
         Headless one-off read. Best for search results and simple pages.
+        Includes robust browser detection and fallback to simple curl/requests if no browser found.
         """
+        executable = self.config.executable_path
+        
+        # 1. Auto-detect browser executable if not set
+        if not executable:
+            import shutil
+            # Common linux paths
+            candidates = [
+                "google-chrome", 
+                "chromium", 
+                "chromium-browser", 
+                "brave-browser",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser"
+            ]
+            for browser in candidates:
+                if shutil.which(browser):
+                    executable = browser
+                    break
+        
+        # 2. If still no browser, Fallback to basic HTTP request (curl/urllib)
+        if not executable:
+            # Fallback strategy
+            try:
+                import urllib.request
+                import urllib.error
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                )
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    html = response.read().decode('utf-8', errors='ignore')
+                    
+                    # Basic cleanup
+                    import re
+                    clean_text = re.sub(r'<(script|style).*?</\1>', '', html, flags=re.DOTALL)
+                    clean_text = re.sub(r'<[^>]+>', ' ', clean_text)
+                    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                    
+                    return f"[Fallback: No Browser Found] {clean_text[:10000]}"
+            except Exception as e:
+                return f"Error: No browser found and fallback request failed: {e}"
+
         cmd = [
-            self.config.executable_path or "google-chrome",
+            executable,
             "--headless=new",
             "--dump-dom",
             "--no-sandbox",
@@ -136,14 +180,6 @@ class LocalBrowserTool:
         ]
         
         try:
-            # Simple detection logic
-            if not self.config.executable_path:
-                import shutil
-                for browser in ["google-chrome", "chromium", "brave-browser"]:
-                    if shutil.which(browser):
-                        cmd[0] = browser
-                        break
-            
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
                 # Basic HTML cleanup: Remove scripts and styles for cleaner text

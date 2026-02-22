@@ -17,6 +17,15 @@ class InboundMessage:
     media: list[str] = field(default_factory=list)  # Media URLs
     metadata: dict[str, Any] = field(default_factory=dict)  # Channel-specific data
     
+    # Explicitly add message_id as an optional field for OpenClaw/Nanobot compatibility
+    # Some parts of the codebase expect this to be a direct attribute
+    message_id: str | None = None
+
+    def __post_init__(self):
+        # Auto-populate message_id from metadata if not provided but present in metadata
+        if self.message_id is None and self.metadata and "message_id" in self.metadata:
+            self.message_id = self.metadata["message_id"]
+    
     @property
     def session_key(self) -> str:
         """Unique key for session identification."""

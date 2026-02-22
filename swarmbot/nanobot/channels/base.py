@@ -89,7 +89,8 @@ class BaseChannel(ABC):
         chat_id: str,
         content: str,
         media: list[str] | None = None,
-        metadata: dict[str, Any] | None = None
+        metadata: dict[str, Any] | None = None,
+        message_id: str | None = None  # Add message_id param
     ) -> None:
         """
         Handle an incoming message from the chat platform.
@@ -102,6 +103,7 @@ class BaseChannel(ABC):
             content: Message text content.
             media: Optional list of media URLs.
             metadata: Optional channel-specific metadata.
+            message_id: Optional message ID for direct assignment.
         """
         if not self.is_allowed(sender_id):
             logger.warning(
@@ -110,13 +112,19 @@ class BaseChannel(ABC):
             )
             return
         
+        # Ensure message_id is in metadata if provided
+        final_metadata = metadata or {}
+        if message_id:
+            final_metadata["message_id"] = message_id
+            
         msg = InboundMessage(
             channel=self.name,
             sender_id=str(sender_id),
             chat_id=str(chat_id),
             content=content,
             media=media or [],
-            metadata=metadata or {}
+            metadata=final_metadata,
+            message_id=message_id # Pass explicitly to dataclass
         )
         
         await self.bus.publish_inbound(msg)
