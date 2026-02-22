@@ -375,14 +375,21 @@ class SwarmManager:
         # Force Master/Judge role for Consensus to ensure Soul binding
         judge.ctx.role = "consensus_moderator" 
         
+        # Inject current time into the consensus prompt to help with time-sensitive queries
+        import datetime
+        import time
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timezone = time.strftime("%z")
+        
         is_zh = any("\u4e00" <= ch <= "\u9fff" for ch in user_input)
         consensus_prompt = (
             "你是 Consensus Moderator。你的目标是基于不同 Agent 的输出，综合出一个最终、连贯、可执行的答案。\n"
             "要求：\n"
             "1) 合并互补信息，消解冲突；\n"
             "2) 直接回答用户原始问题；\n"
-            "3) 如果涉及事实/时间/参数，必须依据工具检索结果表述；不确定就明确标注。\n"
-            "4) 输出语言必须与用户输入一致。\n\n"
+            "3) 如果涉及事实/时间/参数，必须依据工具检索结果或系统提供的当前时间表述；不确定就明确标注。\n"
+            "4) 输出语言必须与用户输入一致。\n"
+            f"5) 系统当前参考时间：{current_time} ({timezone})\n\n"
             f"用户原始问题：{user_input}\n\n"
             "各 Agent 输出：\n" + "\n".join(outputs) + "\n\n"
             "请给出最终答案："
@@ -390,6 +397,7 @@ class SwarmManager:
             else
             "You are the Consensus Moderator. Synthesize a final cohesive answer based on agent outputs. "
             "Resolve conflicts, merge complementary information, and directly answer the original request. "
+            f"System Reference Time: {current_time} ({timezone}).\n"
             f"\n\nOriginal Request: {user_input}\n\nAgent Outputs:\n" + "\n".join(outputs) + "\n\nFinal Answer:"
         )
         
