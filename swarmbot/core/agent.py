@@ -116,7 +116,11 @@ class CoreAgent:
             "如果你看到 Whiteboard/WorkMap 中的 current_task_context，请以其为最高优先级理解任务。\n"
             "IMPORTANT: When answering questions about current events, technology updates, or dynamic data, "
             "you MUST prioritize using the 'web_search' tool over your internal training data. "
-            "Always verify the date of the information found."
+            "Always verify the date of the information found.\n\n"
+            "【工具调用限制】:\n"
+            "请务必先检查 Whiteboard (current_task_context 或其他字段) 中是否已经存在其他 Agent 提供的相关信息。\n"
+            "如果 Whiteboard 中已经有了所需的天气、搜索结果或代码，**请不要重复调用相同的工具**去获取相同的信息。\n"
+            "直接使用白板中的信息进行推理和回答。"
         )
         
         messages.append({"role": "system", "content": f"{role_desc}\n{system_instructions}"})
