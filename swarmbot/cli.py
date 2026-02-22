@@ -15,6 +15,151 @@ from .config_manager import (
 )
 from .swarm.manager import SwarmManager
 import shutil
+import os
+
+
+def load_nanobot_config() -> dict:
+    config_path = os.path.expanduser("~/.nanobot/config.json")
+    if not os.path.exists(config_path):
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading nanobot config: {e}", file=sys.stderr)
+        return {}
+
+def save_nanobot_config(config: dict) -> None:
+    config_path = os.path.expanduser("~/.nanobot/config.json")
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving nanobot config: {e}", file=sys.stderr)
+
+
+def cmd_channels(args: argparse.Namespace, extra_args: list[str]) -> None:
+    # Handle local channel management instead of passthrough
+    if not extra_args:
+        cmd_channels_list()
+        return
+
+    action = extra_args[0]
+
+    if action == "list":
+        cmd_channels_list()
+    elif action in ("add", "enable"):
+        if len(extra_args) < 2:
+            print("Usage: swarmbot channels add <name> [key=value ...]")
+            return
+        name = extra_args[1]
+        params = extra_args[2:]
+        cmd_channels_enable(name, params)
+    elif action in ("remove", "disable"):
+        if len(extra_args) < 2:
+            print("Usage: swarmbot channels remove <name>")
+            return
+        name = extra_args[1]
+        cmd_channels_disable(name)
+    elif action == "config":
+        if len(extra_args) < 2:
+            print("Usage: swarmbot channels config <name> [key=value ...]")
+            return
+        name = extra_args[1]
+        params_list = extra_args[2:]
+        params = {}
+        for arg in params_list:
+            if "=" in arg:
+                k, v = arg.split("=", 1)
+                params[k] = v
+        cmd_channels_config(name, params)
+    else:
+        # Fallback to passthrough for other commands like 'status', 'login'
+        cmd_passthrough("channels", extra_args)
+
+def cmd_channels_list() -> None:
+    cfg = load_nanobot_config()
+    channels = cfg.get("channels", {})
+    print("Available Channels:")
+    print(f"{'Name':<15} {'Status':<10} {'Config'}")
+    print("-" * 50)
+    for name, data in channels.items():
+        status = "Enabled" if data.get("enabled") else "Disabled"
+        print(f"{name:<15} {status:<10}")
+
+def cmd_channels_enable(name: str, args: list[str]) -> None:
+    cfg = load_nanobot_config()
+    if "channels" not in cfg:
+        cfg["channels"] = {}
+    
+    # Process args first
+    params = {}
+    for arg in args:
+        if "=" in arg:
+            k, v = arg.split("=", 1)
+            params[k] = v
+
+    # Interactive setup for Feishu
+    if name == "feishu":
+        required_keys = ["appId", "appSecret"]
+        current_config = cfg.get("channels", {}).get(name, {})
+        
+        # Check missing keys (only if not provided in args and not in config)
+        # But if user runs 'add feishu', they likely want to configure it even if exists?
+        # Let's check if args are empty and config is empty-ish
+        
+        missing = [k for k in required_keys if k not in params and k not in current_config]
+        
+        # If explicitly requested via add, or missing keys, trigger interactive
+        if missing or not params:
+            print(f"Configuring Feishu channel...")
+            for k in required_keys:
+                if k not in params and k not in current_config:
+                    val = input(f"Enter {k}: ").strip()
+                    if val:
+                        params[k] = val
+            
+            # Optional keys
+            if "encryptKey" not in params and "encryptKey" not in current_config:
+                val = input("Enter encryptKey (optional, press Enter to skip): ").strip()
+                if val:
+                    params["encryptKey"] = val
+            if "verificationToken" not in params and "verificationToken" not in current_config:
+                val = input("Enter verificationToken (optional, press Enter to skip): ").strip()
+                if val:
+                    params["verificationToken"] = val
+
+    if name not in cfg["channels"]:
+        print(f"Channel '{name}' not found in default config. Creating new entry...")
+        cfg["channels"][name] = {"enabled": True, "allowFrom": []}
+    
+    cfg["channels"][name]["enabled"] = True
+    cfg["channels"][name].update(params)
+            
+    save_nanobot_config(cfg)
+    print(f"Channel '{name}' enabled and configured.")
+
+def cmd_channels_disable(name: str) -> None:
+    cfg = load_nanobot_config()
+    if "channels" in cfg and name in cfg["channels"]:
+        cfg["channels"][name]["enabled"] = False
+        save_nanobot_config(cfg)
+        print(f"Channel '{name}' disabled.")
+    else:
+        print(f"Channel '{name}' is not enabled or does not exist.")
+
+def cmd_channels_config(name: str, params: dict) -> None:
+    cfg = load_nanobot_config()
+    if "channels" not in cfg or name not in cfg["channels"]:
+        print(f"Channel '{name}' not found. Please enable it first using 'add' or 'enable'.")
+        return
+        
+    for k, v in params.items():
+        cfg["channels"][name][k] = v
+        
+    save_nanobot_config(cfg)
+    print(f"Channel '{name}' configuration updated.")
 
 
 def cmd_onboard() -> None:
@@ -382,7 +527,7 @@ def main() -> None:
         # Pass all extra args
         cmd_passthrough("tool", sys.argv[2:])
     elif args.command == "channels":
-        cmd_passthrough("channels", sys.argv[2:])
+        cmd_channels(args, sys.argv[2:])
     elif args.command == "cron":
         cmd_passthrough("cron", sys.argv[2:])
     elif args.command == "agent":

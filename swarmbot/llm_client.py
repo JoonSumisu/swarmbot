@@ -54,6 +54,17 @@ class OpenAICompatibleClient:
         # litellm handles the call
         return await litellm_acompletion(**params)
 
+    def _sanitize_recursive(self, obj: Any) -> Any:
+        if isinstance(obj, str):
+            # Replace surrogate characters that are invalid in UTF-8
+            return obj.encode('utf-8', 'replace').decode('utf-8')
+        elif isinstance(obj, list):
+            return [self._sanitize_recursive(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {k: self._sanitize_recursive(v) for k, v in obj.items()}
+        else:
+            return obj
+
     def completion(
         self,
         messages: List[Dict[str, Any]],
@@ -62,6 +73,9 @@ class OpenAICompatibleClient:
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Any:
+        # Sanitize messages to prevent surrogate errors in JSON encoding
+        messages = self._sanitize_recursive(messages)
+        
         # Filter out empty messages to prevent "Invalid request: message must not be empty" errors
         # Some local models/litellm are strict about this.
         filtered_messages = []
