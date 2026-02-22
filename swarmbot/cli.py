@@ -417,6 +417,11 @@ def cmd_update() -> None:
         subprocess.run([sys.executable, "-m", "pip", "install", "."], cwd=package_dir, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error updating dependencies: {e}", file=sys.stderr)
+        # Check for common PEP 668 error
+        if "externally-managed-environment" in str(e) or e.returncode == 1:
+             print("\nHint: It seems you are running in an externally managed environment (PEP 668).", file=sys.stderr)
+             print("If you are not using a virtual environment, please try running the update script instead:", file=sys.stderr)
+             print(f"  {os.path.join(package_dir, 'scripts', 'install_deps.sh')}", file=sys.stderr)
         return
 
     print("Update complete!")
