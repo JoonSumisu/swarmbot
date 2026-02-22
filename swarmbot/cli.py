@@ -387,17 +387,26 @@ def cmd_update() -> None:
     """
     print("Updating Swarmbot...")
     
+    # Get the directory where the package is installed
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
     # 1. Check if git is available and inside a git repo
     try:
-        subprocess.run(["git", "status"], check=True, capture_output=True)
+        # Check if the installed directory is a git repo
+        if not os.path.exists(os.path.join(package_dir, ".git")):
+             print(f"Error: Installation directory '{package_dir}' is not a git repository.", file=sys.stderr)
+             print("If you installed via pip/pipx directly, please update using: pip install --upgrade swarmbot", file=sys.stderr)
+             return
+
+        subprocess.run(["git", "status"], cwd=package_dir, check=True, capture_output=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
-        print("Error: Not a git repository or git not installed. Cannot update via CLI.", file=sys.stderr)
+        print("Error: Git command failed or not installed.", file=sys.stderr)
         return
 
     # 2. Pull latest changes
     try:
-        print("Pulling latest changes from remote...")
-        subprocess.run(["git", "pull"], check=True)
+        print(f"Pulling latest changes from remote in {package_dir}...")
+        subprocess.run(["git", "pull"], cwd=package_dir, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error pulling changes: {e}", file=sys.stderr)
         return
@@ -405,7 +414,7 @@ def cmd_update() -> None:
     # 3. Re-install dependencies (optional but recommended)
     try:
         print("Updating dependencies...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "."], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "."], cwd=package_dir, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error updating dependencies: {e}", file=sys.stderr)
         return
