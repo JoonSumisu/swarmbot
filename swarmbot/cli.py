@@ -266,6 +266,15 @@ def get_available_port(start_port: int, step: int = 20, max_tries: int = 5) -> i
     raise RuntimeError(f"Could not find available port starting from {start_port}")
 
 def cmd_gateway() -> None:
+    # Kill any existing gateway processes first to ensure clean state
+    # This prevents zombie processes or port conflicts
+    try:
+        subprocess.run(["pkill", "-f", "swarmbot gateway"], check=False, stderr=subprocess.DEVNULL)
+        # Also kill nanobot gateway if it was running independently
+        subprocess.run(["pkill", "-f", "nanobot gateway"], check=False, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
     # 检查端口冲突并自动递增
     # Default nanobot gateway port is 18990
     try:

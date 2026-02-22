@@ -172,26 +172,26 @@ try:
              return await original_process_message(self, msg, session_key, on_progress)
              
         if SWARM_MANAGER:
-        try:
-            # 1. Force Sync Config: Ensure SwarmManager LLM config overrides any environment variables
-            #    that might have been set by nanobot or previous runs.
-            #    This is crucial if nanobot re-reads env vars or config files during its lifecycle.
-            #    We re-assert our dominance here.
-            if hasattr(SWARM_MANAGER.config, "llm"):
-                os.environ["OPENAI_API_BASE"] = SWARM_MANAGER.config.llm.base_url
-                os.environ["OPENAI_API_KEY"] = SWARM_MANAGER.config.llm.api_key
-                os.environ["LITELLM_MODEL"] = SWARM_MANAGER.config.llm.model
-                # Also force override litellm global state if possible, as litellm caches env vars
-                try:
-                    import litellm
-                    litellm.api_key = SWARM_MANAGER.config.llm.api_key
-                    litellm.api_base = SWARM_MANAGER.config.llm.base_url
-                except ImportError:
-                    pass
-            
-            # INTEGRATION WITH NANOBOT LOOP
-            import asyncio
-            loop = asyncio.get_running_loop()
+            try:
+                # 1. Force Sync Config: Ensure SwarmManager LLM config overrides any environment variables
+                #    that might have been set by nanobot or previous runs.
+                #    This is crucial if nanobot re-reads env vars or config files during its lifecycle.
+                #    We re-assert our dominance here.
+                if hasattr(SWARM_MANAGER.config, "llm"):
+                    os.environ["OPENAI_API_BASE"] = SWARM_MANAGER.config.llm.base_url
+                    os.environ["OPENAI_API_KEY"] = SWARM_MANAGER.config.llm.api_key
+                    os.environ["LITELLM_MODEL"] = SWARM_MANAGER.config.llm.model
+                    # Also force override litellm global state if possible, as litellm caches env vars
+                    try:
+                        import litellm
+                        litellm.api_key = SWARM_MANAGER.config.llm.api_key
+                        litellm.api_base = SWARM_MANAGER.config.llm.base_url
+                    except ImportError:
+                        pass
+                
+                # Integration with Nanobot Loop
+                import asyncio
+                loop = asyncio.get_running_loop()
                 
                 if on_progress:
                     await on_progress("⏳ Swarm is thinking...")
