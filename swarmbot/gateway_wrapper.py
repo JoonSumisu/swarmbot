@@ -196,17 +196,29 @@ try:
                         if len(text) > 4000:
                             text = text[:4000] + "\n\n...（内容过长，已截断）"
                         
-                        # 2. Remove special sequences that break card rendering
-                        import re
-                        # User requested replacement logic:
-                        # Replace code blocks with [代码块]
-                        text = re.sub(r'```.*?```', '[代码块]', text, flags=re.DOTALL)
-                        # Replace inline code with [代码]
-                        text = re.sub(r'`.*?`', '[代码]', text)
+                        # 2. Fix code block formatting for Feishu
+                        # Feishu rendering engine sometimes breaks with raw markdown code blocks
+                        # But completely removing them (as requested) might hide useful info.
+                        # However, based on user feedback "存在冲突，请你解决[代码块]的内容导致我无法了解具体发生了什么事情",
+                        # The previous replacement logic was TOO aggressive.
+                        # The user complained about seeing "[代码块]" placeholders instead of actual content.
                         
-                        # Simplify repetitive characters
-                        text = re.sub(r'\*\*\*+', '***', text)
-                        text = re.sub(r'_{3,}', '___', text)
+                        # Let's keep the code content but ensure it's safe for Feishu.
+                        # Usually standard markdown ``` works, but maybe nested or specific chars break it.
+                        # We will try to preserve content but maybe strip language tags if they cause issues,
+                        # or just ensure newlines.
+                        
+                        # IMPORTANT: The user's complaint "存在冲突，请你解决[代码块]的内容导致我无法了解具体发生了什么事情"
+                        # means my previous `re.sub(r'```.*?```', '[代码块]', ...)` was BAD.
+                        # I should REMOVE that replacement logic and let the code show.
+                        
+                        # But I need to fix the "blank card" issue. Blank card usually happens if JSON is invalid
+                        # or text is empty.
+                        
+                        # Refined strategy:
+                        # 1. Ensure text is not empty (already done).
+                        # 2. Don't strip code blocks aggressively.
+                        # 3. Maybe just ensure there's text outside code blocks?
                         
                         return text
 
