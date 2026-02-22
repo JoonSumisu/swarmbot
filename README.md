@@ -105,7 +105,15 @@ pip install . --break-system-packages
 Swarmbot 默认不包含任何 API Key，请手动配置 OpenAI 兼容接口（如 Kimi, DeepSeek, Localhost）：
 
 ```bash
-swarmbot provider add \
+# 本地模型配置示例（支持 Ollama, vLLM, LM Studio 等）
+./swarmbot_run provider add \
+  --base-url http://127.0.0.1:11434/v1 \
+  --api-key dummy \
+  --model llama3 \
+  --max-tokens 8192
+
+# 远程模型配置示例
+./swarmbot_run provider add \
   --base-url https://api.moonshot.cn/v1 \
   --api-key YOUR_API_KEY \
   --model kimi-k2-turbo-preview \
@@ -115,22 +123,22 @@ swarmbot provider add \
 ### 3. 运行对话
 ```bash
 # 直接启动（默认 Concurrent）
-swarmbot run
+./swarmbot_run run
 ```
 
 ### 4. 切换架构（Concurrent / Auto）
 ```bash
 # 小模型/本地模型：默认 concurrent
-swarmbot config --architecture concurrent
+./swarmbot_run config --architecture concurrent
 
 # 大模型可启用 auto（存在一定随机性，适合更强的模型）
-swarmbot config --architecture auto --auto-builder true
+./swarmbot_run config --architecture auto --auto-builder true
 ```
 
 ### 5. 升级 (Update) [v0.2 新增]
 ```bash
 # 拉取最新代码并保留个性化配置
-swarmbot update
+./swarmbot_run update
 ```
 
 ---
@@ -167,8 +175,8 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   示例：
 
 ```bash
-swarmbot config --architecture concurrent --agent-count 4
-swarmbot config --architecture auto --auto-builder true
+./swarmbot_run config --architecture concurrent --agent-count 4
+./swarmbot_run config --architecture auto --auto-builder true
 ```
 
 ### 4. `swarmbot provider`
@@ -180,10 +188,10 @@ swarmbot config --architecture auto --auto-builder true
 ```bash
 # 本地模型配置示例（支持 Ollama, vLLM, LM Studio 等）
 # 兼容 openai 格式，不再强制依赖 openai/ 前缀
-swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model llama3 --max-tokens 8192
+./swarmbot_run provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --model llama3 --max-tokens 8192
 
 # 远程模型配置示例
-swarmbot provider add --base-url https://api.moonshot.cn/v1 --api-key YOUR_API_KEY --model kimi-k2-turbo-preview --max-tokens 126000
+./swarmbot_run provider add --base-url https://api.moonshot.cn/v1 --api-key YOUR_API_KEY --model kimi-k2-turbo-preview --max-tokens 126000
 ```
 
 ### 5. `swarmbot status`
