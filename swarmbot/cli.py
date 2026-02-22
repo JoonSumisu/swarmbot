@@ -139,6 +139,9 @@ def cmd_channels_enable(name: str, args: list[str]) -> None:
             
     save_nanobot_config(cfg)
     print(f"Channel '{name}' enabled and configured.")
+    print(f"Configuration saved to: {os.path.expanduser('~/.nanobot/config.json')}")
+    # Print current config for verification
+    print(json.dumps({name: cfg["channels"][name]}, ensure_ascii=False, indent=2))
 
 def cmd_channels_disable(name: str) -> None:
     cfg = load_nanobot_config()
