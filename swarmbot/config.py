@@ -6,9 +6,10 @@ from typing import Optional
 
 @dataclass
 class LLMConfig:
-    base_url: str = "http://localhost:11434/v1"
-    api_key: str = "dummy"
-    model: str = "local-model"
+    # Default values are intentionally blank or placeholder to force config loading
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
     timeout: float = 120.0
 
 

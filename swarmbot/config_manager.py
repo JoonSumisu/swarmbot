@@ -93,6 +93,15 @@ def load_config() -> SwarmbotConfig:
         max_tokens=provider_data.get("max_tokens", 4096),
         temperature=provider_data.get("temperature", 0.6),
     )
+    
+    # 2. Force Sync to Environment Variables Immediately upon load
+    # This ensures any subsequent code (including imports) sees the correct config
+    if provider.base_url:
+        os.environ["OPENAI_API_BASE"] = provider.base_url
+    if provider.api_key:
+        os.environ["OPENAI_API_KEY"] = provider.api_key
+    if provider.model:
+        os.environ["LITELLM_MODEL"] = provider.model
 
     swarm_data = data.get("swarm", {})
     swarm = SwarmSettings(
