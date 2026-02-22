@@ -36,7 +36,15 @@ try:
 except Exception as e:
     logger.error(f"Failed to init SwarmManager: {e}")
 
-# --- 3. Define Patch Logic ---
+# --- 3. Bind vendored nanobot as top-level module name ---
+try:
+    import swarmbot.nanobot as vendored_nanobot
+    sys.modules.setdefault("nanobot", vendored_nanobot)
+    logger.info("Bound vendored swarmbot.nanobot as top-level 'nanobot' module")
+except Exception as e:
+    logger.error(f"Could not bind vendored nanobot package: {e}")
+
+# --- 4. Define Patch Logic ---
 
 async def patched_process_message(self, msg, session_key=None, on_progress=None):
     """
@@ -133,7 +141,7 @@ async def patched_process_message(self, msg, session_key=None, on_progress=None)
             metadata=msg.metadata or {}
         )
 
-# --- 4. Apply Monkeypatch ---
+# --- 5. Apply Monkeypatch ---
 try:
     # Import AgentLoop to patch it
     from nanobot.agent.loop import AgentLoop
@@ -150,7 +158,7 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"Unexpected error during patching: {e}")
 
-# --- 5. Run Application ---
+# --- 6. Run Application ---
 if __name__ == "__main__":
     try:
         from nanobot.cli.commands import app
