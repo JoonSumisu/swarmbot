@@ -172,10 +172,19 @@ try:
              return await original_process_message(self, msg, session_key, on_progress)
              
         if SWARM_MANAGER:
-            try:
-                # INTEGRATION WITH NANOBOT LOOP
-                import asyncio
-                loop = asyncio.get_running_loop()
+        try:
+            # 1. Force Sync Config: Ensure SwarmManager LLM config overrides any environment variables
+            #    that might have been set by nanobot or previous runs.
+            #    This is crucial if nanobot re-reads env vars or config files during its lifecycle.
+            #    We re-assert our dominance here.
+            if hasattr(SWARM_MANAGER.config, "llm"):
+                os.environ["OPENAI_API_BASE"] = SWARM_MANAGER.config.llm.base_url
+                os.environ["OPENAI_API_KEY"] = SWARM_MANAGER.config.llm.api_key
+                os.environ["LITELLM_MODEL"] = SWARM_MANAGER.config.llm.model
+            
+            # INTEGRATION WITH NANOBOT LOOP
+            import asyncio
+            loop = asyncio.get_running_loop()
                 
                 if on_progress:
                     await on_progress("⏳ Swarm is thinking...")
