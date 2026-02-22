@@ -37,7 +37,16 @@ def cmd_onboard() -> None:
                     print(f"  Skipped {filename} (already exists)")
     
     try:
-        subprocess.run(["nanobot", "onboard"], check=False)
+        # Check if nanobot config exists to decide on overwrite
+        nanobot_config = os.path.expanduser("~/.nanobot/config.json")
+        if os.path.exists(nanobot_config):
+             print(f"Nanobot config already exists at {nanobot_config}, skipping interactive onboard.")
+             # We can run 'nanobot onboard --no-interactive' if supported, or just skip.
+             # Nanobot onboard is interactive by default. 
+             # Best to skip if config exists to avoid blocking.
+             pass
+        else:
+             subprocess.run(["nanobot", "onboard"], check=False)
     except FileNotFoundError:
         pass
     print(f"Swarmbot 已完成初始化，配置文件位于: {CONFIG_PATH}")
