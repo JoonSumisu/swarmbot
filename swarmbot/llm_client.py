@@ -97,7 +97,7 @@ class OpenAICompatibleClient:
             is_known = any(model_name.startswith(p + "/") for p in known_providers)
             
             if not is_known:
-                # E.g. "openbmb/agentcpm-explore" -> Treat as OpenAI compatible
+                # Treat unknown model prefixes as OpenAI compatible custom models
                 custom_llm_provider = "openai"
             elif model_name.startswith("openai/"):
                 # Already prefixed, standard behavior

@@ -251,10 +251,28 @@ try:
                 )
             except Exception as e:
                 logger.error(f"[SwarmRoute] Error: {e}", exc_info=True)
-                # Fallback to original if swarm fails? Or return error
-                return await original_process_message(self, msg, session_key, on_progress)
+                # DO NOT Fallback to original nanobot agent on error.
+                # If Swarm fails, we want to know why, not get a generic "I don't know" from the old agent.
+                # return await original_process_message(self, msg, session_key, on_progress)
+                
+                # Return error message to user so they know Swarm failed
+                error_msg = f"Swarmbot Execution Error: {str(e)}"
+                from nanobot.bus.events import OutboundMessage
+                return OutboundMessage(
+                    chat_id=msg.chat_id,
+                    content=error_msg,
+                    channel=msg.channel,
+                    reply_to=msg.message_id,
+                    metadata=msg.metadata or {}
+                )
         else:
-            return await original_process_message(self, msg, session_key, on_progress)
+            # If SwarmManager failed to init, return error instead of fallback
+            return OutboundMessage(
+                chat_id=msg.chat_id,
+                content="Swarmbot System Error: Manager not initialized.",
+                channel=msg.channel,
+                reply_to=msg.message_id
+            )
 
     AgentLoop._process_message = patched_process_message
     logger.info("Successfully patched AgentLoop._process_message")
