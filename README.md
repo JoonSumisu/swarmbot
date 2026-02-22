@@ -175,7 +175,19 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 
 ### 6. `swarmbot gateway`
 *   **功能**：启动多渠道网关（通过 wrapper 接管 nanobot gateway）。
-*   **说明**：用于飞书/Slack/Telegram 等渠道接入；具体渠道配置仍以 nanobot 为准。
+*   **特性**：
+    *   **默认后台运行**：v0.2+ 版本优化了启动逻辑，gateway 默认以守护进程（后台）方式运行，不占用当前终端。
+    *   **日志输出**：启动后会提示日志文件位置（通常在 `~/.swarmbot/logs/gateway.log`）。
+    *   **多渠道支持**：无缝对接飞书、Slack、Telegram、微信等（复用 nanobot 配置）。
+*   **使用方法**：
+    ```bash
+    # 启动网关（后台运行）
+    swarmbot gateway
+    
+    # 查看运行日志
+    tail -f ~/.swarmbot/logs/gateway.log
+    ```
+
 
 ### 7. `swarmbot heartbeat`
 *   **功能**：透传 `nanobot heartbeat`。

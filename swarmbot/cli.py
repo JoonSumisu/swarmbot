@@ -254,28 +254,30 @@ def cmd_gateway() -> None:
         port = get_available_port(18990)
         env["OPENCLAW_GATEWAY_PORT"] = str(port)
         
-        # Enable Agent Interceptor
-        # We need to tell nanobot to route messages to our interceptor script instead of default processing
-        # Or better: Swarmbot Gateway runs as a standalone process that wraps nanobot.
-        # But here we are just running 'nanobot gateway'.
-        
-        # To intercept messages without modifying nanobot code, we can use the 'agent' hook in nanobot config?
-        # Nanobot doesn't have a plugin hook for message routing easily exposed yet.
-        # However, we can use the fact that we control the `nanobot` environment.
-        
-        # STRATEGY: 
-        # We will point nanobot's agent loop to use a custom agent implementation or middleware.
-        # Since nanobot 0.1.4+ might support custom agent class loading via config, 
-        # but for now, the most reliable way is to monkeypatch or use a wrapper script.
-        
         # SIMPLER STRATEGY for this task:
         # We create a 'gateway_wrapper.py' that imports nanobot and injects our SwarmManager logic.
         # Then we run `python gateway_wrapper.py` instead of `nanobot gateway`.
         
         wrapper_path = os.path.join(os.path.dirname(__file__), "gateway_wrapper.py")
         
-        print(f"Starting Swarmbot Gateway on port {port}...")
-        subprocess.run([sys.executable, wrapper_path], env=env, check=True)
+        log_dir = os.path.expanduser("~/.swarmbot/logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "gateway.log")
+        
+        print(f"Starting Swarmbot Gateway on port {port} (background mode)...")
+        print(f"Logs will be written to: {log_file}")
+        
+        with open(log_file, "a") as f:
+            # Use subprocess.Popen for non-blocking execution (background)
+            subprocess.Popen(
+                [sys.executable, wrapper_path], 
+                env=env, 
+                stdout=f, 
+                stderr=subprocess.STDOUT,
+                start_new_session=True # Detach from terminal
+            )
+        print("Gateway started successfully.")
+        
     except FileNotFoundError:
         print("未找到 nanobot 命令，请先安装 nanobot-ai。", file=sys.stderr)
     except Exception as e:
