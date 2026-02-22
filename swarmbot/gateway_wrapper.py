@@ -163,5 +163,7 @@ if __name__ == "__main__":
     try:
         from nanobot.cli.commands import app
         app()
-    except ImportError:
-        logger.error("Could not import nanobot.cli.commands.app")
+    except ImportError as e:
+        logger.error(f"Could not import nanobot.cli.commands.app: {e}")
+    except Exception as e:
+        logger.error(f"Error while running nanobot.cli.commands.app: {e}", exc_info=True)
