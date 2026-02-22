@@ -13,10 +13,35 @@ from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
 
-from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.history import FileHistory
-from prompt_toolkit.patch_stdout import patch_stdout
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.patch_stdout import patch_stdout
+except ImportError:
+    class PromptSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def prompt_async(self, *args, **kwargs):
+            raise RuntimeError("prompt_toolkit is required for interactive CLI. Please install 'prompt_toolkit'.")
+
+    def HTML(value):
+        return value
+
+    class FileHistory:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _DummyPatchStdout:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def patch_stdout():
+        return _DummyPatchStdout()
 
 from nanobot import __version__, __logo__
 from nanobot.config.schema import Config
