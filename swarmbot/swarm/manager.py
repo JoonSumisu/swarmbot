@@ -191,10 +191,19 @@ class SwarmManager:
         except Exception:
             pass
 
+        # IMPORTANT: Clear Whiteboard AFTER persistence.
+        # Whiteboard is ephemeral context for the *current* task only.
+        # Once persisted to LocalMD log, it must be wiped to prevent hallucination in next turn.
         try:
-            self.memory.whiteboard._data.clear()
-        except Exception:
-            pass
+            if hasattr(self.memory.whiteboard, "clear"):
+                self.memory.whiteboard.clear()
+            elif hasattr(self.memory.whiteboard, "_data"):
+                self.memory.whiteboard._data.clear()
+            elif isinstance(self.memory.whiteboard, dict):
+                self.memory.whiteboard.clear()
+            self._log("Whiteboard cleared for next task.")
+        except Exception as e:
+            self._log(f"Warning: Failed to clear whiteboard: {e}")
 
         # --- Phase 4: Master Agent Re-Interpretation ---
         # "masteragent二次解释（读取 masteragentboot.md 将swarm的结论按照设定进行转译，以及记忆）"
