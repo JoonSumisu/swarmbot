@@ -46,7 +46,7 @@ fi
 echo "Installing Python dependencies inside virtual environment..."
 pip install -e .
 
-# 4. Create a convenience wrapper script 'swarmbot' in the root
+# 4. Create a convenience wrapper script 'swarmbot_run' in the root
 WRAPPER_SCRIPT="$PROJECT_ROOT/swarmbot_run"
 cat > "$WRAPPER_SCRIPT" <<EOF
 #!/bin/bash
@@ -55,12 +55,28 @@ exec swarmbot "\$@"
 EOF
 chmod +x "$WRAPPER_SCRIPT"
 
+# 5. Try to link to system bin for global access
+if [ -w "/usr/local/bin" ]; then
+    echo "Creating global link: /usr/local/bin/swarmbot -> $WRAPPER_SCRIPT"
+    rm -f /usr/local/bin/swarmbot
+    ln -s "$WRAPPER_SCRIPT" /usr/local/bin/swarmbot
+elif [ -d "$HOME/.local/bin" ]; then
+     echo "Creating user link: $HOME/.local/bin/swarmbot -> $WRAPPER_SCRIPT"
+     rm -f "$HOME/.local/bin/swarmbot"
+     ln -s "$WRAPPER_SCRIPT" "$HOME/.local/bin/swarmbot"
+     # Check PATH
+     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        echo "Warning: $HOME/.local/bin is not in your PATH."
+     fi
+else
+     echo "Could not create global link. You can use ./swarmbot_run or add alias."
+fi
+
 echo "Installation complete!"
 echo ""
-echo "To run Swarmbot, use the wrapper script:"
-echo "  ./swarmbot_run onboard"
-echo "  ./swarmbot_run run"
-echo ""
-echo "Or activate the virtual environment manually:"
-echo "  source .venv/bin/activate"
-echo "  swarmbot onboard"
+if command -v swarmbot &> /dev/null; then
+    echo "You can now run 'swarmbot' command directly!"
+else
+    echo "To run Swarmbot, use:"
+    echo "  ./swarmbot_run <command>"
+fi

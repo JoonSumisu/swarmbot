@@ -71,60 +71,36 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
-### 1. 安装
-#### 推荐方式：使用 venv (虚拟环境) 隔离安装
-Swarmbot 依赖较多 Python 包，为避免与系统环境冲突（PEP 668 错误），推荐使用我们提供的安装脚本，它会自动创建虚拟环境：
+1. **安装依赖**
+   ```bash
+   chmod +x scripts/install_deps.sh
+   ./scripts/install_deps.sh
+   ```
+   *脚本会自动尝试将 `swarmbot` 命令添加到系统路径。如果成功，你可以直接使用 `swarmbot` 命令；否则请使用生成的 `./swarmbot_run` 脚本。*
 
-```bash
-# 克隆仓库
-git clone https://github.com/JoonSumisu/swarmbot.git
-cd swarmbot
+2. **初始化**
+   ```bash
+   # 如果 swarmbot 命令可用：
+   swarmbot onboard
+   
+   # 或者使用 wrapper 脚本：
+   ./swarmbot_run onboard
+   ```
 
-# 运行安装脚本（自动创建 .venv 并安装依赖）
-chmod +x scripts/install_deps.sh
-./scripts/install_deps.sh
+3. **配置模型提供方**
+   ```bash
+   # 添加自定义 OpenAI 兼容接口（例如本地模型）
+   swarmbot provider add --base-url "http://localhost:8000/v1" --api-key "dummy" --model "your-model-name"
+   ```
 
-# 启动 Swarmbot (使用 wrapper 脚本自动加载环境)
-./swarmbot_run onboard
-```
-
-或者手动使用 `pipx` (如果已安装):
-```bash
-pipx install .
-```
-
-#### 手动安装 (不推荐)
-如果您坚持在系统环境安装，请使用 `--break-system-packages` (风险自负):
-```bash
-pip install . --break-system-packages
-```
-
-### 2. 配置模型 (Provider)
-Swarmbot 默认不包含任何 API Key，请手动配置 OpenAI 兼容接口（如 Kimi, DeepSeek, Localhost）：
-
-```bash
-# 本地模型配置示例（支持 Ollama, vLLM, LM Studio 等）
-./swarmbot_run provider add \
-  --base-url http://127.0.0.1:11434/v1 \
-  --api-key dummy \
-  --model llama3 \
-  --max-tokens 8192
-
-# 远程模型配置示例
-./swarmbot_run provider add \
-  --base-url https://api.moonshot.cn/v1 \
-  --api-key YOUR_API_KEY \
-  --model kimi-k2-turbo-preview \
-  --max-tokens 126000
-```
-
-### 3. 运行对话
-```bash
-# 直接启动（默认 Concurrent）
-./swarmbot_run run
-```
+4. **运行**
+   ```bash
+   swarmbot run
+   # 或
+   ./swarmbot_run run
+   ```
 
 ### 4. 切换架构（Concurrent / Auto）
 ```bash
