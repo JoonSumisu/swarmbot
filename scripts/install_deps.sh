@@ -41,8 +41,21 @@ else
 fi
 
 # 3. Install Python dependencies inside venv
-echo "Installing Python dependencies inside virtual environment..."
+echo "Installing Swarmbot core (pyproject.toml) inside virtual environment..."
 pip install -e .
+
+echo "Installing additional runtime dependencies used by vendored nanobot..."
+pip install \
+  typer \
+  rich \
+  loguru \
+  litellm \
+  openai \
+  prompt_toolkit \
+  python-telegram-bot \
+  slack_sdk \
+  slackify_markdown \
+  websockets
 
 # 4. Create a convenience wrapper script 'swarmbot_run' in the root
 WRAPPER_SCRIPT="$PROJECT_ROOT/swarmbot_run"
