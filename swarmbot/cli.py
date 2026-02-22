@@ -19,24 +19,52 @@ import os
 
 
 def load_nanobot_config() -> dict:
-    config_path = os.path.expanduser("~/.nanobot/config.json")
-    if not os.path.exists(config_path):
-        return {}
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading nanobot config: {e}", file=sys.stderr)
-        return {}
+    # DEPRECATED: We should not read ~/.nanobot/config.json directly anymore if possible.
+    # But for migration/compatibility we might read it once to import.
+    # However, user requested "All config in .swarmbot/config.json".
+    # So we should modify this to return config from SwarmbotConfig.channels
+    cfg = load_config()
+    # Convert SwarmbotConfig.channels back to dict format expected by legacy code
+    channels_dict = {}
+    for name, c_cfg in cfg.channels.items():
+        channels_dict[name] = c_cfg.config.copy()
+        channels_dict[name]["enabled"] = c_cfg.enabled
+    return {"channels": channels_dict}
 
 def save_nanobot_config(config: dict) -> None:
-    config_path = os.path.expanduser("~/.nanobot/config.json")
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    # When saving "nanobot config", we actually want to save to Swarmbot config
+    # We need to map the dict back to SwarmbotConfig structure
+    cfg = load_config()
+    
+    if "channels" in config:
+        for name, c_data in config["channels"].items():
+            # Update or create
+            enabled = c_data.get("enabled", False)
+            conf = {k:v for k,v in c_data.items() if k != "enabled"}
+            
+            # Update existing or create new
+            if name in cfg.channels:
+                cfg.channels[name].enabled = enabled
+                cfg.channels[name].config.update(conf)
+            else:
+                from .config_manager import ChannelConfig
+                cfg.channels[name] = ChannelConfig(enabled=enabled, config=conf)
+    
+    save_config(cfg)
+    
+    # OPTIONAL: Still sync to ~/.nanobot/config.json for the underlying nanobot process?
+    # User said "Don't read separate nanobot config".
+    # But nanobot library MIGHT read it internally.
+    # To be safe and compliant with user request "All config in .swarmbot/config.json",
+    # we should probably WRITE to ~/.nanobot/config.json as a *mirror* only, 
+    # so the underlying library works, but the source of truth is swarmbot config.
+    nanobot_path = os.path.expanduser("~/.nanobot/config.json")
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(nanobot_path), exist_ok=True)
+        with open(nanobot_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"Error saving nanobot config: {e}", file=sys.stderr)
+    except Exception:
+        pass
 
 
 def cmd_channels(args: argparse.Namespace, extra_args: list[str]) -> None:
@@ -139,8 +167,9 @@ def cmd_channels_enable(name: str, args: list[str]) -> None:
             
     save_nanobot_config(cfg)
     print(f"Channel '{name}' enabled and configured.")
-    print(f"Configuration saved to: {os.path.expanduser('~/.nanobot/config.json')}")
-    # Print current config for verification
+    # Show Swarmbot config path now
+    print(f"Configuration saved to: {CONFIG_PATH}")
+    # Also mirrored to ~/.nanobot/config.json for compatibility
     print(json.dumps({name: cfg["channels"][name]}, ensure_ascii=False, indent=2))
 
 def cmd_channels_disable(name: str) -> None:

@@ -44,11 +44,17 @@ class ToolConfig:
     shell: Dict[str, Any] = field(default_factory=lambda: {"allow_commands": [], "deny_commands": []}) # Unrestricted by default
 
 @dataclass
+class ChannelConfig:
+    enabled: bool = False
+    config: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
 class SwarmbotConfig:
     provider: ProviderConfig = field(default_factory=ProviderConfig)
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
+    channels: Dict[str, ChannelConfig] = field(default_factory=dict)
     # No more hardcoded paths here, rely on constants
 
 def ensure_dirs() -> None:
@@ -61,7 +67,11 @@ def ensure_dirs() -> None:
 def load_config() -> SwarmbotConfig:
     ensure_dirs()
     if not os.path.exists(CONFIG_PATH):
+        # Create default config
         cfg = SwarmbotConfig()
+        # Initialize default empty tools/channels structure
+        cfg.tools = ToolConfig()
+        cfg.channels = {}
         save_config(cfg)
         return cfg
     
@@ -72,6 +82,8 @@ def load_config() -> SwarmbotConfig:
         # Corrupt config, return default
         return SwarmbotConfig()
 
+    # ... (Provider, Swarm, Overthinking parsing logic remains same)
+    
     provider_data = data.get("provider", {})
     provider = ProviderConfig(
         name=provider_data.get("name", "custom"),
@@ -105,16 +117,42 @@ def load_config() -> SwarmbotConfig:
         shell=tools_data.get("shell", {})
     )
 
+    # Parse channels config
+    channels_data = data.get("channels", {})
+    channels = {}
+    for name, c_data in channels_data.items():
+        # Support both simple dict (legacy nanobot style) and structured config
+        if isinstance(c_data, dict) and "enabled" in c_data:
+             channels[name] = ChannelConfig(
+                 enabled=c_data.get("enabled", False),
+                 config={k:v for k,v in c_data.items() if k != "enabled"}
+             )
+        else:
+             # If raw dict, assume enabled=True if not specified? Or just raw config storage
+             # Let's stick to nanobot structure compatibility: {"feishu": {"enabled": true, "appId": ...}}
+             channels[name] = ChannelConfig(
+                 enabled=c_data.get("enabled", False),
+                 config={k:v for k,v in c_data.items() if k != "enabled"}
+             )
+
     return SwarmbotConfig(
         provider=provider,
         swarm=swarm,
         overthinking=overthinking,
-        tools=tools
+        tools=tools,
+        channels=channels
     )
 
 
 def save_config(cfg: SwarmbotConfig) -> None:
     ensure_dirs()
+    
+    # Serialize channels back to dict structure
+    channels_dict = {}
+    for name, c_cfg in cfg.channels.items():
+        channels_dict[name] = c_cfg.config.copy()
+        channels_dict[name]["enabled"] = c_cfg.enabled
+
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(
             {
@@ -122,6 +160,7 @@ def save_config(cfg: SwarmbotConfig) -> None:
                 "swarm": asdict(cfg.swarm),
                 "overthinking": asdict(cfg.overthinking),
                 "tools": asdict(cfg.tools),
+                "channels": channels_dict,
             },
             f,
             ensure_ascii=False,
