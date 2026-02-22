@@ -192,49 +192,45 @@ try:
                 # --- Feishu Specific Cleaning ---
                 if msg.channel == "feishu":
                     def clean_for_feishu(text):
-                        # 1. Truncate if too long (Feishu limit ~4000 chars for text)
+                        # 1. Truncate if too long
                         if len(text) > 4000:
                             text = text[:4000] + "\n\n...（内容过长，已截断）"
                         
-                        # 2. Fix code block formatting for Feishu
-                        # Feishu rendering engine sometimes breaks with raw markdown code blocks
-                        # But completely removing them (as requested) might hide useful info.
-                        # However, based on user feedback "存在冲突，请你解决[代码块]的内容导致我无法了解具体发生了什么事情",
-                        # The previous replacement logic was TOO aggressive.
-                        # The user complained about seeing "[代码块]" placeholders instead of actual content.
+                        # 2. Fix JSON escaping issues in code blocks
+                        # Feishu interactive cards use JSON payload.
+                        # If the text contains unescaped quotes or backslashes inside a code block,
+                        # it might break the card JSON structure if not handled by the SDK.
+                        # However, nanobot SDK should handle basic escaping.
                         
-                        # Let's keep the code content but ensure it's safe for Feishu.
-                        # Usually standard markdown ``` works, but maybe nested or specific chars break it.
-                        # We will try to preserve content but maybe strip language tags if they cause issues,
-                        # or just ensure newlines.
-                        
-                        # IMPORTANT: The user's complaint "存在冲突，请你解决[代码块]的内容导致我无法了解具体发生了什么事情"
-                        # means my previous `re.sub(r'```.*?```', '[代码块]', ...)` was BAD.
-                        # I should REMOVE that replacement logic and let the code show.
-                        
-                        # But I need to fix the "blank card" issue. Blank card usually happens if JSON is invalid
-                        # or text is empty.
-                        
-                        # Refined strategy:
-                        # 1. Ensure text is not empty (already done).
-                        # 2. Don't strip code blocks aggressively.
-                        # 3. Maybe just ensure there's text outside code blocks?
-                        
+                        # BUT, if the text is PURELY a code block with no surrounding text,
+                        # some renderers fail.
+                        # Let's ensure there is at least a zero-width space or newline before/after.
+                        if text.strip().startswith("```") and text.strip().endswith("```"):
+                            text = "\u200b\n" + text + "\n\u200b"
+                            
+                        # 3. Ensure not empty
+                        if not text.strip():
+                            text = "..."
+                            
                         return text
 
                     response_text = clean_for_feishu(response_text)
                 # --------------------------------
 
+                # Check if response is empty string or None, which causes blank card
+                if not response_text or not response_text.strip():
+                     response_text = "..."
+                     
+                # Create OutboundMessage explicitly
                 from nanobot.bus.events import OutboundMessage
                 
-                # IMPORTANT: Check if response is empty string or None, which causes blank card
-                if not response_text.strip():
-                    response_text = "..."
-
+                # IMPORTANT: In nanobot 0.1.x, _process_message expects to return an OutboundMessage object
+                # or a list of them.
                 return OutboundMessage(
-                    channel=msg.channel,
                     chat_id=msg.chat_id,
                     content=response_text,
+                    channel=msg.channel,
+                    reply_to=msg.message_id, # Reply to original message if possible
                     metadata=msg.metadata or {}
                 )
             except Exception as e:
