@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarmbot"
-version = "0.1.2"
+version = "0.2.6"
 description = "Swarmbot: 基于 nanobot 框架的多 Agent Swarm 系统，支持本地 OpenAI 接口模型与记忆(QMD)。"
 requires-python = ">=3.10"
 dependencies = [
