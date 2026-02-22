@@ -63,17 +63,35 @@ class EmbeddedQMD:
             cursor.execute("INSERT INTO collections (name, created_at) VALUES (?, ?)", (name, time.time()))
             return cursor.lastrowid
 
+    def _sanitize(self, text: str) -> str:
+        if not isinstance(text, str):
+            return text
+        # Remove surrogate characters that are not allowed in UTF-8
+        return text.encode('utf-8', 'replace').decode('utf-8')
+
     def add(self, content: str, collection: str = "default", meta: Dict[str, Any] = None) -> None:
         coll_id = self._get_collection_id(collection)
-        meta_json = json.dumps(meta or {})
+        
+        # Sanitize content and meta
+        safe_content = self._sanitize(content)
+        safe_meta = {}
+        if meta:
+            for k, v in meta.items():
+                if isinstance(v, str):
+                    safe_meta[k] = self._sanitize(v)
+                else:
+                    safe_meta[k] = v
+                    
+        meta_json = json.dumps(safe_meta, ensure_ascii=False)
+        
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             if self.has_fts:
                 cursor.execute("INSERT INTO documents_fts (collection_id, content, meta) VALUES (?, ?, ?)", 
-                               (coll_id, content, meta_json))
+                               (coll_id, safe_content, meta_json))
             else:
                 cursor.execute("INSERT INTO documents (collection_id, content, meta, created_at) VALUES (?, ?, ?, ?)",
-                               (coll_id, content, meta_json, time.time()))
+                               (coll_id, safe_content, meta_json, time.time()))
 
     def search(self, query: str, collection: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:

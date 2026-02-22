@@ -42,7 +42,7 @@ class LocalMDStore:
         
     def write(self, filename: str, content: str) -> None:
         path = os.path.join(self.root, filename)
-        with open(path, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8", errors='replace') as f:
             try:
                 fcntl.flock(f, fcntl.LOCK_EX)
                 f.write(content)
@@ -53,7 +53,7 @@ class LocalMDStore:
         path = os.path.join(self.root, filename)
         if not os.path.exists(path):
             return ""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8", errors='replace') as f:
             try:
                 fcntl.flock(f, fcntl.LOCK_SH)
                 return f.read()
@@ -63,7 +63,7 @@ class LocalMDStore:
     def append(self, filename: str, content: str) -> None:
         """Atomic append"""
         path = os.path.join(self.root, filename)
-        with open(path, "a", encoding="utf-8") as f:
+        with open(path, "a", encoding="utf-8", errors='replace') as f:
             try:
                 fcntl.flock(f, fcntl.LOCK_EX)
                 f.write(content)
@@ -149,7 +149,7 @@ class QMDMemoryStore(MemoryStore):
         filename = f"memory_{int(time.time())}.md"
         coll_path = os.path.join(self._qmd_root, target_coll, filename)
         os.makedirs(os.path.dirname(coll_path), exist_ok=True)
-        with open(coll_path, "w", encoding="utf-8") as f:
+        with open(coll_path, "w", encoding="utf-8", errors='replace') as f:
             f.write(content)
 
     def get_context(self, agent_id: str, limit: int = 20, query: str = None) -> List[Dict[str, Any]]:
