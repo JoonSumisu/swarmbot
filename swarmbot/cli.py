@@ -388,50 +388,16 @@ def cmd_config(args: argparse.Namespace) -> None:
 
 def cmd_update() -> None:
     """
-    Update Swarmbot core code from git repository while preserving user configuration.
+    Update Swarmbot core code.
     """
-    print("Updating Swarmbot...")
-    
-    # Get the directory where the package is installed
-    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    # 1. Check if git is available and inside a git repo
-    try:
-        # Check if the installed directory is a git repo
-        if not os.path.exists(os.path.join(package_dir, ".git")):
-             print(f"Error: Installation directory '{package_dir}' is not a git repository.", file=sys.stderr)
-             print("If you installed via pip/pipx directly, please update using: pip install --upgrade swarmbot", file=sys.stderr)
-             return
-
-        subprocess.run(["git", "status"], cwd=package_dir, check=True, capture_output=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        print("Error: Git command failed or not installed.", file=sys.stderr)
-        return
-
-    # 2. Pull latest changes
-    try:
-        print(f"Pulling latest changes from remote in {package_dir}...")
-        subprocess.run(["git", "pull"], cwd=package_dir, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error pulling changes: {e}", file=sys.stderr)
-        return
-
-    # 3. Re-install dependencies (optional but recommended)
-    try:
-        print("Updating dependencies...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "."], cwd=package_dir, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error updating dependencies: {e}", file=sys.stderr)
-        # Check for common PEP 668 error
-        if "externally-managed-environment" in str(e) or e.returncode == 1:
-             print("\nHint: It seems you are running in an externally managed environment (PEP 668).", file=sys.stderr)
-             print("If you are not using a virtual environment, please try running the update script instead:", file=sys.stderr)
-             print(f"  {os.path.join(package_dir, 'scripts', 'install_deps.sh')}", file=sys.stderr)
-        return
-
-    print("Update complete!")
-    print(f"User configuration preserved at: {CONFIG_PATH}")
-    print(f"User boot files preserved at: {BOOT_CONFIG_PATH}")
+    print("自动更新功能目前已禁用。")
+    print("请手动进入 Swarmbot 源码目录进行更新：")
+    print("")
+    print("  cd /path/to/swarmbot")
+    print("  git pull")
+    print("  ./scripts/install_deps.sh")
+    print("")
+    print("如果您是通过 pip 安装的，请使用 pip install --upgrade swarmbot")
 
 
 def cmd_passthrough(command: str, extra_args: list[str]) -> None:

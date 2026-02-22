@@ -311,6 +311,22 @@ swarmbot provider add --base-url http://127.0.0.1:11434/v1 --api-key dummy --mod
 
 ---
 
+## 升级更新
+
+目前推荐使用 git 进行手动更新：
+
+```bash
+cd swarmbot
+git pull
+./scripts/install_deps.sh
+```
+
+*注意：`swarmbot update` 命令目前已禁用，请使用上述方法进行更新。*
+
+## 贡献指南
+
+---
+
 ## License
 MIT
 
