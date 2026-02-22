@@ -46,6 +46,7 @@ pip install -e .
 
 echo "Installing additional runtime dependencies used by vendored nanobot..."
 pip install \
+  lark-oapi \
   typer \
   rich \
   loguru \
