@@ -182,13 +182,29 @@ class NanobotSkillAdapter:
             return f"Status:\n{json.dumps(asdict(cfg), indent=2)}"
             
         elif command == "onboard":
-             # This is tricky as it might reset things.
-             # Run subprocess
+             # Disabled for safety via swarm_control
+             return "Command 'onboard' is disabled in swarm_control to prevent accidental reset. Please run 'swarmbot onboard' manually in terminal if really needed."
+
+        elif command == "skill":
+             # New feature: Search and install ClawHub skills
+             # Usage: swarm_control(command="skill", subcommand="search", args={"query": "weather"})
+             #        swarm_control(command="skill", subcommand="install", args={"name": "weather"})
+             
+             action = subcommand or "list"
              try:
-                 res = subprocess.run(["swarmbot", "onboard"], capture_output=True, text=True)
-                 return f"Onboard Result:\n{res.stdout}"
+                 if action == "search":
+                     query = args.get("query", "") if args else ""
+                     return self._run_nanobot_cmd("skill", "search", query)
+                 elif action == "install":
+                     name = args.get("name", "") if args else ""
+                     if not name: return "Error: Skill name required for install"
+                     return self._run_nanobot_cmd("skill", "add", name)
+                 elif action == "list":
+                     return self._run_nanobot_cmd("skill", "list")
+                 else:
+                     return f"Unknown skill action: {action}. Supported: search, install, list"
              except Exception as e:
-                 return f"Onboard failed: {e}"
+                 return f"Skill operation failed: {e}"
 
         elif command == "overthinking":
              # Proxy to _tool_overthinking_control
@@ -372,7 +388,11 @@ class NanobotSkillAdapter:
             return f"Shell execution failed: {e}"
 
     def _run_nanobot_cmd(self, *args: str) -> str:
+        """
+        Execute nanobot CLI commands safely.
+        """
         try:
+            # We must use "nanobot" executable or python module
             cmd = ["nanobot"] + list(args)
             result = subprocess.run(
                 cmd,
@@ -380,8 +400,10 @@ class NanobotSkillAdapter:
                 text=True,
                 check=False
             )
-            if result.returncode == 0:
-                return result.stdout.strip()
-            return f"Error: {result.stderr.strip()}"
+            # Combine stdout and stderr
+            output = result.stdout
+            if result.stderr:
+                output += f"\nError/Warning: {result.stderr}"
+            return output.strip()
         except Exception as e:
             return f"Execution failed: {str(e)}"

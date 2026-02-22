@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import threading
 import asyncio
@@ -36,10 +37,19 @@ class OverthinkingLoop:
         )
 
     def start(self) -> None:
+        """Starts the loop in a background thread."""
         if self._thread and self._thread.is_alive():
             return
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+        print(f"[Overthinking] Started. Interval: {self.cfg.overthinking.interval_minutes}m, Max Steps: {self.cfg.overthinking.max_steps}")
+
+    def stop(self) -> None:
+        """Stops the loop."""
+        self.stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+        print("[Overthinking] Stopped.")
 
     def update_activity(self) -> None:
         """Called when user interacts, resetting the idle timer."""
@@ -50,33 +60,34 @@ class OverthinkingLoop:
                 pass
 
     def _loop(self) -> None:
+        """
+        Main loop for overthinking.
+        """
         while not self.stop_event.is_set():
-            # Reload config to check enabled status
-            self.cfg = load_config()
-            if not self.cfg.overthinking.enabled:
-                time.sleep(60)
-                continue
+            try:
+                # 1. Wait for interval (check stop_event periodically)
+                interval = self.cfg.overthinking.interval_minutes * 60
+                # Use wait with timeout to be responsive
+                if self.stop_event.wait(interval):
+                    break
 
-            idle_threshold = 600 # 10 minutes default idle before thinking
-            cycle_interval = self.cfg.overthinking.interval_minutes * 60
-            
-            with self._lock:
-                idle_time = time.time() - self.last_activity_time
-            
-            if idle_time > idle_threshold:
-                # Start Thinking Cycle
-                self.is_thinking = True
-                try:
-                    self._run_thinking_cycle()
-                except Exception as e:
-                    print(f"[Overthinking] Cycle error: {e}")
-                finally:
-                    self.is_thinking = False
-                    # Wait for next cycle interval
-                    time.sleep(cycle_interval)
-            else:
-                # Check every minute
-                time.sleep(60)
+                # 2. Check user activity (Idle check)
+                # If active recently, skip this cycle
+                if time.time() - self.last_activity_time < 60: # 1 min idle minimum
+                    continue
+
+                # 3. Execute Overthinking Steps
+                self._step_consolidate_short_term()
+                self._step_expand_thoughts()
+                
+                # 4. Autonomous Exploration (New)
+                max_steps = getattr(self.cfg.overthinking, "max_steps", 0)
+                if max_steps > 0:
+                    self._step_autonomous_exploration(max_steps)
+
+            except Exception as e:
+                print(f"[Overthinking] Loop Error: {e}")
+                time.sleep(60) # Backoff
 
     def _run_thinking_cycle(self) -> None:
         max_steps = self.cfg.overthinking.max_steps
@@ -98,6 +109,15 @@ class OverthinkingLoop:
             
             # Execute step
             step_fn()
+
+        # Autonomous Exploration
+        with self._lock:
+            if time.time() - self.last_activity_time < 10:
+                print("[Overthinking] Interrupted by user activity.")
+                return
+        
+        if max_steps > 0:
+            self._step_autonomous_exploration(max_steps)
 
     def _step_consolidate_short_term(self) -> None:
         """1. 清理短期记忆写入 QMD"""
@@ -162,3 +182,45 @@ class OverthinkingLoop:
         # result = adapter.execute("web_search", {"query": search_query})
         # self.memory.persist_to_qmd(f"# Research {topic}\n\n{result}", collection="research")
         pass
+
+    def _step_autonomous_exploration(self, max_steps: int) -> None:
+        """
+        Autonomous exploration phase.
+        1. Read current memory/state.
+        2. Generate a self-directed task (e.g. "Optimize soul", "Verify tool").
+        3. Execute task using SwarmManager.
+        4. Log results and save to QMD.
+        """
+        print(f"[Overthinking] --- Starting Autonomous Exploration (Max Steps: {max_steps}) ---")
+        
+        # We need a SwarmManager instance. Ideally reuse or create new.
+        # Since we are in a thread, creating new is safe if stateless.
+        # But we need access to the same memory/config.
+        
+        from ..swarm.manager import SwarmManager
+        manager = SwarmManager.from_swarmbot_config(self.cfg)
+        
+        # Generate exploration prompt
+        exploration_prompt = (
+            f"SYSTEM_OVERTHINKING_MODE: You are in autonomous exploration mode.\n"
+            f"Max Steps: {max_steps}\n"
+            f"Goal: Based on your current memory (QMD) and configuration (Boot files),\n"
+            f"identify 1 area for improvement (e.g. clarify SOUL, test a tool, organize knowledge).\n"
+            f"Execute this improvement action.\n"
+            f"IMPORTANT: Output a structured log of your action."
+        )
+        
+        try:
+            result = manager.chat(exploration_prompt)
+            print(f"[Overthinking] Exploration Result: {result[:200]}...")
+            
+            # Backup Log
+            log_dir = os.path.join(self.cfg.workspace_root, "exploration_logs")
+            os.makedirs(log_dir, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            log_file = os.path.join(log_dir, f"explore_{timestamp}.md")
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write(f"# Exploration Log {timestamp}\n\n{result}")
+            
+        except Exception as e:
+            print(f"[Overthinking] Exploration failed: {e}")

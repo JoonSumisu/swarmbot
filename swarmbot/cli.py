@@ -155,8 +155,8 @@ def cmd_overthinking(args: argparse.Namespace) -> None:
         if args.steps is not None:
             cfg.overthinking.max_steps = args.steps
         save_config(cfg)
-        print("Overthinking configuration updated.")
-        print(json.dumps(cfg.overthinking.__dict__, indent=2))
+        print("Overthinking 配置已更新。")
+        print(json.dumps(cfg.overthinking.__dict__, ensure_ascii=False, indent=2))
     elif args.action == "start":
         print("Starting Overthinking Loop in background...")
         # Note: This starts a loop in the foreground for CLI usage, 
@@ -352,7 +352,7 @@ def main() -> None:
     overthink_setup = overthink_sub.add_parser("setup", help="配置 Overthinking 参数")
     overthink_setup.add_argument("--enabled", type=lambda x: x.lower() in ("true", "1", "yes"), help="是否开启 (true/false)")
     overthink_setup.add_argument("--interval", type=int, help="工作周期（分钟）")
-    overthink_setup.add_argument("--steps", type=int, help="每次思考步数")
+    overthink_setup.add_argument("--steps", type=int, help="自主探索步数 (0 为关闭)")
     overthink_sub.add_parser("start", help="手动启动 Overthinking 循环（前台运行）")
 
     subparsers.add_parser("update", help="更新 Swarmbot 核心代码（保留配置）")

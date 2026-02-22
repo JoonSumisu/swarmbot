@@ -189,13 +189,30 @@ try:
                     response_text = "(No response generated)"
                 response_text = str(response_text)
 
-                # Fix for Feishu "Blank Card":
-                # Feishu channel adapter in nanobot might expect 'content' to be just text,
-                # but sometimes it handles rich media.
-                # If we return OutboundMessage with content=text, it should work for text messages.
-                # However, if the text contains complex markdown or JSON, it might break card rendering.
-                # For safety, we treat it as plain text content for now.
-                
+                # --- Feishu Specific Cleaning ---
+                if msg.channel == "feishu":
+                    def clean_for_feishu(text):
+                        # 1. Truncate if too long (Feishu limit ~4000 chars for text)
+                        if len(text) > 4000:
+                            text = text[:4000] + "\n\n...（内容过长，已截断）"
+                        
+                        # 2. Remove special sequences that break card rendering
+                        import re
+                        # User requested replacement logic:
+                        # Replace code blocks with [代码块]
+                        text = re.sub(r'```.*?```', '[代码块]', text, flags=re.DOTALL)
+                        # Replace inline code with [代码]
+                        text = re.sub(r'`.*?`', '[代码]', text)
+                        
+                        # Simplify repetitive characters
+                        text = re.sub(r'\*\*\*+', '***', text)
+                        text = re.sub(r'_{3,}', '___', text)
+                        
+                        return text
+
+                    response_text = clean_for_feishu(response_text)
+                # --------------------------------
+
                 from nanobot.bus.events import OutboundMessage
                 
                 # IMPORTANT: Check if response is empty string or None, which causes blank card

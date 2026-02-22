@@ -35,7 +35,7 @@ class SwarmSettings:
 class OverthinkingConfig:
     enabled: bool = False
     interval_minutes: int = 30
-    max_steps: int = 10
+    max_steps: int = 0 # Default 0 means no autonomous exploration actions unless configured
 
 
 @dataclass
@@ -49,13 +49,14 @@ class SwarmbotConfig:
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
-
+    # No more hardcoded paths here, rely on constants
 
 def ensure_dirs() -> None:
+    # Ensure config and workspace exist
     os.makedirs(CONFIG_HOME, exist_ok=True)
     os.makedirs(WORKSPACE_PATH, exist_ok=True)
+    # Ensure boot config dir exists
     os.makedirs(BOOT_CONFIG_PATH, exist_ok=True)
-
 
 def load_config() -> SwarmbotConfig:
     ensure_dirs()
@@ -63,42 +64,52 @@ def load_config() -> SwarmbotConfig:
         cfg = SwarmbotConfig()
         save_config(cfg)
         return cfg
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    # robust load with defaults
-    provider = data.get("provider", {})
-    swarm = data.get("swarm", {})
-    overthinking = data.get("overthinking", {})
-    tools = data.get("tools", {})
     
-    # Load defaults first, then override with file data if present
-    # We strip sensitive defaults from code to ensure clean distribution
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        # Corrupt config, return default
+        return SwarmbotConfig()
+
+    provider_data = data.get("provider", {})
+    provider = ProviderConfig(
+        name=provider_data.get("name", "custom"),
+        base_url=provider_data.get("base_url", ""),
+        api_key=provider_data.get("api_key", ""),
+        model=provider_data.get("model", ""),
+        max_tokens=provider_data.get("max_tokens", 4096),
+        temperature=provider_data.get("temperature", 0.6),
+    )
+
+    swarm_data = data.get("swarm", {})
+    swarm = SwarmSettings(
+        agent_count=swarm_data.get("agent_count", 4),
+        roles=swarm_data.get("roles", ["planner", "coder", "critic", "summarizer"]),
+        architecture=swarm_data.get("architecture", "concurrent"),
+        max_turns=swarm_data.get("max_turns", 16),
+        auto_builder=swarm_data.get("auto_builder", False),
+        display_mode=swarm_data.get("display_mode", "log"),
+    )
+
+    overthinking_data = data.get("overthinking", {})
+    overthinking = OverthinkingConfig(
+        enabled=overthinking_data.get("enabled", False),
+        interval_minutes=overthinking_data.get("interval_minutes", 30),
+        max_steps=overthinking_data.get("max_steps", 0), # Default 0 safe
+    )
+    
+    tools_data = data.get("tools", {})
+    tools = ToolConfig(
+        fs=tools_data.get("fs", {}),
+        shell=tools_data.get("shell", {})
+    )
+
     return SwarmbotConfig(
-        provider=ProviderConfig(
-            name=provider.get("name", "custom"),
-            base_url=provider.get("base_url", ""),
-            api_key=provider.get("api_key", ""),
-            model=provider.get("model", ""),
-            max_tokens=provider.get("max_tokens", 4096),
-            temperature=provider.get("temperature", 0.6),
-        ),
-        swarm=SwarmSettings(
-            agent_count=swarm.get("agent_count", 4),
-            roles=swarm.get("roles", ["planner", "coder", "critic", "summarizer"]),
-            architecture=swarm.get("architecture", "concurrent"),
-            max_turns=swarm.get("max_turns", 16),
-            auto_builder=swarm.get("auto_builder", False),
-            display_mode=swarm.get("display_mode", "log"),  # Force log mode default for visibility
-        ),
-        overthinking=OverthinkingConfig(
-            enabled=overthinking.get("enabled", False),
-            interval_minutes=overthinking.get("interval_minutes", 30),
-            max_steps=overthinking.get("max_steps", 10),
-        ),
-        tools=ToolConfig(
-            fs=tools.get("fs", {}),
-            shell=tools.get("shell", {})
-        ),
+        provider=provider,
+        swarm=swarm,
+        overthinking=overthinking,
+        tools=tools
     )
 
 
