@@ -71,6 +71,8 @@ class LocalMDStore:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
 
+from .qmd_wrapper import EmbeddedQMD
+
 class QMDMemoryStore(MemoryStore):
     """
     三层记忆系统：
@@ -86,28 +88,18 @@ class QMDMemoryStore(MemoryStore):
         self._cache_root = os.path.join(WORKSPACE_PATH, "cache")
         self.local_cache = LocalMDStore(self._cache_root)
         
-        # 3. QMD Setup
+        # 3. QMD Setup (Embedded)
         self._qmd_root = os.path.join(WORKSPACE_PATH, "qmd")
-        os.makedirs(self._qmd_root, exist_ok=True)
         self.default_collection = default_collection
-        
-        # Ensure collection exists
-        self._ensure_collection(default_collection)
+        self.embedded_qmd = EmbeddedQMD(self._qmd_root)
         
         # In-memory buffer for fast context retrieval (part of QMD/Short-term mix)
         self._events: Dict[str, List[Dict[str, Any]]] = {}
 
     def _ensure_collection(self, name: str) -> None:
         """Create QMD collection if not exists"""
-        # Ideally check list first, but 'add' is usually idempotent or fails safely
-        try:
-            subprocess.run(
-                ["qmd", "collection", "add", os.path.join(self._qmd_root, name), "--name", name],
-                check=False,
-                capture_output=True
-            )
-        except FileNotFoundError:
-            pass
+        # Managed internally by EmbeddedQMD
+        pass
 
     def add_event(self, agent_id: str, content: str, meta: Dict[str, Any] | None = None) -> None:
         # Validation: Do not store empty content
@@ -149,21 +141,16 @@ class QMDMemoryStore(MemoryStore):
         This is usually called by Overthinking Loop or explicit 'save' action.
         """
         target_coll = collection or self.default_collection
-        # Create a temp md file for QMD to index or use qmd's add command if available
-        # QMD usually indexes files in the collection path.
-        # We write to the collection directory.
+        
+        # Use EmbeddedQMD
+        self.embedded_qmd.add(content, collection=target_coll)
+        
+        # Optional: Still save markdown file for portability/backup
         filename = f"memory_{int(time.time())}.md"
         coll_path = os.path.join(self._qmd_root, target_coll, filename)
-        
-        # Ensure directory exists
         os.makedirs(os.path.dirname(coll_path), exist_ok=True)
-        
         with open(coll_path, "w", encoding="utf-8") as f:
             f.write(content)
-            
-        # Trigger embed/index (optional, qmd might need manual trigger or auto-watch)
-        # qmd embed
-        subprocess.run(["qmd", "embed"], cwd=self._qmd_root, check=False)
 
     def get_context(self, agent_id: str, limit: int = 20, query: str = None) -> List[Dict[str, Any]]:
         """
@@ -205,24 +192,4 @@ class QMDMemoryStore(MemoryStore):
         """
         Search QMD (Long-term / Knowledge Base).
         """
-        try:
-            cmd = ["qmd", "search", query, "--json", "-n", str(limit)]
-            if collection:
-                cmd.extend(["-c", collection])
-            result = subprocess.run(
-                cmd,
-                cwd=self._qmd_root,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            return []
-        if not result.stdout:
-            return []
-        try:
-            data = json.loads(result.stdout)
-        except Exception:
-            return []
-        docs = data if isinstance(data, list) else data.get("results", [])
-        return docs
+        return self.embedded_qmd.search(query, collection=collection, limit=limit)

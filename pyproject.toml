@@ -16,3 +16,8 @@ dependencies = [
 
 [project.scripts]
 swarmbot = "swarmbot.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["swarmbot*"]
+exclude = ["output*", "tests*", "scripts*", "docs*"]
