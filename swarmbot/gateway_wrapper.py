@@ -181,6 +181,13 @@ try:
                 os.environ["OPENAI_API_BASE"] = SWARM_MANAGER.config.llm.base_url
                 os.environ["OPENAI_API_KEY"] = SWARM_MANAGER.config.llm.api_key
                 os.environ["LITELLM_MODEL"] = SWARM_MANAGER.config.llm.model
+                # Also force override litellm global state if possible, as litellm caches env vars
+                try:
+                    import litellm
+                    litellm.api_key = SWARM_MANAGER.config.llm.api_key
+                    litellm.api_base = SWARM_MANAGER.config.llm.base_url
+                except ImportError:
+                    pass
             
             # INTEGRATION WITH NANOBOT LOOP
             import asyncio
