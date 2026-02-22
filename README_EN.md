@@ -100,7 +100,7 @@ swarmbot config --architecture auto --auto-builder true
 ### 0. Config Locations
 *   **Config file**: `~/.swarmbot/config.json`
 *   **Swarmbot workspace**: `~/.swarmbot/workspace`
-*   **This repository**: the source checkout (e.g. `/root/swarmbot`)
+*   **Boot config**: `~/.swarmbot/boot/` (contains `SOUL.md`, `TOOLS.md`, etc.)
 
 ### 1. `swarmbot onboard`
 *   Initializes config and workspace.
@@ -163,37 +163,37 @@ swarmbot config --architecture auto --auto-builder true
 *   `scripts/`: installation/dependency helpers
 
 ### Package modules (`swarmbot/`)
-*   [cli.py](file:///root/swarmbot/swarmbot/cli.py): CLI entrypoint and subcommands
-*   [config_manager.py](file:///root/swarmbot/swarmbot/config_manager.py): config read/write and defaults (`~/.swarmbot/config.json`)
-*   [config.py](file:///root/swarmbot/swarmbot/config.py): internal SwarmConfig/LLMConfig structs
-*   [llm_client.py](file:///root/swarmbot/swarmbot/llm_client.py): OpenAI-compatible client wrapper
-*   [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py): intercept nanobot gateway message loop and route to SwarmManager
+*   [cli.py](swarmbot/cli.py): CLI entrypoint and subcommands
+*   [config_manager.py](swarmbot/config_manager.py): config read/write and defaults (`~/.swarmbot/config.json`)
+*   [config.py](swarmbot/config.py): internal SwarmConfig/LLMConfig structs
+*   [llm_client.py](swarmbot/llm_client.py): OpenAI-compatible client wrapper
+*   [gateway_wrapper.py](swarmbot/gateway_wrapper.py): intercept nanobot gateway message loop and route to SwarmManager
 
 ### Swarm orchestration
-*   [swarm/manager.py](file:///root/swarmbot/swarmbot/swarm/manager.py): SwarmManager (architectures, concurrency, consensus, whiteboard injection/cleanup)
-*   [swarm/agent_adapter.py](file:///root/swarmbot/swarmbot/swarm/agent_adapter.py): adapter/bridge layer (if needed)
+*   [swarm/manager.py](swarmbot/swarm/manager.py): SwarmManager (architectures, concurrency, consensus, whiteboard injection/cleanup)
+*   [swarm/agent_adapter.py](swarmbot/swarm/agent_adapter.py): adapter/bridge layer (if needed)
 
 ### Core agent
-*   [core/agent.py](file:///root/swarmbot/swarmbot/core/agent.py): CoreAgent (message building, tool-call loop, memory writes)
+*   [core/agent.py](swarmbot/core/agent.py): CoreAgent (message building, tool-call loop, memory writes)
 
 ### Memory
-*   [memory/qmd.py](file:///root/swarmbot/swarmbot/memory/qmd.py): tri-layer memory (Whiteboard/LocalMD/QMD search)
-*   [memory/base.py](file:///root/swarmbot/swarmbot/memory/base.py): memory store interface
+*   [memory/qmd.py](swarmbot/memory/qmd.py): tri-layer memory (Whiteboard/LocalMD/QMD search)
+*   [memory/base.py](swarmbot/memory/base.py): memory store interface
 
 ### Tools
-*   [tools/adapter.py](file:///root/swarmbot/swarmbot/tools/adapter.py): tool adapter (file_read/file_write/web_search/shell_exec…)
-*   [tools/browser/local_browser.py](file:///root/swarmbot/swarmbot/tools/browser/local_browser.py): local headless browser helpers
+*   [tools/adapter.py](swarmbot/tools/adapter.py): tool adapter (file_read/file_write/web_search/shell_exec…)
+*   [tools/browser/local_browser.py](swarmbot/tools/browser/local_browser.py): local headless browser helpers
 
 ### Overthinking (idle-time)
-*   [loops/overthinking.py](file:///root/swarmbot/swarmbot/loops/overthinking.py): consolidate LocalMD → QMD, plus compression/expansion steps
+*   [loops/overthinking.py](swarmbot/loops/overthinking.py): consolidate LocalMD → QMD, plus compression/expansion steps
 
 ### Middleware & state machine
-*   [middleware/long_horizon.py](file:///root/swarmbot/swarmbot/middleware/long_horizon.py): long-horizon planning experiments
-*   [statemachine/engine.py](file:///root/swarmbot/swarmbot/statemachine/engine.py): state machine engine (review loops, etc.)
+*   [middleware/long_horizon.py](swarmbot/middleware/long_horizon.py): long-horizon planning experiments
+*   [statemachine/engine.py](swarmbot/statemachine/engine.py): state machine engine (review loops, etc.)
 
 ## 📊 Galileo Leaderboard Simulation
 
-Based on internal integration tests [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py), here is a fully-passing run (local OpenAI-compatible server + `openai/openbmb/agentcpm-explore`):
+Based on internal integration tests [leaderboard_eval.py](tests/integration/leaderboard_eval.py), here is a fully-passing run (local OpenAI-compatible server + `openai/openbmb/agentcpm-explore`):
 *   Total: 5/5
 *   Breakdown:
     *   Task 1 Reasoning (GPQA-style): PASS
@@ -212,7 +212,7 @@ To reduce false negatives and better reflect real usage:
 ---
 
 ## 🧩 Feishu (via nanobot gateway)
-Swarmbot intercepts nanobot gateway message processing via [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py).
+Swarmbot intercepts nanobot gateway message processing via [gateway_wrapper.py](swarmbot/gateway_wrapper.py).
 1. Configure Feishu credentials in nanobot first (see nanobot docs)
 2. Configure Swarmbot provider (OpenAI-compatible API)
 3. Start gateway:

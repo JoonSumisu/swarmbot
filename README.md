@@ -126,8 +126,7 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 ### 0. 配置文件位置
 *   **配置文件**：`~/.swarmbot/config.json`
 *   **Swarmbot 工作目录**：`~/.swarmbot/workspace`
-*   **本仓库目录**：本项目源代码所在目录（例如 `/root/swarmbot`）
-*   **Boot 配置目录**：`/root/swarmbot/swarmbot/boot/` (含 `SOUL.md`, `TOOLS.md` 等)
+*   **Boot 配置目录**：`~/.swarmbot/boot/` (含 `SOUL.md`, `TOOLS.md` 等)
 
 ### 1. `swarmbot onboard`
 *   **功能**：初始化配置和工作区。
@@ -223,45 +222,45 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 *   `docs/`：[v0.2 新增] 开发文档
 
 ### `swarmbot/` 包内模块
-*   [cli.py](file:///root/swarmbot/swarmbot/cli.py)：命令行入口与子命令实现（onboard/run/config/provider/gateway 等）
-*   [config_manager.py](file:///root/swarmbot/swarmbot/config_manager.py)：配置文件读写与默认值（`~/.swarmbot/config.json`）
-*   [config.py](file:///root/swarmbot/swarmbot/config.py)：SwarmConfig/LLMConfig（给 SwarmManager 内部使用的配置结构）
-*   [llm_client.py](file:///root/swarmbot/swarmbot/llm_client.py)：OpenAI 兼容客户端封装（统一 completion 调用）
-*   [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py)：接管 nanobot gateway 的消息处理，将消息路由到 SwarmManager
+*   [cli.py](swarmbot/cli.py)：命令行入口与子命令实现（onboard/run/config/provider/gateway 等）
+*   [config_manager.py](swarmbot/config_manager.py)：配置文件读写与默认值（`~/.swarmbot/config.json`）
+*   [config.py](swarmbot/config.py)：SwarmConfig/LLMConfig（给 SwarmManager 内部使用的配置结构）
+*   [llm_client.py](swarmbot/llm_client.py)：OpenAI 兼容客户端封装（统一 completion 调用）
+*   [gateway_wrapper.py](swarmbot/gateway_wrapper.py)：接管 nanobot gateway 的消息处理，将消息路由到 SwarmManager
 
 ### 启动与认知 (Boot) [v0.2 新增]
-*   [boot/swarmboot.md](file:///root/swarmbot/swarmbot/boot/swarmboot.md)：Swarm 启动配置
-*   [boot/masteragentboot.md](file:///root/swarmbot/swarmbot/boot/masteragentboot.md)：Master Agent 启动配置
-*   [boot/SOUL.md](file:///root/swarmbot/swarmbot/boot/SOUL.md)：人格核心
-*   [boot/TOOLS.md](file:///root/swarmbot/swarmbot/boot/TOOLS.md)：工具权限策略
+*   [boot/swarmboot.md](swarmbot/boot/swarmboot.md)：Swarm 启动配置
+*   [boot/masteragentboot.md](swarmbot/boot/masteragentboot.md)：Master Agent 启动配置
+*   [boot/SOUL.md](swarmbot/boot/SOUL.md)：人格核心
+*   [boot/TOOLS.md](swarmbot/boot/TOOLS.md)：工具权限策略
 
 ### 多智能体编排（Swarm）
-*   [swarm/manager.py](file:///root/swarmbot/swarmbot/swarm/manager.py)：SwarmManager（架构选择、并发执行、共识裁决、白板注入/清理）
-*   [swarm/agent_adapter.py](file:///root/swarmbot/swarmbot/swarm/agent_adapter.py)：与 swarms 侧的适配/桥接（如有）
+*   [swarm/manager.py](swarmbot/swarm/manager.py)：SwarmManager（架构选择、并发执行、共识裁决、白板注入/清理）
+*   [swarm/agent_adapter.py](swarmbot/swarm/agent_adapter.py)：与 swarms 侧的适配/桥接（如有）
 
 ### Agent 核心（Core）
-*   [core/agent.py](file:///root/swarmbot/swarmbot/core/agent.py)：CoreAgent（组装消息、工具调用循环、把结果写入记忆）
+*   [core/agent.py](swarmbot/core/agent.py)：CoreAgent（组装消息、工具调用循环、把结果写入记忆）
 
 ### 记忆系统（Memory）
-*   [memory/qmd.py](file:///root/swarmbot/swarmbot/memory/qmd.py)：三层记忆实现（Whiteboard/LocalMD/QMD 搜索）
-*   [memory/base.py](file:///root/swarmbot/swarmbot/memory/base.py)：记忆存储的接口基类
+*   [memory/qmd.py](swarmbot/memory/qmd.py)：三层记忆实现（Whiteboard/LocalMD/QMD 搜索）
+*   [memory/base.py](swarmbot/memory/base.py)：记忆存储的接口基类
 
 ### 工具系统（Tools）
-*   [tools/adapter.py](file:///root/swarmbot/swarmbot/tools/adapter.py)：工具适配器（file_read/file_write/web_search/shell_exec 等）
-*   [tools/policy.py](file:///root/swarmbot/swarmbot/tools/policy.py)：[v0.2 新增] 工具权限控制
-*   [tools/openclaw_bridge.py](file:///root/swarmbot/swarmbot/tools/openclaw_bridge.py)：[v0.2 新增] OpenClaw 桥接
-*   [tools/browser/local_browser.py](file:///root/swarmbot/swarmbot/tools/browser/local_browser.py)：本地无头浏览器/网页读取（用于 web_search/browser_read）
+*   [tools/adapter.py](swarmbot/tools/adapter.py)：工具适配器（file_read/file_write/web_search/shell_exec 等）
+*   [tools/policy.py](swarmbot/tools/policy.py)：[v0.2 新增] 工具权限控制
+*   [tools/openclaw_bridge.py](swarmbot/tools/openclaw_bridge.py)：[v0.2 新增] OpenClaw 桥接
+*   [tools/browser/local_browser.py](swarmbot/tools/browser/local_browser.py)：本地无头浏览器/网页读取（用于 web_search/browser_read）
 
 ### 后台整理（Overthinking）
-*   [loops/overthinking.py](file:///root/swarmbot/swarmbot/loops/overthinking.py)：空闲时整理 LocalMD → 写入 QMD，并进行压缩/拓展
+*   [loops/overthinking.py](swarmbot/loops/overthinking.py)：空闲时整理 LocalMD → 写入 QMD，并进行压缩/拓展
 
 ### 中间件与状态机
-*   [middleware/long_horizon.py](file:///root/swarmbot/swarmbot/middleware/long_horizon.py)：长程任务规划实验（WorkMapMemory/HierarchicalTaskGraph）
-*   [statemachine/engine.py](file:///root/swarmbot/swarmbot/statemachine/engine.py)：状态机执行引擎（适合“写-评审-再写”循环）
+*   [middleware/long_horizon.py](swarmbot/middleware/long_horizon.py)：长程任务规划实验（WorkMapMemory/HierarchicalTaskGraph）
+*   [statemachine/engine.py](swarmbot/statemachine/engine.py)：状态机执行引擎（适合“写-评审-再写”循环）
 
 ## 📊 Galileo Leaderboard 模拟评分
 
-基于内部集成测试 [leaderboard_eval.py](file:///root/swarmbot/tests/integration/leaderboard_eval.py)，在本地 OpenAI 兼容接口 + `openai/openbmb/agentcpm-explore` 模型条件下的“全通过”结果：
+基于内部集成测试 [leaderboard_eval.py](tests/integration/leaderboard_eval.py)，在本地 OpenAI 兼容接口 + `openai/openbmb/agentcpm-explore` 模型条件下的“全通过”结果：
 *   总分：5/5
 *   明细：
     *   Task 1 Reasoning (GPQA-style)：PASS
@@ -280,7 +279,7 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 ---
 
 ## 🧩 飞书（Feishu）配置（通过 nanobot gateway）
-Swarmbot 通过 [gateway_wrapper.py](file:///root/swarmbot/swarmbot/gateway_wrapper.py) 接管 nanobot 的消息处理，复用其多渠道能力。
+Swarmbot 通过 [gateway_wrapper.py](swarmbot/gateway_wrapper.py) 接管 nanobot 的消息处理，复用其多渠道能力。
 1. 先完成 nanobot 的渠道配置（飞书 App/机器人 Token 等）：参考 nanobot 官方文档
 2. 配置 Swarmbot 的模型 Provider（OpenAI 兼容接口）
 3. 启动网关：

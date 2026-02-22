@@ -26,8 +26,8 @@
 3. **记忆整合**: 将此次交互的关键情感和决策存入长期记忆。
 
 ## 4. 读取清单
-- [SOUL.md](file:///root/swarmbot/swarmbot/boot/SOUL.md) (核心人格)
-- [IDENTITY.md](file:///root/swarmbot/swarmbot/boot/IDENTITY.md) (身份信息)
-- [USER.md](file:///root/swarmbot/swarmbot/boot/USER.md) (用户信息)
-- [HEARTBEAT.md](file:///root/swarmbot/swarmbot/boot/HEARTBEAT.md) (主动联系)
-- [AGENTS.md](file:///root/swarmbot/swarmbot/boot/AGENTS.md) (工作空间规则)
+- [SOUL.md](SOUL.md) (核心人格)
+- [IDENTITY.md](IDENTITY.md) (身份信息)
+- [USER.md](USER.md) (用户信息)
+- [HEARTBEAT.md](HEARTBEAT.md) (主动联系)
+- [AGENTS.md](AGENTS.md) (工作空间规则)

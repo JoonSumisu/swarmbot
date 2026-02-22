@@ -2,8 +2,8 @@
 
 ## 工具权限策略
 - **File System**:
-  - Allow Read: `/root/swarmbot`, `/root/workspace`
-  - Allow Write: `/root/workspace/output`, `/root/workspace/cache`
+  - Allow Read: `~/.swarmbot`, `.`
+  - Allow Write: `~/.swarmbot/workspace/output`, `~/.swarmbot/workspace/cache`
   - Deny: `/etc`, `/var`, `/usr` (System directories)
 
 - **Shell Execution**:
