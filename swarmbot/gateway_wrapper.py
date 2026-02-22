@@ -6,9 +6,13 @@ from typing import Any, Dict
 
 # --- 1. Environment Setup & Vendoring ---
 # Ensure we load the local VENDORED nanobot, not system one
+# And make sure the top-level swarmbot package is importable even when
+# this file is executed directly via `python gateway_wrapper.py`.
 CURRENT_DIR = Path(__file__).resolve().parent
-if str(CURRENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CURRENT_DIR))
+PROJECT_ROOT = CURRENT_DIR.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from swarmbot.config_manager import load_config
 from swarmbot.swarm.manager import SwarmManager
