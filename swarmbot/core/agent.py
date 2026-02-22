@@ -46,7 +46,10 @@ class CoreAgent:
         
         # 1. System Prompt (Role / Soul)
         import datetime
+        import time
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timezone = time.strftime("%z")
+        weekday = datetime.datetime.now().strftime("%A")
         
         # Soul Loading Logic
         # Only the 'Master' agent (Planner/Judge) or if specifically configured should load the full Soul.
@@ -59,7 +62,12 @@ class CoreAgent:
             try:
                 # Try to find soul.md in current directory or ~/.nanobot/soul.md
                 import os
-                soul_paths = ["soul.md", os.path.expanduser("~/.nanobot/soul.md")]
+                # Look in standard locations including ~/.swarmbot/boot/SOUL.md
+                soul_paths = [
+                    os.path.expanduser("~/.swarmbot/boot/SOUL.md"),
+                    "soul.md", 
+                    os.path.expanduser("~/.nanobot/soul.md")
+                ]
                 for p in soul_paths:
                     if os.path.exists(p):
                         with open(p, "r", encoding="utf-8") as f:
@@ -84,7 +92,9 @@ class CoreAgent:
         # UNIFIED PERSONA ENFORCEMENT
         role_desc = (
             f"{soul_content}\n\n"
-            f"Current Time: {current_time}. "
+            f"Current Context:\n"
+            f"- Time: {current_time} ({timezone})\n"
+            f"- Weekday: {weekday}\n"
             "Act as a seamless part of the swarm. "
         )
         
