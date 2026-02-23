@@ -12,9 +12,9 @@ Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Mu
 
 ---
 
-## 🌟 核心架构 v0.2.6
+## 🌟 核心架构 v0.2.8
 
-Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.2.6 中引入了内置 Gateway 与双 Boot 系统：
+Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.2.8 中引入了内置 Gateway 与 **Tri-Boot 认知系统**：
 
 ### 1. Built-in Gateway (Native Integration)
 *   **特性**: 彻底摆脱对外部 nanobot 包的依赖，直接内置并增强了 Gateway 模块。
@@ -23,11 +23,12 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     *   **WebSocket**: 飞书通道采用 WebSocket 长连接，无需公网 IP，内网即可部署。
     *   **配置统一**: 自动同步 Swarmbot 配置到 Gateway，无需维护两套配置文件。
 
-### 2. Dual Boot System (Cognitive Engine)
-- **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆。
-- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md` (身份) 进行二次解释与用户交互。
+### 2. Tri-Boot System (Cognitive Engine)
+- **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆，是整个 Swarm 的“理性大脑”。
+- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md` (身份) 进行二次解释与用户交互，是对外的人格与意识层。
+- **Overthinking / 自我行动优化 Boot (Subconscious)**: 通过 `loops/overthinking.py` 与后台守护进程协作，在系统空闲时自动整理记忆、反思任务，并尝试优化自身 Boot/工具使用策略，相当于一个“潜意识层”的自我进化回路。
 
-### 2. Swarm Orchestration (Swarms Integrated)
+### 3. Swarm Orchestration (Swarms Integrated)
 *   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
 *   **作用**: 管理 Agent 间的协作流。
 *   **架构支持**:
@@ -38,14 +39,25 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     *   `State Machine`: 动态状态机（适合 Code Review 循环）。
     *   `Auto`: 大模型可选；根据任务自动选择架构，并动态生成专用 Agent 角色（存在一定随机性）。
 
-### 3. Core Agent (Nanobot Inside)
+### 4. Core Agent (Nanobot Inside)
 *   **来源**: 基于 `nanobot` 核心代码构建。
 *   **作用**: 作为 Swarm 中的执行单元。
 *   **特性**: 
-    *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行）都被封装为 OpenAI 格式的 Tool。
+    *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行）都被封装为 OpenAI 格式的 Tool，并通过 `NanobotSkillAdapter` 统一注册到 Swarm 的工具中心。
     *   **OpenClaw Bridge**: [v0.2 新增] 支持动态加载 OpenClaw 生态工具。
     *   **Web Search**: 集成 Chrome 无头浏览器，支持动态网页抓取与反爬虫绕过，优先获取 2024-2026 年最新数据。
     *   **Gateway**: 复用 nanobot 强大的多渠道网关，支持飞书、Slack、Telegram 等。
+
+### 5. Tool & Skill Orchestration (Swarm-Level)
+*   **统一工具空间**: 所有工具（文件/网络/执行/记忆/自我控制）都通过 `tools/adapter.py` 暴露为 OpenAI Tool，核心包括：
+    *   文件与系统：`file_read`, `file_write`, `shell_exec`
+    *   网络与浏览器：`web_search`, `browser_open`, `browser_read`
+    *   记忆与协调：`whiteboard_update`
+    *   自我控制：`swarm_control`（修改架构/Provider/Overthinking 等）
+*   **Skill 支持**:
+    *   本地技能：自动扫描 `~/.swarmbot/workspace/skills` 与内置 `swarmbot/nanobot/skills`，通过 `skill_summary` 列出，并用 `skill_load` 按需加载 `SKILL.md` 以节省 token。
+    *   ClawHub 技能：通过 ClawHub 提供的命令（结合 `shell_exec`）安装社区技能，再由 `skill_summary` 暴露给 Swarm。
+*   **Swarm 级调用**: 在 Swarm 架构中，`planner/master` 等核心 Agent 会默认加载全部工具与技能签名，能够在推理过程中主动选择、组合和调用这些工具/skills 完成复杂任务，而不仅仅是单 Agent 的被动调用。
 
 ### 4. Tri-Layer Memory (QMD Powered)
 *   **来源**: 基于 `qmd` 提供的本地向量检索引擎。
@@ -55,7 +67,7 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     2.  **MemoryMap (Whiteboard)**: 内存中的共享白板，存储任务全局状态、关键决策快照，确保多 Agent 信息同步。
     3.  **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持对历史文档和笔记的语义检索。
 
-### 5. Overthinking Loop (Deep Thinking)
+### 6. Overthinking Loop (Deep Thinking)
 *   **功能**: 空闲时的后台深度思考循环（可选）。
 *   **能力**:
     *   **记忆整理**: 从 LocalMD 提取关键事实与决策，沉淀为长期记忆 (QMD)。
@@ -359,7 +371,7 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
     *   `overthinking setup`：配置开关/周期/步数
     *   `overthinking start`：前台启动循环（开发/调试用）
 
-### 10. `swarmbot update` [v0.2.6]
+### 10. `swarmbot update` [v0.2.8]
 *   **功能**：更新核心代码。
 *   **特性**：
     *   保留 `swarmbot/boot/` 下的所有个性化配置。
@@ -415,6 +427,13 @@ Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。
 ## 📊 测试与评估
 *   单元测试：`python -m unittest discover -s tests -p "test*.py" -v`
 *   评估脚本：`tests/integration/leaderboard_eval.py`（请使用你自己的模型与服务端点运行，避免在仓库中硬编码私有信息）
+
+### PCM / Leaderboard 结果（历史记录）
+在早期实验中，基于 `openbmb/AgentCPM-Explore-GGUF` 作为底座模型，在官方 PCM leaderboard 评测中：
+*   本架构能够**完整跑通全部评测任务**（存在一定随机性），这也是当初设计 Swarm+Tri-Boot+工具/Skill 体系的重要依据之一。
+*   该结果体现了当前架构在中文 Agent 任务上的适配能力与可行性，后续可以作为调优与回归测试的参考基线。
+
+> 注：上述成绩属于历史实验结果，仅说明架构能力，不保证在任意模型/版本下都能复现；如需复现，请结合你自己的服务端点与模型权重，在本地重新运行 leaderboard 评估脚本。
 
 ### Evaluation 调整说明
 为减少误判与更贴近真实使用，本项目对评分脚本做了小幅鲁棒性调整：

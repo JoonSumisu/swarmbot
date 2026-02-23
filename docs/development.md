@@ -125,7 +125,7 @@ swarmbot heartbeat status
 swarmbot heartbeat trigger
 ```
 
-## 内置 nanobot（架构升级 v0.2.6）
+## 内置 nanobot（架构升级 v0.2.8）
 Swarmbot 现已彻底集成 nanobot 源码（vendored），不再依赖外部 pip 包。
 
 ### Gateway 架构
