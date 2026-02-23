@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import time
+import os
 
 from .config_manager import (
     SwarmbotConfig,
@@ -16,7 +17,6 @@ from .config_manager import (
 )
 from .swarm.manager import SwarmManager
 import shutil
-import os
 
 
 def load_nanobot_config() -> dict:
@@ -441,6 +441,67 @@ def cmd_update() -> None:
     print("如果您是通过 pip 安装的，请使用 pip install --upgrade swarmbot")
 
 
+def cmd_daemon(args: argparse.Namespace) -> None:
+    from .config_manager import CONFIG_HOME
+    pid_file = os.path.join(CONFIG_HOME, "daemon.pid")
+    if args.action == "start":
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, "r", encoding="utf-8") as f:
+                    pid = int(f.read().strip() or "0")
+                if pid > 0:
+                    os.kill(pid, 0)
+                    print(f"Swarmbot daemon 已在运行，PID={pid}")
+                    return
+            except Exception:
+                try:
+                    os.remove(pid_file)
+                except Exception:
+                    pass
+        cmd = [sys.executable, "-m", "swarmbot.daemon"]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            with open(pid_file, "w", encoding="utf-8") as f:
+                f.write(str(proc.pid))
+        except Exception:
+            pass
+        print(f"Swarmbot daemon 已启动，PID={proc.pid}")
+    elif args.action == "shutdown":
+        if not os.path.exists(pid_file):
+            print("Swarmbot daemon 未在运行。")
+            return
+        try:
+            with open(pid_file, "r", encoding="utf-8") as f:
+                pid = int(f.read().strip() or "0")
+        except Exception:
+            pid = 0
+        if pid <= 0:
+            try:
+                os.remove(pid_file)
+            except Exception:
+                pass
+            print("Swarmbot daemon PID 文件无效，已清理。")
+            return
+        try:
+            import signal
+
+            os.kill(pid, signal.SIGTERM)
+            print(f"已发送 shutdown 信号到 Swarmbot daemon (PID={pid})")
+        except ProcessLookupError:
+            print("Swarmbot daemon 进程不存在，清理 PID 文件。")
+        except Exception as e:
+            print(f"无法发送 shutdown 信号: {e}")
+        try:
+            os.remove(pid_file)
+        except Exception:
+            pass
+
+
 def cmd_passthrough(command: str, extra_args: list[str]) -> None:
     """Helper to passthrough commands to nanobot."""
     cmd = ["nanobot", command] + extra_args
@@ -527,6 +588,11 @@ def main() -> None:
 
     subparsers.add_parser("skill", help="查看当前可用的技能（透传到 nanobot skill list）")
 
+    daemon_parser = subparsers.add_parser("daemon", help="管理 Swarmbot 守护进程")
+    daemon_sub = daemon_parser.add_subparsers(dest="action", required=True)
+    daemon_sub.add_parser("start", help="启动守护进程")
+    daemon_sub.add_parser("shutdown", help="关闭守护进程")
+
     overthink_parser = subparsers.add_parser("overthinking", help="管理 Overthinking 后台思考循环")
     overthink_sub = overthink_parser.add_subparsers(dest="action", required=True)
     overthink_setup = overthink_sub.add_parser("setup", help="配置 Overthinking 参数")
@@ -571,3 +637,5 @@ def main() -> None:
         cmd_passthrough("skill", sys.argv[2:])
     elif args.command == "overthinking":
         cmd_overthinking(args)
+    elif args.command == "daemon":
+        cmd_daemon(args)
