@@ -55,19 +55,23 @@ class CoreAgent:
         # Only the 'Master' agent (Planner/Judge) or if specifically configured should load the full Soul.
         # Sub-agents should have a functional persona.
         
-        is_master = self.ctx.role in ["planner", "judge", "master", "consensus_moderator"]
+        is_overthinking = self.ctx.agent_id == "overthinker"
+        is_master = self.ctx.role in ["planner", "judge", "master", "consensus_moderator"] or is_overthinking
         soul_content = ""
         
         if is_master:
             try:
-                # Try to find soul.md in current directory or ~/.nanobot/soul.md
                 import os
-                # Look in standard locations including ~/.swarmbot/boot/SOUL.md
-                soul_paths = [
-                    os.path.expanduser("~/.swarmbot/boot/SOUL.md"),
-                    "soul.md", 
-                    os.path.expanduser("~/.nanobot/soul.md")
-                ]
+                soul_paths = []
+                if is_overthinking:
+                    soul_paths.append(os.path.expanduser("~/.swarmbot/boot/OVERTHINKING.md"))
+                soul_paths.extend(
+                    [
+                        os.path.expanduser("~/.swarmbot/boot/SOUL.md"),
+                        "soul.md",
+                        os.path.expanduser("~/.nanobot/soul.md"),
+                    ]
+                )
                 for p in soul_paths:
                     if os.path.exists(p):
                         with open(p, "r", encoding="utf-8") as f:
