@@ -61,6 +61,70 @@ swarmbot provider add --base-url "http://127.0.0.1:8000/v1" --api-key "YOUR_API_
 }
 ```
 
+## 守护进程与定时任务
+
+### Swarmbot Daemon（守护进程）
+
+Swarmbot 提供一个内置守护进程，用于统一管理：
+
+- gateway 子进程（含飞书等通道）
+- Overthinking 循环（可选）
+- 配置与 Boot 的变更备份
+- LLM 与 Channel 的健康检查
+
+相关配置位于 `~/.swarmbot/config.json` 的 `daemon` 段，例如：
+
+```jsonc
+"daemon": {
+  "backup_interval_seconds": 60,
+  "health_check_interval_seconds": 3600,
+  "manage_gateway": true,
+  "manage_overthinking": false
+}
+```
+
+启动与关闭：
+
+```bash
+swarmbot daemon start
+swarmbot daemon shutdown
+```
+
+守护进程会将状态写入 `~/.swarmbot/daemon_state.json`，开发时可以通过 `file_read` 工具或直接打开该文件查看。
+
+### Cron 定时任务
+
+Swarmbot 直接集成了 nanobot 的 `CronService`，并提供统一 CLI：
+
+```bash
+# 列出所有定时任务
+swarmbot cron list
+
+# 添加一个每 60 分钟执行一次的任务
+swarmbot cron add \
+  --name "heartbeat-every-60m" \
+  --message "请执行一次 HEARTBEAT，并根据 HEARTBEAT.md 更新必要记录，然后回复 HEARTBEAT_OK 或简要总结。" \
+  --every-minutes 60
+
+# 禁用/删除任务
+swarmbot cron disable --id <job_id>
+swarmbot cron remove --id <job_id>
+```
+
+### Heartbeat 循环
+
+Heartbeat 服务基于 `~/.swarmbot/workspace/HEARTBEAT.md` 文件工作，推荐模板见 README 中的「推荐运行模板」章节。
+
+开发过程中常用命令：
+
+```bash
+# 查看 HEARTBEAT 状态（文件是否存在、是否有待办）
+swarmbot heartbeat status
+
+# 手动触发一次 HEARTBEAT（会创建临时 AgentLoop 执行）
+swarmbot heartbeat trigger
+```
+
 ## 内置 nanobot（架构升级 v0.2.6）
 Swarmbot 现已彻底集成 nanobot 源码（vendored），不再依赖外部 pip 包。
 
@@ -79,4 +143,3 @@ Swarmbot 现已彻底集成 nanobot 源码（vendored），不再依赖外部 pi
 ```bash
 python -m unittest discover -s tests -p "test*.py" -v
 ```
-

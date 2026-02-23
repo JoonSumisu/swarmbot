@@ -42,6 +42,7 @@ class OpenAICompatibleClient:
             "stream": stream,
             "api_key": self.config.api_key,
             "base_url": self.config.base_url,
+            "timeout": self.config.timeout,
         }
         if temperature is not None:
             params["temperature"] = temperature
@@ -109,6 +110,7 @@ class OpenAICompatibleClient:
             "stream": stream,
             "api_key": self.config.api_key or "sk-dummy", # Local models often need a dummy key
             "base_url": self.config.base_url,
+            "timeout": self.config.timeout,
         }
         
         if custom_llm_provider:

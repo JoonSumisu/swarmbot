@@ -6,7 +6,7 @@ import threading
 import asyncio
 from typing import Any, Dict, Optional, Callable
 
-from ..config_manager import load_config, save_config, SwarmbotConfig
+from ..config_manager import load_config, save_config, SwarmbotConfig, WORKSPACE_PATH
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.qmd import QMDMemoryStore
@@ -215,7 +215,7 @@ class OverthinkingLoop:
             print(f"[Overthinking] Exploration Result: {result[:200]}...")
             
             # Backup Log
-            log_dir = os.path.join(self.cfg.workspace_root, "exploration_logs")
+            log_dir = os.path.join(WORKSPACE_PATH, "exploration_logs")
             os.makedirs(log_dir, exist_ok=True)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             log_file = os.path.join(log_dir, f"explore_{timestamp}.md")

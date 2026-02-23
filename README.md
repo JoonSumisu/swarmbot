@@ -125,6 +125,161 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
 
 ---
 
+## 推荐运行模板：守护进程 + 定时任务 + Heartbeat
+
+本节给出一套**推荐模板**，用于开机后默认启动 Swarmbot 守护进程，并启用基础的定时任务和 Heartbeat。
+
+### 1. 推荐的 daemon 配置片段
+
+在 `~/.swarmbot/config.json` 中增加（或合并）如下段落：
+
+```jsonc
+"daemon": {
+  // 配置/Boot 发生变化时才备份
+  "backup_interval_seconds": 60,
+  // 每小时做一次 LLM / Channel 健康检查
+  "health_check_interval_seconds": 3600,
+  // 可选：将备份同步到远端目录（例如 SMB 挂载点）
+  // "backup_remote_path": "/mnt/swarmbot_backup",
+
+  // 是否由 daemon 管理 gateway 与 Overthinking
+  "manage_gateway": true,
+  "manage_overthinking": false,
+
+  // 子进程异常退出后的重启冷却时间（秒）
+  "gateway_restart_delay_seconds": 10,
+  "overthinking_restart_delay_seconds": 10
+}
+```
+
+推荐做法：
+- 开发调试阶段：先只打开 `manage_gateway`，确认网关与飞书等通道稳定；
+- 稳定后，再考虑将 `manage_overthinking` 设为 `true`，让后台思考循环由 daemon 托管。
+
+启动守护进程：
+
+```bash
+swarmbot daemon start
+```
+
+守护进程状态与健康检查结果会写入：
+
+```bash
+~/.swarmbot/daemon_state.json
+```
+
+其中包括：
+- 最近一次备份时间与哈希
+- LLM 健康状态（`llm_health`）
+- Channel 健康状态（`channels.feishu` 等）
+- gateway / overthinking 等子进程的 PID 与 last_start 时间
+
+### 2. 推荐的 Heartbeat 模板
+
+在 `~/.swarmbot/workspace/HEARTBEAT.md` 中可以使用如下推荐模板：
+
+```markdown
+# HEARTBEAT 任务清单（示例）
+
+> 说明：Heartbeat 每次触发时，会读取本文件并尝试执行其中的任务。
+> 建议只保留当前真正需要定期检查/维护的事项。
+
+## 每次 HEARTBEAT 必做
+
+- [ ] 检查 ~/.swarmbot/daemon_state.json 中的 llm_health 与 channels 状态，
+      如发现异常，请在本文件下方追加「告警记录」。
+- [ ] 检查最近 24h 的对话日志中是否有未完成的 TODO，将必要的信息写入 QMD。
+
+## 定期维护建议
+
+- [ ] 每天整理当天的关键决策与结论，写入一个「日报」文件。
+- [ ] 每周检查一次 cron 任务列表，删除不再需要的任务。
+
+## 告警记录
+
+- （由 Agent 在执行 HEARTBEAT 后追加简短记录）
+```
+
+相关命令：
+
+```bash
+# 查看当前 HEARTBEAT 状态（是否存在、是否有待办）
+swarmbot heartbeat status
+
+# 立即执行一次 HEARTBEAT（会按照上面模板中的说明去检查任务）
+swarmbot heartbeat trigger
+```
+
+### 3. 推荐的 cron 定时任务模板
+
+Swarmbot 已直接集成 nanobot 的 CronService，可用以下命令管理定时任务：
+
+```bash
+# 列出所有定时任务
+swarmbot cron list
+
+# 每 60 分钟执行一次 HEARTBEAT（适合轻量周期自检）
+swarmbot cron add \
+  --name "heartbeat-every-60m" \
+  --message "请执行一次 HEARTBEAT，并根据 HEARTBEAT.md 更新必要记录，然后回复 HEARTBEAT_OK 或简要总结。" \
+  --every-minutes 60
+```
+
+上面的定时任务模板会：
+- 每 60 分钟唤醒 Agent；
+- 由 Agent 根据 `HEARTBEAT.md` 中的内容执行任务；
+- 将执行情况写回日志或外部通道（如果在 CronPayload 中启用了 deliver/channel/to）。
+
+在需要时可以禁用或删除任务：
+
+```bash
+swarmbot cron disable --id <job_id>
+swarmbot cron remove --id <job_id>
+```
+
+### 4. 开机默认启动（systemd 示例）
+
+以下以 Linux + systemd 为例，给出一个推荐模板（需要 root 或合适权限手动配置）：
+
+1. 创建 systemd service（示例路径：`/etc/systemd/system/swarmbot-daemon.service`）：
+
+   ```ini
+   [Unit]
+   Description=Swarmbot Daemon
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=YOUR_LINUX_USER
+   WorkingDirectory=/root/swarmbot
+   ExecStart=/usr/bin/env swarmbot daemon start
+   ExecStop=/usr/bin/env swarmbot daemon shutdown
+   Restart=on-failure
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+2. 重新加载并启用服务：
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable swarmbot-daemon
+   sudo systemctl start swarmbot-daemon
+
+   # 查看状态
+   sudo systemctl status swarmbot-daemon
+   ```
+
+注意：
+- `User` 与 `WorkingDirectory` 请根据你的实际环境调整；
+- 配置文件仍然位于当前用户的 `~/.swarmbot/config.json`；
+- 请勿把真实的 `base_url`/`api_key` 之类敏感信息提交到仓库（仅写在本地 `config.json` 中）。
+
+---
+
 ## 📖 CLI 功能详解
 
 Swarmbot 提供了一套完整的命令行工具来管理 Agent 集群。

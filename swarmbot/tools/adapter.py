@@ -5,6 +5,7 @@ import subprocess
 import os
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
 @dataclass
 class ToolDefinition:
@@ -116,8 +117,9 @@ class NanobotSkillAdapter:
         # Add Overthinking Control Tool
         self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps"], self._tool_overthinking_control)
 
-        # Add Swarm Control Tool (CLI Wrapper)
         self._register_builtin("swarm_control", "Control Swarmbot configuration and lifecycle (CLI wrapper).", ["command", "subcommand", "args"], self._tool_swarm_control)
+        self._register_builtin("skill_summary", "List available nanobot skills in a compact summary format.", [], self._tool_skill_summary)
+        self._register_builtin("skill_load", "Load a specific skill markdown by name.", ["name"], self._tool_skill_load)
 
     def _tool_swarm_control(self, command: str, subcommand: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -186,25 +188,13 @@ class NanobotSkillAdapter:
              return "Command 'onboard' is disabled in swarm_control to prevent accidental reset. Please run 'swarmbot onboard' manually in terminal if really needed."
 
         elif command == "skill":
-             # New feature: Search and install ClawHub skills
-             # Usage: swarm_control(command="skill", subcommand="search", args={"query": "weather"})
-             #        swarm_control(command="skill", subcommand="install", args={"name": "weather"})
-             
              action = subcommand or "list"
-             try:
-                 if action == "search":
-                     query = args.get("query", "") if args else ""
-                     return self._run_nanobot_cmd("skill", "search", query)
-                 elif action == "install":
-                     name = args.get("name", "") if args else ""
-                     if not name: return "Error: Skill name required for install"
-                     return self._run_nanobot_cmd("skill", "add", name)
-                 elif action == "list":
-                     return self._run_nanobot_cmd("skill", "list")
-                 else:
-                     return f"Unknown skill action: {action}. Supported: search, install, list"
-             except Exception as e:
-                 return f"Skill operation failed: {e}"
+             if action == "list":
+                 return self._tool_skill_summary()
+             elif action == "info" and args and "name" in args:
+                 return self._tool_skill_load(str(args["name"]))
+             else:
+                 return "Skill 管理请结合 skill_summary、skill_load 以及 shell_exec 执行 ClawHub 提供的命令完成。"
 
         elif command == "overthinking":
              # Proxy to _tool_overthinking_control
@@ -217,7 +207,35 @@ class NanobotSkillAdapter:
              return self._tool_overthinking_control(action, interval, steps)
 
         else:
-            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard, overthinking"
+            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard, overthinking, skill"
+
+    def _tool_skill_summary(self) -> str:
+        try:
+            from nanobot.config.loader import load_config
+            from nanobot.agent.skills import SkillsLoader
+            cfg = load_config()
+            loader = SkillsLoader(Path(cfg.workspace_path))
+            summary = loader.build_skills_summary()
+            if not summary:
+                return "<skills></skills>"
+            return summary
+        except Exception as e:
+            return f"Skill summary error: {e}"
+
+    def _tool_skill_load(self, name: str) -> str:
+        try:
+            if not name:
+                return "Skill name required"
+            from nanobot.config.loader import load_config
+            from nanobot.agent.skills import SkillsLoader
+            cfg = load_config()
+            loader = SkillsLoader(Path(cfg.workspace_path))
+            content = loader.load_skill(name)
+            if not content:
+                return f"Skill not found: {name}"
+            return content
+        except Exception as e:
+            return f"Skill load error: {e}"
 
     def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None) -> str:
         """

@@ -226,7 +226,7 @@ def main() -> None:
     backup_interval = int(cfg.get("backup_interval_seconds", 60))
     if backup_interval <= 0:
         backup_interval = 60
-    health_interval = int(cfg.get("health_check_interval_seconds", 60))
+    health_interval = int(cfg.get("health_check_interval_seconds", 3600))
     if health_interval <= 0:
         health_interval = 60
     manage_gateway = bool(cfg.get("manage_gateway", False))

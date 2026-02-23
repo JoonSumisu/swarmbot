@@ -231,12 +231,46 @@ class SwarmManager:
         except:
             pass
 
+        system_caps = {}
+        try:
+            from nanobot.config.loader import load_config as _nb_load_config, get_data_dir as _nb_get_data_dir
+            from pathlib import Path
+            nb_cfg = _nb_load_config()
+            workspace = Path(nb_cfg.workspace_path)
+            cron_store = _nb_get_data_dir() / "cron" / "jobs.json"
+            daemon_state = os.path.expanduser("~/.swarmbot/daemon_state.json")
+            skills_workspace = workspace / "skills"
+            skills_builtin = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
+            system_caps = {
+                "daemon": {
+                    "state_file": str(daemon_state),
+                    "config_section": "daemon",
+                    "services": ["gateway", "overthinking", "backup", "health"]
+                },
+                "cron": {
+                    "store_path": str(cron_store),
+                    "cli": "swarmbot cron"
+                },
+                "heartbeat": {
+                    "workspace_heartbeat": str(workspace / "HEARTBEAT.md"),
+                    "cli": "swarmbot heartbeat"
+                },
+                "skills": {
+                    "workspace_dir": str(skills_workspace),
+                    "builtin_dir": str(skills_builtin),
+                    "summary_tool": "skill_summary"
+                }
+            }
+        except Exception:
+            system_caps = {}
+
         structured_context = {
             "swarmboot_config": swarmboot_content,
             "prompt": user_input,
             "qmd": qmd_context,
             "md": md_excerpt,
-            "session_id": session.session_id
+            "session_id": session.session_id,
+            "system_capabilities": system_caps
         }
         session.memory.whiteboard.update("current_task_context", structured_context)
 
