@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, asdict, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 CONFIG_HOME = os.path.expanduser("~/.swarmbot")
 CONFIG_PATH = os.path.join(CONFIG_HOME, "config.json")
@@ -53,6 +53,16 @@ class ChannelConfig:
     token: str = ""  # For Telegram/Discord/Slack
     config: Dict[str, Any] = field(default_factory=dict)
 
+
+@dataclass
+class DaemonConfig:
+    manage_gateway: bool = False
+    manage_overthinking: bool = False
+    backup_interval_seconds: int = 60
+    health_check_interval_seconds: int = 3600
+    gateway_restart_delay_seconds: int = 10
+    overthinking_restart_delay_seconds: int = 10
+
 @dataclass
 class SwarmbotConfig:
     provider: ProviderConfig = field(default_factory=ProviderConfig)
@@ -60,6 +70,7 @@ class SwarmbotConfig:
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     channels: Dict[str, ChannelConfig] = field(default_factory=dict)
+    daemon: DaemonConfig = field(default_factory=DaemonConfig)
     # No more hardcoded paths here, rely on constants
 
 def ensure_dirs() -> None:
@@ -146,13 +157,23 @@ def load_config() -> SwarmbotConfig:
                  token=c_data.get("token", ""),
                  config={k:v for k,v in c_data.items() if k not in ["enabled", "app_id", "app_secret", "encrypt_key", "verification_token", "token"]}
              )
-    
+    daemon_data = data.get("daemon", {})
+    daemon = DaemonConfig(
+        manage_gateway=daemon_data.get("manage_gateway", False),
+        manage_overthinking=daemon_data.get("manage_overthinking", False),
+        backup_interval_seconds=daemon_data.get("backup_interval_seconds", 60),
+        health_check_interval_seconds=daemon_data.get("health_check_interval_seconds", 3600),
+        gateway_restart_delay_seconds=daemon_data.get("gateway_restart_delay_seconds", 10),
+        overthinking_restart_delay_seconds=daemon_data.get("overthinking_restart_delay_seconds", 10),
+    )
+
     return SwarmbotConfig(
         provider=provider,
         swarm=swarm,
         overthinking=overthinking,
         tools=tools,
-        channels=channels
+        channels=channels,
+        daemon=daemon,
     )
 
 
@@ -173,6 +194,7 @@ def save_config(cfg: SwarmbotConfig) -> None:
                 "overthinking": asdict(cfg.overthinking),
                 "tools": asdict(cfg.tools),
                 "channels": channels_dict,
+                "daemon": asdict(cfg.daemon),
             },
             f,
             ensure_ascii=False,
