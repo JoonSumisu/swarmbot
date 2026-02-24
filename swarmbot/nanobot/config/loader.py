@@ -60,19 +60,29 @@ def _swarmbot_to_nanobot_dict() -> dict:
     port_raw = os.environ.get("OPENCLAW_GATEWAY_PORT")
     port = int(port_raw) if port_raw and port_raw.isdigit() else None
 
+    # Get primary provider details safely
+    primary_provider = cfg.providers[0] if cfg.providers else None
+    
+    # Use safe defaults if no provider configured
+    model = primary_provider.model if primary_provider else "gpt-4o"
+    max_tokens = primary_provider.max_tokens if primary_provider else 4096
+    temperature = primary_provider.temperature if primary_provider else 0.7
+    api_key = primary_provider.api_key if primary_provider else ""
+    api_base = primary_provider.base_url if primary_provider else None
+
     data: dict = {
         "agents": {
             "defaults": {
                 "workspace": str(WORKSPACE_PATH),
-                "model": cfg.provider.model,
-                "max_tokens": cfg.provider.max_tokens,
-                "temperature": cfg.provider.temperature,
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
             }
         },
         "providers": {
             "custom": {
-                "api_key": cfg.provider.api_key,
-                "api_base": cfg.provider.base_url or None,
+                "api_key": api_key,
+                "api_base": api_base,
             }
         },
         "channels": channels,
@@ -90,17 +100,22 @@ def load_config(config_path: Path | None = None) -> Config:
 
 
 def save_config(config: Config, config_path: Path | None = None) -> None:
-    from swarmbot.config_manager import ChannelConfig, load_config as load_swarmbot_config, save_config as save_swarmbot_config
+    from swarmbot.config_manager import ChannelConfig, ProviderConfig, load_config as load_swarmbot_config, save_config as save_swarmbot_config
 
     cfg = load_swarmbot_config()
 
-    cfg.provider.model = config.agents.defaults.model
-    cfg.provider.max_tokens = config.agents.defaults.max_tokens
-    cfg.provider.temperature = config.agents.defaults.temperature
+    if not cfg.providers:
+        cfg.providers = [ProviderConfig(name="primary")]
+
+    # Update primary provider
+    primary = cfg.providers[0]
+    primary.model = config.agents.defaults.model
+    primary.max_tokens = config.agents.defaults.max_tokens
+    primary.temperature = config.agents.defaults.temperature
 
     custom = config.providers.custom
-    cfg.provider.api_key = custom.api_key or ""
-    cfg.provider.base_url = custom.api_base or ""
+    primary.api_key = custom.api_key or ""
+    primary.base_url = custom.api_base or ""
 
     channels: dict[str, ChannelConfig] = {}
     for name, c in config.channels.model_dump(by_alias=True).items():

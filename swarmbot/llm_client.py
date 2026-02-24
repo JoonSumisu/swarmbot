@@ -18,6 +18,10 @@ class OpenAICompatibleClient:
         if not self.configs:
             self.configs = [LLMConfig()]
 
+    @property
+    def config(self) -> LLMConfig:
+        return self.configs[0] if self.configs else LLMConfig()
+
     @classmethod
     def from_provider(cls, provider: Optional[ProviderConfig] = None, providers: Optional[List[ProviderConfig]] = None) -> "OpenAICompatibleClient":
         if provider is None and providers is None:

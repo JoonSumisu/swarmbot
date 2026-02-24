@@ -121,7 +121,9 @@ def _check_llm_health() -> str:
         from .config_manager import load_config
 
         cfg = load_config()
-        base = cfg.provider.base_url
+        # Use primary provider
+        primary = cfg.providers[0] if cfg.providers else None
+        base = primary.base_url if primary else None
         if not base:
             return "unknown"
         import urllib.request

@@ -25,7 +25,7 @@ class OverthinkingLoop:
         
         # Initialize resources
         self.cfg = load_config()
-        self.llm = OpenAICompatibleClient.from_provider(self.cfg.provider)
+        self.llm = OpenAICompatibleClient.from_provider(providers=self.cfg.providers)
         self.memory = QMDMemoryStore()
         
         # Thinking Agent (Self-Reflector)

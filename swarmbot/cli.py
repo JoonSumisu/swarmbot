@@ -298,8 +298,8 @@ def cmd_status() -> None:
     cfg = load_config()
     print("Swarmbot 状态:")
     print()
-    print("Provider:")
-    print(json.dumps({"provider": cfg.provider.__dict__}, ensure_ascii=False, indent=2))
+    print("Providers:")
+    print(json.dumps([p.__dict__ for p in cfg.providers], ensure_ascii=False, indent=2))
     print()
     print("Swarm:")
     print(json.dumps({"swarm": cfg.swarm.__dict__}, ensure_ascii=False, indent=2))
@@ -311,27 +311,32 @@ def cmd_status() -> None:
 
 def cmd_provider_add(args: argparse.Namespace) -> None:
     cfg = load_config()
-    cfg.provider.name = "custom"
-    cfg.provider.base_url = args.base_url
-    cfg.provider.api_key = args.api_key
-    cfg.provider.model = args.model
-    cfg.provider.max_tokens = args.max_tokens
+    from .config_manager import ProviderConfig
+    new_provider = ProviderConfig(
+        name="primary",
+        base_url=args.base_url,
+        api_key=args.api_key,
+        model=args.model,
+        max_tokens=args.max_tokens,
+    )
+    # Overwrite all providers to avoid conflict as per user instruction
+    cfg.providers = [new_provider]
     save_config(cfg)
-    print("已更新模型提供方配置（仅允许当前这个 provider 生效）。")
+    print("已更新模型提供方配置（作为唯一 primary provider 生效）。")
 
 
 def cmd_provider_delete() -> None:
     cfg = load_config()
-    cfg.provider = cfg.provider.__class__()  # reset to defaults
+    cfg.providers = []  # Clear all providers
     save_config(cfg)
-    print("已重置模型提供方配置为默认值。")
+    print("已重置模型提供方配置（清空所有 provider）。")
 
 
 def cmd_config(args: argparse.Namespace) -> None:
     cfg = load_config()
     updated = False
-    if args.agent_count is not None:
-        cfg.swarm.agent_count = args.agent_count
+    if args.max_agents is not None:
+        cfg.swarm.max_agents = args.max_agents
         updated = True
     if args.architecture is not None:
         cfg.swarm.architecture = args.architecture
@@ -481,7 +486,7 @@ def main() -> None:
     provider_sub.add_parser("delete", help="删除当前 provider 配置，恢复默认")
 
     config_parser = subparsers.add_parser("config", help="配置和查看 Swarm 工作模式")
-    config_parser.add_argument("--agent-count", type=int, help="Swarm 中的 agent 数量")
+    config_parser.add_argument("--max-agents", type=int, help="Swarm 中的 agent 最大数量")
     config_parser.add_argument(
         "--architecture",
         type=str,

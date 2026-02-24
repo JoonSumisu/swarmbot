@@ -122,19 +122,23 @@ class SwarmManager:
     @classmethod
     def from_swarmbot_config(cls, cfg: SwarmbotConfig) -> "SwarmManager":
         sw_cfg = SwarmConfig()
-        sw_cfg.max_agents = cfg.swarm.agent_count
+        sw_cfg.max_agents = cfg.swarm.max_agents
         sw_cfg.max_turns = cfg.swarm.max_turns
-        sw_cfg.llm.base_url = cfg.provider.base_url
-        sw_cfg.llm.api_key = cfg.provider.api_key
-        sw_cfg.llm.model = cfg.provider.model
         
-        if hasattr(sw_cfg.llm, "max_tokens"):
-            sw_cfg.llm.max_tokens = cfg.provider.max_tokens
+        # Use primary provider
+        primary_provider = cfg.providers[0] if cfg.providers else None
+        if primary_provider:
+            sw_cfg.llm.base_url = primary_provider.base_url
+            sw_cfg.llm.api_key = primary_provider.api_key
+            sw_cfg.llm.model = primary_provider.model
             
-        # Force sync nanobot config env vars
-        os.environ["OPENAI_API_BASE"] = cfg.provider.base_url
-        os.environ["OPENAI_API_KEY"] = cfg.provider.api_key
-        os.environ["LITELLM_MODEL"] = cfg.provider.model
+            if hasattr(sw_cfg.llm, "max_tokens"):
+                sw_cfg.llm.max_tokens = primary_provider.max_tokens
+                
+            # Force sync nanobot config env vars
+            os.environ["OPENAI_API_BASE"] = primary_provider.base_url
+            os.environ["OPENAI_API_KEY"] = primary_provider.api_key
+            os.environ["LITELLM_MODEL"] = primary_provider.model
         
         mgr = cls(sw_cfg)
         mgr._display_mode = cfg.swarm.display_mode

@@ -42,12 +42,12 @@ class TestNanobotConfigBridge(unittest.TestCase):
         import swarmbot.config_manager as cm
 
         cfg = cm.SwarmbotConfig()
-        cfg.provider.name = "custom"
-        cfg.provider.base_url = "http://localhost:1234/v1"
-        cfg.provider.api_key = "k"
-        cfg.provider.model = "custom/model"
-        cfg.provider.max_tokens = 123
-        cfg.provider.temperature = 0.42
+        cfg.providers[0].name = "custom"
+        cfg.providers[0].base_url = "http://localhost:1234/v1"
+        cfg.providers[0].api_key = "k"
+        cfg.providers[0].model = "custom/model"
+        cfg.providers[0].max_tokens = 123
+        cfg.providers[0].temperature = 0.42
         cfg.channels = {
             "feishu": cm.ChannelConfig(
                 enabled=True,
@@ -75,7 +75,7 @@ class TestNanobotConfigBridge(unittest.TestCase):
         import swarmbot.config_manager as cm
 
         cfg = cm.SwarmbotConfig()
-        cfg.provider.model = "custom/model"
+        cfg.providers[0].model = "custom/model"
         cfg.channels = {
             "feishu": cm.ChannelConfig(enabled=True, config={"app_id": "x", "app_secret": "y"})
         }
@@ -94,9 +94,9 @@ class TestNanobotConfigBridge(unittest.TestCase):
         import swarmbot.config_manager as cm
 
         cfg = cm.SwarmbotConfig()
-        cfg.provider.base_url = "http://localhost:1234/v1"
-        cfg.provider.api_key = "k"
-        cfg.provider.model = "custom/model"
+        cfg.providers[0].base_url = "http://localhost:1234/v1"
+        cfg.providers[0].api_key = "k"
+        cfg.providers[0].model = "custom/model"
         cfg.channels = {}
         cm.save_config(cfg)
 
@@ -115,9 +115,9 @@ class TestNanobotConfigBridge(unittest.TestCase):
 
         cm2 = importlib.reload(cm)
         cfg2 = cm2.load_config()
-        self.assertEqual(cfg2.provider.model, "new/model")
-        self.assertEqual(cfg2.provider.api_key, "new_key")
-        self.assertEqual(cfg2.provider.base_url, "http://localhost:9999/v1")
+        self.assertEqual(cfg2.providers[0].model, "new/model")
+        self.assertEqual(cfg2.providers[0].api_key, "new_key")
+        self.assertEqual(cfg2.providers[0].base_url, "http://localhost:9999/v1")
         self.assertIn("feishu", cfg2.channels)
         self.assertTrue(cfg2.channels["feishu"].enabled)
 

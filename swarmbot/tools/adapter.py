@@ -194,7 +194,10 @@ class ToolAdapter:
                 return f"Current Swarm Config:\n{json.dumps(asdict(cfg.swarm), indent=2)}"
             
             # Apply updates
-            if "agent_count" in args: cfg.swarm.agent_count = int(args["agent_count"])
+            if "max_agents" in args: cfg.swarm.max_agents = int(args["max_agents"])
+            # Legacy support
+            if "agent_count" in args: cfg.swarm.max_agents = int(args["agent_count"])
+            
             if "architecture" in args: cfg.swarm.architecture = str(args["architecture"])
             if "max_turns" in args: cfg.swarm.max_turns = int(args["max_turns"])
             if "auto_builder" in args: 
@@ -208,19 +211,30 @@ class ToolAdapter:
         elif command == "provider":
             cfg = load_config()
             if subcommand == "add" and args:
-                cfg.provider.base_url = args.get("base_url", cfg.provider.base_url)
-                cfg.provider.api_key = args.get("api_key", cfg.provider.api_key)
-                cfg.provider.model = args.get("model", cfg.provider.model)
-                if "max_tokens" in args: cfg.provider.max_tokens = int(args["max_tokens"])
+                # Update primary provider (create if not exists, update if exists)
+                from ..config_manager import LLMConfig
+                
+                if not cfg.providers:
+                    # Create new primary
+                    p = LLMConfig(name="primary")
+                    cfg.providers = [p]
+                else:
+                    # Update existing primary
+                    p = cfg.providers[0]
+                
+                if "base_url" in args: p.base_url = args["base_url"]
+                if "api_key" in args: p.api_key = args["api_key"]
+                if "model" in args: p.model = args["model"]
+                if "max_tokens" in args: p.max_tokens = int(args["max_tokens"])
+                
                 save_config(cfg)
-                return "Provider updated."
+                return "Primary provider updated."
             elif subcommand == "delete":
-                from ..config_manager import ProviderConfig
-                cfg.provider = ProviderConfig()
+                cfg.providers = []
                 save_config(cfg)
-                return "Provider reset to default."
+                return "Providers reset (cleared)."
             else:
-                return f"Current Provider:\n{json.dumps(asdict(cfg.provider), indent=2)}"
+                return f"Current Providers:\n{json.dumps([asdict(p) for p in cfg.providers], indent=2)}"
 
         elif command == "status":
             cfg = load_config()
