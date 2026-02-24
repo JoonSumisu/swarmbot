@@ -33,6 +33,97 @@ class SwarmAgentLoop(AgentLoop):
         except Exception as e:
             logger.error(f"SwarmAgentLoop: Failed to init SwarmManager: {e}")
             
+    async def _process_message(self, msg, session_key=None, on_progress=None):
+        """
+        Intercepts Nanobot's message processing loop to route requests through SwarmManager.
+        This replaces the default agent logic with Swarm's MoE architecture.
+        """
+        logger.info(f"[SwarmRoute] Intercepted message from {msg.channel}:{msg.sender_id}")
+        
+        # System Message Bypass
+        if msg.channel == "system":
+             logger.info(f"[SwarmRoute] Bypassing system message")
+             return None 
+             
+        if not self.swarm_manager:
+            logger.error("SwarmManager is not initialized.")
+            return None
+
+        logger.info(f"[SwarmRoute] Routing to SwarmManager...")
+        
+        try:
+            # Context Synchronization
+            if hasattr(self.swarm_manager.config, "llm"):
+                import os
+                os.environ["OPENAI_API_BASE"] = self.swarm_manager.config.llm.base_url
+                os.environ["OPENAI_API_KEY"] = self.swarm_manager.config.llm.api_key
+                os.environ["LITELLM_MODEL"] = self.swarm_manager.config.llm.model
+
+            # Session ID Extraction
+            session_id = getattr(msg, "chat_id", None) or getattr(msg, "sender_id", "default")
+            
+            # Progress Indicator
+            if on_progress:
+                await on_progress("⏳ Swarm is thinking...")
+            
+            # Execute Swarm Logic (in ThreadPool to avoid blocking async loop)
+            loop = asyncio.get_running_loop()
+            
+            response_text = await loop.run_in_executor(
+                None, 
+                self.swarm_manager.chat, 
+                msg.content, 
+                session_id
+            )
+            
+            logger.info(f"[SwarmRoute] Swarm response generated: {len(str(response_text))} chars")
+            
+            # Response Sanitization
+            if not response_text:
+                response_text = "(No response generated)"
+            response_text = str(response_text)
+
+            # Feishu specific cleaning
+            if msg.channel == "feishu":
+                if len(response_text) > 4000:
+                    response_text = response_text[:4000] + "\n\n...（内容过长，已截断）"
+                # Ensure code blocks have spacing to prevent JSON errors
+                if response_text.strip().startswith("```") and response_text.strip().endswith("```"):
+                    response_text = "\u200b\n" + response_text + "\n\u200b"
+                if not response_text.strip():
+                    response_text = "..."
+
+            # Construct Outbound Message
+            from nanobot.bus.events import OutboundMessage
+            
+            reply_message_id = getattr(msg, "message_id", None)
+            if not reply_message_id and msg.metadata:
+                reply_message_id = msg.metadata.get("message_id")
+            
+            return OutboundMessage(
+                chat_id=msg.chat_id,
+                content=response_text,
+                channel=msg.channel,
+                reply_to=reply_message_id,
+                metadata=msg.metadata or {}
+            )
+
+        except Exception as e:
+            logger.error(f"[SwarmRoute] Error: {e}", exc_info=True)
+            from nanobot.bus.events import OutboundMessage
+            
+            reply_message_id = getattr(msg, "message_id", None)
+            if not reply_message_id and msg.metadata:
+                reply_message_id = msg.metadata.get("message_id")
+                
+            return OutboundMessage(
+                chat_id=msg.chat_id,
+                content=f"Swarmbot Execution Error: {str(e)}",
+                channel=msg.channel,
+                reply_to=reply_message_id,
+                metadata=msg.metadata or {}
+            )
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],

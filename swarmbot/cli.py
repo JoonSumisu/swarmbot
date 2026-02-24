@@ -231,23 +231,34 @@ def get_available_port(start_port: int, step: int = 20, max_tries: int = 5) -> i
     raise RuntimeError(f"Could not find available port starting from {start_port}")
 
 def cmd_gateway() -> None:
-    # Gateway functionality relies on nanobot (vendored).
-    # We must run gateway_wrapper.py in a separate process to ensure 
-    # proper patching of nanobot modules before they are imported.
+    """
+    Run the Gateway in-process with SwarmAgentLoop patch.
+    This avoids the need for a separate wrapper script.
+    """
     import sys
-    import subprocess
+    import logging
     
-    cmd = [sys.executable, "-m", "swarmbot.gateway_wrapper", "gateway"]
-    
-    # Pass through any additional arguments if needed, 
-    # but currently cmd_gateway doesn't accept args in this signature.
-    # We'll just run the default gateway command.
-    
+    # 1. Patch nanobot to use SwarmAgentLoop
+    try:
+        from swarmbot.swarm.agent_adapter import SwarmAgentLoop
+        import nanobot.agent.loop as agent_loop_module
+        
+        # Replace the class in the module
+        agent_loop_module.AgentLoop = SwarmAgentLoop
+        print("Successfully replaced AgentLoop class with SwarmAgentLoop.")
+    except Exception as e:
+        print(f"Failed to patch nanobot: {e}")
+        return
+
+    # 2. Run nanobot gateway command
     print("Starting Swarmbot Gateway (nanobot-based)...")
     try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Gateway process exited with error: {e}")
+        # We need to import after patching
+        from nanobot.cli.commands import gateway
+        # Run directly
+        gateway(port=18790, verbose=False)
+    except Exception as e:
+        print(f"Gateway exited with error: {e}")
     except KeyboardInterrupt:
         print("\nGateway stopped.")
 
@@ -582,3 +593,11 @@ def main() -> None:
         cmd_overthinking(args)
     elif args.command == "daemon":
         cmd_daemon(args)
+
+if __name__ == "__main__":
+    from nanobot.cli.commands import app
+    # Add our commands if not present? 
+    # Actually, swarmbot cli uses argparse, nanobot uses typer.
+    # The swarmbot/cli.py uses argparse.
+    # We should just run main().
+    main()

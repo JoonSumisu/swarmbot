@@ -243,7 +243,7 @@ def main() -> None:
                 "gateway",
                 services,
                 manage_gateway,
-                [sys.executable, "-m", "swarmbot.gateway_wrapper", "gateway"],
+                [sys.executable, "-m", "swarmbot.cli", "gateway"],
                 int(cfg.get("gateway_restart_delay_seconds", 10)),
             )
             _ensure_service(
