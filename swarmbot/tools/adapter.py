@@ -16,50 +16,14 @@ class ToolDefinition:
 from .browser.local_browser import LocalBrowserTool, BrowserConfig
 
 from .registry import get_registry
-from .openclaw_bridge import OpenClawBridge
 
-class NanobotSkillAdapter:
-    """
-    Adapter to bridge nanobot skills to Swarmbot agents.
-    Allows agents to discover and execute nanobot skills via CLI passthrough or direct API.
-    Also manages local built-in tools like Browser.
-    """
+
+class ToolAdapter:
     def __init__(self) -> None:
         self.skills: Dict[str, ToolDefinition] = {}
         self._browser = LocalBrowserTool(BrowserConfig())
         self.registry = get_registry()
-        self.openclaw_bridge = OpenClawBridge()
         self._load_skills()
-        self._load_openclaw_tools()
-
-    def _load_openclaw_tools(self) -> None:
-        """
-        Dynamically discover and register OpenClaw tools if available.
-        """
-        try:
-            oc_tools = self.openclaw_bridge.discover_tools()
-            for tool_def in oc_tools:
-                name = tool_def["function"]["name"]
-                desc = tool_def["function"]["description"]
-                schema = tool_def["function"]["parameters"]
-                
-                # Wrap execution to call bridge
-                # Use closure to capture tool name
-                def make_wrapper(tool_name):
-                    def wrapper(**kwargs):
-                        return self.openclaw_bridge.execute(tool_name, kwargs)
-                    return wrapper
-                
-                func = make_wrapper(name)
-                
-                # Register
-                self.registry.register(name, func, {
-                    "name": name,
-                    "description": desc,
-                    "parameters": schema
-                })
-        except Exception as e:
-            print(f"[SkillAdapter] Failed to load OpenClaw tools: {e}")
 
     def _register_builtin(self, name: str, desc: str, args: List[str], func: Optional[callable] = None) -> None:
         props = {}
@@ -106,8 +70,25 @@ class NanobotSkillAdapter:
         self._register_builtin("file_write", "Write content to a file", ["path", "content"], self._tool_file_write)
         self._register_builtin("web_search", "Search the web for information using a search engine.", ["query"], self._tool_web_search)
         self._register_builtin("shell_exec", "Execute a shell command (Sandboxed)", ["command"], self._tool_shell_exec)
+        self._register_builtin(
+            "context_policy_update",
+            "Update context selection policy for memory and history.",
+            [
+                "max_whiteboard_chars",
+                "max_history_items",
+                "max_history_chars_per_item",
+                "max_qmd_chars",
+                "max_qmd_docs",
+            ],
+            self._tool_context_policy_update,
+        )
+        self._register_builtin(
+            "skill_fetch",
+            "Fetch a remote SKILL.md and cache it as a local skill directory.",
+            ["name", "url"],
+            self._tool_skill_fetch,
+        )
         
-        # Add Browser Tools
         self._register_builtin("browser_open", "Open a URL in local browser to view content.", ["url"], self._tool_browser_open)
         self._register_builtin("browser_read", "Read text content of a URL (headless). Use this to extract information from a specific webpage.", ["url"], self._tool_browser_read)
         
@@ -118,7 +99,7 @@ class NanobotSkillAdapter:
         self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps"], self._tool_overthinking_control)
 
         self._register_builtin("swarm_control", "Control Swarmbot configuration and lifecycle (CLI wrapper).", ["command", "subcommand", "args"], self._tool_swarm_control)
-        self._register_builtin("skill_summary", "List available nanobot skills in a compact summary format.", [], self._tool_skill_summary)
+        self._register_builtin("skill_summary", "List available Swarm skills in a compact summary format.", [], self._tool_skill_summary)
         self._register_builtin("skill_load", "Load a specific skill markdown by name.", ["name"], self._tool_skill_load)
 
     def _tool_swarm_control(self, command: str, subcommand: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> str:
@@ -194,7 +175,7 @@ class NanobotSkillAdapter:
              elif action == "info" and args and "name" in args:
                  return self._tool_skill_load(str(args["name"]))
              else:
-                 return "Skill 管理请结合 skill_summary、skill_load 以及 shell_exec 执行 ClawHub 提供的命令完成。"
+                 return "Skill 管理请结合 skill_summary 与 skill_load 查看和加载本地技能。"
 
         elif command == "overthinking":
              # Proxy to _tool_overthinking_control
@@ -211,14 +192,34 @@ class NanobotSkillAdapter:
 
     def _tool_skill_summary(self) -> str:
         try:
-            from nanobot.config.loader import load_config
-            from nanobot.agent.skills import SkillsLoader
-            cfg = load_config()
-            loader = SkillsLoader(Path(cfg.workspace_path))
-            summary = loader.build_skills_summary()
-            if not summary:
+            from ..config_manager import WORKSPACE_PATH
+            base = Path(WORKSPACE_PATH)
+            search_dirs: List[Path] = []
+            workspace_dir = base / "skills"
+            if workspace_dir.exists():
+                search_dirs.append(workspace_dir)
+            builtin_dir = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
+            if builtin_dir.exists():
+                search_dirs.append(builtin_dir)
+
+            skills: List[Dict[str, Any]] = []
+            for root in search_dirs:
+                source = "workspace" if root == workspace_dir else "builtin"
+                for entry in root.iterdir():
+                    if entry.is_dir():
+                        skill_md = entry / "SKILL.md"
+                        if skill_md.exists():
+                            skills.append(
+                                {
+                                    "name": entry.name,
+                                    "source": source,
+                                    "path": str(skill_md),
+                                }
+                            )
+
+            if not skills:
                 return "<skills></skills>"
-            return summary
+            return json.dumps(skills, ensure_ascii=False, indent=2)
         except Exception as e:
             return f"Skill summary error: {e}"
 
@@ -226,16 +227,89 @@ class NanobotSkillAdapter:
         try:
             if not name:
                 return "Skill name required"
-            from nanobot.config.loader import load_config
-            from nanobot.agent.skills import SkillsLoader
-            cfg = load_config()
-            loader = SkillsLoader(Path(cfg.workspace_path))
-            content = loader.load_skill(name)
-            if not content:
-                return f"Skill not found: {name}"
-            return content
+
+            from ..config_manager import WORKSPACE_PATH
+
+            base = Path(WORKSPACE_PATH)
+            search_dirs: List[Path] = []
+            workspace_dir = base / "skills"
+            if workspace_dir.exists():
+                search_dirs.append(workspace_dir)
+            builtin_dir = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
+            if builtin_dir.exists():
+                search_dirs.append(builtin_dir)
+
+            for root in search_dirs:
+                for entry in root.iterdir():
+                    if entry.is_dir() and entry.name == name:
+                        skill_md = entry / "SKILL.md"
+                        if skill_md.exists():
+                            return skill_md.read_text(encoding="utf-8")
+
+            return f"Skill not found: {name}"
         except Exception as e:
             return f"Skill load error: {e}"
+
+    def _tool_context_policy_update(
+        self,
+        max_whiteboard_chars: Optional[int] = None,
+        max_history_items: Optional[int] = None,
+        max_history_chars_per_item: Optional[int] = None,
+        max_qmd_chars: Optional[int] = None,
+        max_qmd_docs: Optional[int] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        if not context or "memory_map" not in context:
+            return "Error: MemoryMap not available in context"
+        memory_map = context["memory_map"]
+        data = {}
+        try:
+            if hasattr(memory_map, "_data"):
+                raw = memory_map._data.get("context_policy")
+                if isinstance(raw, dict):
+                    data = raw.copy()
+            elif isinstance(memory_map, dict):
+                raw = memory_map.get("context_policy")
+                if isinstance(raw, dict):
+                    data = raw.copy()
+        except Exception:
+            data = {}
+        if max_whiteboard_chars is not None:
+            data["max_whiteboard_chars"] = int(max_whiteboard_chars)
+        if max_history_items is not None:
+            data["max_history_items"] = int(max_history_items)
+        if max_history_chars_per_item is not None:
+            data["max_history_chars_per_item"] = int(max_history_chars_per_item)
+        if max_qmd_chars is not None:
+            data["max_qmd_chars"] = int(max_qmd_chars)
+        if max_qmd_docs is not None:
+            data["max_qmd_docs"] = int(max_qmd_docs)
+        if hasattr(memory_map, "update"):
+            memory_map.update("context_policy", data)
+        elif isinstance(memory_map, dict):
+            memory_map["context_policy"] = data
+        return json.dumps(data, ensure_ascii=False)
+
+    def _tool_skill_fetch(self, name: str, url: str) -> str:
+        if not name:
+            return "Error: name is required"
+        if not url:
+            return "Error: url is required"
+        from ..config_manager import WORKSPACE_PATH
+        from urllib.request import urlopen, Request
+
+        skill_root = Path(WORKSPACE_PATH) / "skills" / name
+        skill_root.mkdir(parents=True, exist_ok=True)
+        target = skill_root / "SKILL.md"
+        try:
+            req = Request(url, headers={"User-Agent": "Swarmbot/0.3.1"})
+            with urlopen(req, timeout=15) as resp:
+                content_bytes = resp.read()
+            content = content_bytes.decode("utf-8", errors="replace")
+            target.write_text(content, encoding="utf-8")
+            return f"Fetched SKILL to {target}"
+        except Exception as e:
+            return f"Skill fetch failed: {e}"
 
     def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None) -> str:
         """
@@ -405,24 +479,3 @@ class NanobotSkillAdapter:
             return f"Stdout: {result.stdout}\nStderr: {result.stderr}"
         except Exception as e:
             return f"Shell execution failed: {e}"
-
-    def _run_nanobot_cmd(self, *args: str) -> str:
-        """
-        Execute nanobot CLI commands safely.
-        """
-        try:
-            # We must use "nanobot" executable or python module
-            cmd = ["nanobot"] + list(args)
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            # Combine stdout and stderr
-            output = result.stdout
-            if result.stderr:
-                output += f"\nError/Warning: {result.stderr}"
-            return output.strip()
-        except Exception as e:
-            return f"Execution failed: {str(e)}"

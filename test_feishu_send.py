@@ -13,7 +13,7 @@ if str(CURRENT_DIR) not in sys.path:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("test_feishu")
 
-async def test_send():
+async def _test_send_impl():
     from nanobot.config.schema import FeishuConfig
     from nanobot.channels.feishu import FeishuChannel
     from nanobot.bus.events import OutboundMessage
@@ -57,5 +57,8 @@ async def test_send():
     await channel.send(msg)
     print("Send called. Check logs for result.")
 
+def test_send():
+    asyncio.run(_test_send_impl())
+
 if __name__ == "__main__":
-    asyncio.run(test_send())
+    asyncio.run(_test_send_impl())

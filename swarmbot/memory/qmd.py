@@ -18,6 +18,7 @@ class MemoryMap:
     """
     def __init__(self) -> None:
         self._data: Dict[str, Any] = {}
+        self.ensure_task_frame()
         
     def update(self, key: str, value: Any) -> None:
         self._data[key] = value
@@ -28,6 +29,61 @@ class MemoryMap:
     def get_snapshot(self) -> str:
         """返回当前白板的快照字符串，用于注入 Context"""
         return json.dumps(self._data, ensure_ascii=False, indent=2)
+
+    def ensure_task_frame(self) -> None:
+        """
+        初始化或补全三层记忆中的 Whiteboard 核心结构。
+        """
+        core_defaults = {
+            "task_specification": {},
+            "execution_plan": {},
+            "current_state": "INIT",
+            "loop_counter": 0,
+            "completed_subtasks": [],
+            "pending_subtasks": [],
+            "intermediate_results": {},
+            "content_registry": [],
+            "checkpoint_data": {},
+            "qmd_candidates": [],
+        }
+        for k, v in core_defaults.items():
+            if k not in self._data:
+                # 对于列表 / 字典类型要复制一份，避免共享引用
+                if isinstance(v, (list, dict)):
+                    self._data[k] = v.copy()
+                else:
+                    self._data[k] = v
+
+    def clear(self, preserve_core: bool = True) -> None:
+        """
+        清理白板。
+        默认保留核心结构（任务规格、计划、循环计数等），只清空临时键。
+        """
+        if not preserve_core:
+            self._data.clear()
+            self.ensure_task_frame()
+            return
+
+        core_keys = {
+            "task_specification",
+            "execution_plan",
+            "current_state",
+            "loop_counter",
+            "completed_subtasks",
+            "pending_subtasks",
+            "intermediate_results",
+            "content_registry",
+            "checkpoint_data",
+        }
+        preserved = {}
+        for k, v in self._data.items():
+            if k in core_keys:
+                if isinstance(v, (list, dict)):
+                    preserved[k] = v.copy()
+                else:
+                    preserved[k] = v
+        self._data = preserved
+        self.ensure_task_frame()
 
 
 class LocalMDStore:
@@ -152,40 +208,184 @@ class QMDMemoryStore(MemoryStore):
         with open(coll_path, "w", encoding="utf-8", errors='replace') as f:
             f.write(content)
 
+    def _extract_keywords(self, text: str) -> List[str]:
+        tokens: List[str] = []
+        if not text:
+            return tokens
+        for w in text.split():
+            if len(w) >= 3:
+                tokens.append(w)
+        buf = []
+        for ch in text:
+            if "\u4e00" <= ch <= "\u9fff":
+                buf.append(ch)
+            else:
+                if len(buf) >= 2:
+                    tokens.append("".join(buf))
+                buf = []
+        if len(buf) >= 2:
+            tokens.append("".join(buf))
+        return list(dict.fromkeys(tokens))
+
+    def _build_whiteboard_summary(self, query: Optional[str]) -> str:
+        data = getattr(self.whiteboard, "_data", {})
+        if not isinstance(data, dict) or not data:
+            return self.whiteboard.get_snapshot()
+        parts: List[str] = []
+        state = data.get("current_state")
+        loop_counter = data.get("loop_counter")
+        if state is not None or loop_counter is not None:
+            parts.append(f"State: {state}, Loop: {loop_counter}")
+        spec = data.get("task_specification")
+        if spec:
+            parts.append("Task Specification:")
+            if isinstance(spec, dict):
+                for k, v in list(spec.items())[:8]:
+                    val = str(v)
+                    if len(val) > 120:
+                        val = val[:120] + "..."
+                    parts.append(f"- {k}: {val}")
+            else:
+                val = str(spec)
+                if len(val) > 400:
+                    val = val[:400] + "..."
+                parts.append(val)
+        plan = data.get("execution_plan")
+        if plan:
+            parts.append("Execution Plan:")
+            if isinstance(plan, dict):
+                for k, v in list(plan.items())[:8]:
+                    val = str(v)
+                    if len(val) > 120:
+                        val = val[:120] + "..."
+                    parts.append(f"- {k}: {val}")
+            elif isinstance(plan, list):
+                for idx, v in enumerate(plan[:8]):
+                    val = str(v)
+                    if len(val) > 120:
+                        val = val[:120] + "..."
+                    parts.append(f"- [{idx+1}] {val}")
+            else:
+                val = str(plan)
+                if len(val) > 400:
+                    val = val[:400] + "..."
+                parts.append(val)
+        pending = data.get("pending_subtasks") or []
+        completed = data.get("completed_subtasks") or []
+        terms: List[str] = self._extract_keywords(query or "")
+        def score_item(text: str) -> int:
+            if not terms or not text:
+                return 0
+            s = 0
+            for t in terms:
+                if t and t in text:
+                    s += 1
+            return s
+        if pending:
+            scored = []
+            for item in pending:
+                txt = str(item)
+                scored.append((score_item(txt), txt))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            picked = []
+            for s, txt in scored:
+                picked.append(txt)
+                if len(picked) >= 5:
+                    break
+            if picked:
+                parts.append("Pending Subtasks:")
+                for txt in picked:
+                    t = txt
+                    if len(t) > 160:
+                        t = t[:160] + "..."
+                    parts.append(f"- {t}")
+        if completed:
+            tail = completed[-8:]
+            picked = []
+            for item in reversed(tail):
+                txt = str(item)
+                picked.append(txt)
+                if len(picked) >= 5:
+                    break
+            picked.reverse()
+            if picked:
+                parts.append("Recent Completed Subtasks:")
+                for txt in picked:
+                    t = txt
+                    if len(t) > 160:
+                        t = t[:160] + "..."
+                    parts.append(f"- {t}")
+        inter = data.get("intermediate_results")
+        if inter and isinstance(inter, dict):
+            keys = list(inter.keys())[:6]
+            if keys:
+                parts.append("Intermediate Results Keys:")
+                for k in keys:
+                    parts.append(f"- {k}")
+        if not parts:
+            return self.whiteboard.get_snapshot()
+        return "\n".join(parts)
+
     def get_context(self, agent_id: str, limit: int = 20, query: str = None) -> List[Dict[str, Any]]:
-        """
-        Get combined context:
-        - Whiteboard snapshot (Shared state) - High Priority
-        - Recent events (Short-term LocalMD) - Medium Priority
-        - QMD Search Results (Long-term) - Low Priority (if query provided)
-        """
-        # 1. Whiteboard
-        snapshot = self.whiteboard.get_snapshot()
+        policy = {}
+        try:
+            data = getattr(self.whiteboard, "_data", {})
+            if isinstance(data, dict):
+                p = data.get("context_policy")
+                if isinstance(p, dict):
+                    policy = p
+        except Exception:
+            policy = {}
+        wb_chars = int(policy.get("max_whiteboard_chars", 4000))
+        hist_items = int(policy.get("max_history_items", limit))
+        hist_chars = int(policy.get("max_history_chars_per_item", 1000))
+        qmd_docs = int(policy.get("max_qmd_docs", 3))
+        qmd_chars = int(policy.get("max_qmd_chars", 3000))
+        summary = self._build_whiteboard_summary(query)
+        if summary and len(summary) > wb_chars:
+            summary = summary[:wb_chars] + "\n...[whiteboard summary truncated]\n"
         context = []
-        if snapshot != "{}":
-            context.append({"content": f"Current WorkMap (Whiteboard):\n{snapshot}", "role": "system"})
-            
-        # 2. LocalMD (Short-term)
-        # Use in-memory buffer for speed during session, or read file if empty
+        if summary and summary != "{}":
+            context.append({"content": f"Current WorkMap (Whiteboard):\n{summary}", "role": "system"})
         items = self._events.get(agent_id, [])
         if not items:
-            # Try to read from local file if memory is empty (persistence)
-            # Simplified: just use what we have in memory for now
             pass
-        
-        recent = items[-limit:] if items else []
-        # Convert internal event format to OpenAI message format
+        recent = items[-hist_items:] if items else []
         for r in recent:
-            context.append({"content": r["content"], "role": "user"}) # Default to user role for history
-            
-        # 3. QMD (Long-term)
-        # Only search if we have a query (usually the current user input)
+            text = r.get("content", "")
+            if not text:
+                continue
+            if len(text) > hist_chars:
+                text = text[:hist_chars] + "..."
+            context.append({"content": text, "role": "user"})
         if query:
-            qmd_results = self.search(query, limit=3)
+            qmd_results = self.search(query, limit=qmd_docs)
             if qmd_results:
-                knowledge = "\n".join([doc.get('content', '') for doc in qmd_results])
-                context.insert(0, {"content": f"Relevant Long-term Memory (QMD):\n{knowledge}", "role": "system"})
-                
+                terms = self._extract_keywords(query)
+                ranked: List[Dict[str, Any]] = []
+                for doc in qmd_results:
+                    c = doc.get("content", "")
+                    if not c:
+                        continue
+                    score = 0
+                    if terms:
+                        for t in terms:
+                            if t and t in c:
+                                score += 1
+                    ranked.append({"content": c, "score": score})
+                ranked.sort(key=lambda x: x["score"], reverse=True)
+                filtered: List[str] = []
+                for item in ranked:
+                    if item["score"] <= 0 and terms:
+                        continue
+                    filtered.append(item["content"])
+                    if len(filtered) >= 3:
+                        break
+                knowledge = "\n".join(filtered)
+                if len(knowledge) > qmd_chars:
+                    knowledge = knowledge[:qmd_chars] + "\n...[qmd results truncated]\n"
+                if knowledge:
+                    context.insert(0, {"content": f"Relevant Long-term Memory (QMD):\n{knowledge}", "role": "system"})
         return context
 
     def search(self, query: str, collection: str | None = None, limit: int = 5) -> List[Dict[str, Any]]:

@@ -1,4 +1,4 @@
-# 开发文档
+# 开发文档（适配 Swarmbot v0.3.1）
 
 ## 目标
 Swarmbot 的长期目标：
@@ -17,11 +17,9 @@ chmod +x scripts/install_deps.sh
 swarmbot run
 ```
 
-### 启动网关（飞书/Slack/Telegram 等）
-```bash
-swarmbot gateway
-tail -f ~/.swarmbot/logs/gateway.log
-```
+### 启动网关（当前版本已禁用）
+
+当前版本已移除对 nanobot Gateway 的运行时依赖，CLI 中的 `swarmbot gateway` 命令会直接提示“功能已禁用”。如果需要 IM 通道接入生产环境，推荐通过企业内部现有网关或反向代理实现，只保留 Swarmbot 作为“任务大脑”。
 
 ## 配置说明
 唯一配置文件：`~/.swarmbot/config.json`
@@ -92,24 +90,19 @@ swarmbot daemon shutdown
 
 守护进程会将状态写入 `~/.swarmbot/daemon_state.json`，开发时可以通过 `file_read` 工具或直接打开该文件查看。
 
-### Cron 定时任务
+### 定时任务（系统级 cron 推荐）
 
-Swarmbot 直接集成了 nanobot 的 `CronService`，并提供统一 CLI：
+当前版本中，Swarmbot 内置的 `swarmbot cron` 管理接口已禁用，仅保留配置结构用于兼容旧版本。开发与生产环境中推荐使用 **系统级 cron / 统一任务平台** 来调度以下命令：
 
 ```bash
-# 列出所有定时任务
-swarmbot cron list
+# 每 60 分钟执行一次 HEARTBEAT（轻量自检）
+swarmbot heartbeat trigger
 
-# 添加一个每 60 分钟执行一次的任务
-swarmbot cron add \
-  --name "heartbeat-every-60m" \
-  --message "请执行一次 HEARTBEAT，并根据 HEARTBEAT.md 更新必要记录，然后回复 HEARTBEAT_OK 或简要总结。" \
-  --every-minutes 60
-
-# 禁用/删除任务
-swarmbot cron disable --id <job_id>
-swarmbot cron remove --id <job_id>
+# 每 60 分钟执行一次 Feishu 连通性检测（可选）
+cd /root/swarmbot && python test_feishu_send.py
 ```
+
+上述模板与 README 中保持一致：Heartbeat 负责内部自检，Feishu Connectivity Test 用于通道联通性探测，建议最多每小时一次。
 
 ### Heartbeat 循环
 
@@ -125,19 +118,48 @@ swarmbot heartbeat status
 swarmbot heartbeat trigger
 ```
 
-## 内置 nanobot（架构升级 v0.2.8）
-Swarmbot 现已彻底集成 nanobot 源码（vendored），不再依赖外部 pip 包。
+## 记忆与上下文优化（v0.3 系列）
 
-### Gateway 架构
-1.  **Wrapper**: `gateway_wrapper.py` 作为入口，负责 Monkeypatch `AgentLoop` 和 `ChannelManager`。
-2.  **Config Sync**: `swarmbot.nanobot.config.loader` 负责实时将 `SwarmbotConfig` 映射为内存中的 nanobot 配置，不再生成临时文件。
-3.  **Hook 机制**:
-    *   **External Patch**: 在 Gateway 启动前拦截 `AgentLoop._process_message`。
-    *   **Native Hook**: 在 `nanobot/agent/loop.py` 内部硬编码检查 `SWARM_MANAGER`，作为兜底防线。
-    *   **Message Fix**: 修复了 `InboundMessage` 缺失 `message_id` 的问题，确保消息回执可靠。
+当前版本的 Swarmbot 在三层记忆（LocalMD / Whiteboard / QMD）之上，增加了更精细的上下文控制能力，用于解决“大模型易超长 / 无关历史过多”的问题：
 
-该设计确保了 Swarmbot 拥有对消息流的完全控制权，同时复用了成熟的通道适配器。
+- **Whiteboard 摘要生成**：`QMDMemoryStore` 会根据当前问题自动构建任务白板摘要，只保留任务规格、执行计划、近期子任务与关键中间结果。
+- **QMD 相关性检索**：长程记忆检索结果会按关键词匹配度排序，只注入与当前问题高度相关的少量文档片段。
+- **本地历史裁剪**：仅保留最近若干条会话作为上下文，长文本按配置进行截断。
+- **context_policy 动态控制**：Whiteboard 支持 `context_policy` 字段，LLM 可以通过 `context_policy_update` 工具在推理前动态设置：
+  - `max_whiteboard_chars`
+  - `max_history_items`
+  - `max_history_chars_per_item`
+  - `max_qmd_chars`
+  - `max_qmd_docs`
 
+推荐实践：
+ 
+- 复杂运维问诊 / 代码审查场景：适当提高 `max_whiteboard_chars`、`max_history_items`，保证诊断信息足够完整；
+- 简单问答 / 小任务：降低上述参数，把更多 token 留给当前问题的推理与输出。
+ 
+## 外部技能市场集成（EvoMap）
+ 
+v0.3.1 在工具层面增加了对外部技能市场的原生支持，方便在运行时按需发现和缓存新能力：
+ 
+- **EvoMap**  
+  - 通过 `skill_fetch` 工具从类似 `https://evomap.ai/skill.md` 的地址抓取远程 `SKILL.md`；  
+  - 抓取结果会写入 `~/.swarmbot/workspace/skills/<name>/SKILL.md`，后续同样使用 `skill_summary` / `skill_load` 访问；  
+  - 若抓取失败（无外网等），上层 Agent 应优雅退化为仅做规划或使用本地备份。
+ 
+这些工具均由 `tools/adapter.py` 暴露为 OpenAI Tool，Swarm 内部的 Planner / Researcher / Coder 可以在需要时主动调用，无需人工干预。
+ 
+## Overthinking 记忆分类（Facts / Experiences / Theories）
+ 
+Overthinking 循环在 v0.3.1 中对记忆写入方式作了结构化约束，便于后续检索与复用：
+ 
+- 短期日志整理：`_step_consolidate_short_term` 会将当日 LocalMD 中的聊天片段总结为三个部分：  
+  - Facts：客观事实与配置信息；  
+  - Experiences：具体行动及其结果；  
+  - Theories：从经验中抽象出的原则与假设。  
+  汇总内容写入 `qmd/core_memory/`，作为长期事实与经验库。  
+- 反思与拓展：`_step_expand_thoughts` 使用同样的三分法生成 `Reflection` 文档，写入 `qmd/thoughts/`，更偏向理论与规划层。  
+- 与 QMD 检索联动：在线推理时，QMD 检索可以针对 Facts / Experiences / Theories 选择性注入，避免将过于主观的反思混入事实上下文。
+ 
 ## 测试
 运行全部单测：
 ```bash

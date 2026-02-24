@@ -5,8 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from ..llm_client import OpenAICompatibleClient
 from ..memory.base import MemoryStore
-from ..config_manager import load_config
-from ..tools.adapter import NanobotSkillAdapter
+from ..tools.adapter import ToolAdapter
 import json
 
 
@@ -23,25 +22,14 @@ class CoreAgent:
         ctx: AgentContext,
         llm: OpenAICompatibleClient,
         memory: MemoryStore,
-        use_nanobot: bool = True,
     ) -> None:
         self.ctx = ctx
         self.llm = llm
         self.memory = memory
-        self._use_nanobot = use_nanobot
-        self._nanobot_agent = None
-        self._tool_adapter = NanobotSkillAdapter()  # Initialize adapter
-        
-        if self._use_nanobot:
-            try:
-                import nanobot  # type: ignore
-
-                self._nanobot_agent = nanobot
-            except Exception:
-                self._use_nanobot = False
+        self._tool_adapter = ToolAdapter()
 
     def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
-        history = self.memory.get_context(self.ctx.agent_id, limit=16)
+        history = self.memory.get_context(self.ctx.agent_id, limit=8, query=user_input)
         messages: List[Dict[str, Any]] = []
         
         # 1. System Prompt (Role / Soul)
@@ -69,7 +57,6 @@ class CoreAgent:
                     [
                         os.path.expanduser("~/.swarmbot/boot/SOUL.md"),
                         "soul.md",
-                        os.path.expanduser("~/.nanobot/soul.md"),
                     ]
                 )
                 for p in soul_paths:
@@ -110,33 +97,29 @@ class CoreAgent:
         if self.ctx.skills:
             role_desc += f" You possess the following skills: {', '.join(self.ctx.skills.keys())}. "
         
-        # 2. QMD Memory Skill Prompt & Search Prioritization
         system_instructions = (
-            "你具备一个名为 QMDMemory 的记忆技能，可以在需要时主动向用户索取检索关键词，"
-            "用来搜索本地知识库（如笔记、文档、会议记录），并将检索到的内容整合进推理过程。\n"
-            "【关键】：你还可以使用 'whiteboard_update' 工具将你的推理过程中的关键结论、事实或计划写入共享白板 (MemoryMap)，"
-            "这对于多 Agent 协作至关重要，请确保及时更新白板。\n"
-            "系统中存在一个名为 Swarmbot Daemon 的守护进程，用于管理 gateway、Overthinking、备份和健康检查。"
-            "其状态保存在 ~/.swarmbot/daemon_state.json 中，你可以通过 'file_read' 工具查看当前 LLM 与 Channel 健康状态，"
-            "并通过 'swarm_control' / 'overthinking_control' 等工具协助用户调整配置（例如启停 overthinking 或修改 provider）。\n"
-            "Heartbeat 相关任务定义在工作区的 HEARTBEAT.md 中，你应该将其视为“后台任务清单”："
-            "需要修改 Heartbeat 行为时，优先通过 'file_read' / 'file_write' 更新 HEARTBEAT.md 的内容，并在必要时建议用户运行 "
-            "'swarmbot heartbeat status' 或 'swarmbot heartbeat trigger'（可以通过 'shell_exec' 调用）。\n"
-            "定时任务由 'swarmbot cron' 管理，你可以通过 'shell_exec' 调用相关命令查看或建议创建 Cron 任务，但在修改定时任务前，应确保用户有明确授权和需求。\n"
-            "你可以通过 'skill_summary' 查看当前可用的工具技能集合，并用 'skill_load' 加载具体技能说明；"
-            "如需安装新的 ClawHub 技能，可以结合 'shell_exec' 执行相应命令（例如搜索/安装），然后再次使用 'skill_summary' 确认技能是否可用。\n"
-            "输出语言必须与用户输入保持一致（用户用中文就用中文，用户用英文就用英文）。\n"
-            "如果你看到 Whiteboard/WorkMap 中的 current_task_context，请以其为最高优先级理解任务，并参考其中的 system_capabilities 字段了解 Daemon/Cron/Heartbeat/Skills 的结构化信息。\n"
-            "IMPORTANT: When answering questions about current events, technology updates, or dynamic data, "
-            "you MUST prioritize using the 'web_search' tool over your internal training data. "
-            "Always verify the date of the information found。\n\n"
-            "【工具调用限制】:\n"
-            "请务必先检查 Whiteboard (current_task_context 或其他字段) 中是否已经存在其他 Agent 提供的相关信息。\n"
-            "如果 Whiteboard 中已经有了所需的天气、搜索结果或代码，**请不要重复调用相同的工具**去获取相同的信息。\n"
-            "直接使用白板中的信息进行推理和回答。"
+            "【记忆与白板】\n"
+            "Whiteboard 用于存放当前任务的结构化状态，重点关注 task_specification、execution_plan、current_state、loop_counter、"
+            "completed_subtasks、pending_subtasks、intermediate_results、content_registry 和 checkpoint_data。"
+            "你可以在需要时向用户索取检索关键词，并通过 'whiteboard_update' 只写入与当前问题紧密相关的关键信息。"
+            "写入时使用结构化格式，例如 {\"content\": 内容, \"source\": 来源, \"fact_checked\": true/false}。"
+            "未核实的信息必须标记为 fact_checked=false，如果某条内容值得长期保存，可追加到 qmd_candidates 并赋予 confidence_score 和 verification_status。\n\n"
+            "如果任务较复杂、上下文较长，你可以通过调用 'context_policy_update' 主动设置 max_whiteboard_chars、max_history_items、max_history_chars_per_item、max_qmd_chars、max_qmd_docs 等参数，以平衡上下文信息密度与模型可用 token。\n\n"
+            "【工具与 Skill 使用】\n"
+            "调用工具前先查看 Whiteboard 的 current_task_context 和已有结果：若已存在 fact_checked=true 的可靠结论，应优先复用；"
+            "若只有 fact_checked=false 的假设，需要通过工具补充或复核后再做判断。"
+            "使用技能时，优先调用 'skill_summary' 获取列表，仅在确实需要时再用 'skill_load' 加载单个技能详情，避免一次性加载全部技能。\n\n"
+            "【系统能力与运维】\n"
+            "系统能力（daemon、heartbeat、cron、skills 等）通过 system_capabilities 提供，你可以结合 'file_read'、'file_write' 和 'shell_exec' 分析或调整状态，"
+            "但涉及任务调度、心跳、定时任务变更时，应在回答中明确提示风险并要求用户确认。\n\n"
+            "【输出与检索规范】\n"
+            "输出语言必须与用户输入保持一致。回答涉及最新事件或动态数据时，应优先使用 'web_search' 或相关工具，并在确认信息后再给出结论。"
         )
         
-        messages.append({"role": "system", "content": f"{role_desc}\n{system_instructions}"})
+        system_content = f"{role_desc}\n{system_instructions}"
+        if len(system_content) > 6000:
+            system_content = system_content[:6000] + "\n...[system instructions truncated]\n"
+        messages.append({"role": "system", "content": system_content})
 
         # 3. History
         for item in history:

@@ -152,4 +152,21 @@ class OpenAICompatibleClient:
                     print(f"[LLMClient] Quota/429 error. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
                     time.sleep(delay)
                 else:
+                    try:
+                        import os
+                        import json as _json
+                        log_dir = os.path.expanduser("~/.swarmbot/logs")
+                        os.makedirs(log_dir, exist_ok=True)
+                        ts = int(time.time())
+                        log_path = os.path.join(log_dir, f"llm_error_prompt_{ts}.json")
+                        with open(log_path, "w", encoding="utf-8") as f:
+                            _json.dump(
+                                {"params": {k: v for k, v in params.items() if k != "api_key"}},
+                                f,
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        print(f"[LLMClient] Error during completion, prompt saved to {log_path}: {e}")
+                    except Exception:
+                        print(f"[LLMClient] Error during completion (logging failed): {e}")
                     raise e

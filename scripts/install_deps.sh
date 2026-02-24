@@ -32,31 +32,9 @@ source "$VENV_DIR/bin/activate"
 # Upgrade pip inside venv
 pip install --upgrade pip
 
-# 2. Check Node.js and npm (Optional)
-if command -v npm &> /dev/null; then
-    echo "Node.js detected."
-    echo "Node.js is optional. Swarmbot does not require npm for installation."
-else
-    echo "npm is not installed (optional)."
-fi
-
-# 3. Install Python dependencies inside venv
+# 2. Install Python dependencies inside venv
 echo "Installing Swarmbot core (pyproject.toml) inside virtual environment..."
 pip install -e .
-
-echo "Installing additional runtime dependencies used by vendored nanobot..."
-pip install \
-  lark-oapi \
-  typer \
-  rich \
-  loguru \
-  litellm \
-  openai \
-  prompt_toolkit \
-  python-telegram-bot \
-  slack_sdk \
-  slackify_markdown \
-  websockets
 
 # 4. Create a convenience wrapper script 'swarmbot_run' in the root
 WRAPPER_SCRIPT="$PROJECT_ROOT/swarmbot_run"

@@ -4,24 +4,26 @@
 
 Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Multi-Agent Swarm System)**。
 
-它融合了 **nanobot（已内置源码，不再依赖 pip 安装）** 的网关/通道能力，并深度集成 **[swarms](https://github.com/kyegomez/swarms)** 的多智能体编排能力与 **QMD（三层记忆）**，旨在为本地/私有 OpenAI 兼容接口提供强大的任务规划与执行能力。
+当前版本以 **[swarms](https://github.com/kyegomez/swarms)** 的多智能体编排能力与 **QMD（三层记忆）** 为核心，nanobot 仅以 vendored 源码形式保留少量兼容性组件，不再对外暴露网关/cron 管理接口，专注为本地/私有 OpenAI 兼容接口提供稳健的任务规划与执行能力。
 
 开发文档见 [development.md](file:///root/swarmbot/docs/development.md)。
 
-> **核心理念**: 将 nanobot 的单体执行力扩展为 Swarm 的集体智慧，并通过 Horizon Middleware 实现长程任务规划。
+> **核心理念**: 通过 Swarm 多智能体 + 本地三层记忆，把一次性对话升级为可持续演进的长期任务工作流。
 
 ---
 
-## 🌟 核心架构 v0.2.8
+## 🌟 核心架构 v0.3.1
 
-Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.2.8 中引入了内置 Gateway 与 **Tri-Boot 认知系统**：
+Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.3.1 中形成了更稳定的本地运行架构与 **Tri-Boot 认知系统**：
 
-### 1. Built-in Gateway (Native Integration)
-*   **特性**: 彻底摆脱对外部 nanobot 包的依赖，直接内置并增强了 Gateway 模块。
-*   **能力**: 
-    *   **Native Hook**: 通过 Monkeypatch 与原生 Hook 双重机制，无缝接管消息流，确保所有请求都经过 SwarmManager 处理。
-    *   **WebSocket**: 飞书通道采用 WebSocket 长连接，无需公网 IP，内网即可部署。
-    *   **配置统一**: 自动同步 Swarmbot 配置到 Gateway，无需维护两套配置文件。
+### 1. Connectivity & Channels（当前状态）
+*   **网关状态**: 历史版本曾内置 nanobot Gateway；当前版本出于依赖精简与稳定性考虑，CLI 中的 `swarmbot gateway` 已禁用，仅保留少量 vendored 代码以兼容旧配置。
+*   **通道支持**: 
+    *   配置层面仍支持在 `config.json` 中声明 Feishu 等渠道，用于日志聚合或手工联通性测试；
+    *   推荐通过外部网关或企业现有 IM 机器人接入生产环境，而不是直接依赖旧版 nanobot Gateway。
+*   **连通性探测（Connectivity Test）**:
+    *   可以使用 `test_feishu_send.py` 中的 “🔍 Swarmbot Connectivity Test: Active Send” 作为 Feishu 连通性探针；
+    *   生产环境建议 **最多每小时执行一次**（例如通过系统级 cron），以平衡「异常发现速度」与「额外请求开销」。
 
 ### 2. Tri-Boot System (Cognitive Engine)
 - **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆，是整个 Swarm 的“理性大脑”。
@@ -39,14 +41,14 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     *   `State Machine`: 动态状态机（适合 Code Review 循环）。
     *   `Auto`: 大模型可选；根据任务自动选择架构，并动态生成专用 Agent 角色（存在一定随机性）。
 
-### 4. Core Agent (Nanobot Inside)
-*   **来源**: 基于 `nanobot` 核心代码构建。
-*   **作用**: 作为 Swarm 中的执行单元。
+### 4. Core Agent
+*   **来源**: 以轻量化后的 `CoreAgent` 为核心，不再直接依赖运行时 nanobot AgentLoop。
+*   **作用**: 作为 Swarm 中的执行单元，负责与 LLM 对话、调用工具并协调记忆。
 *   **特性**: 
-    *   **Tool Adapter**: 所有的 nanobot 原生技能（如文件操作、Shell 执行）都被封装为 OpenAI 格式的 Tool，并通过 `NanobotSkillAdapter` 统一注册到 Swarm 的工具中心。
-    *   **OpenClaw Bridge**: [v0.2 新增] 支持动态加载 OpenClaw 生态工具。
-    *   **Web Search**: 集成 Chrome 无头浏览器，支持动态网页抓取与反爬虫绕过，优先获取 2024-2026 年最新数据。
-    *   **Gateway**: 复用 nanobot 强大的多渠道网关，支持飞书、Slack、Telegram 等。
+    *   **Tool Adapter**: 所有内置工具（文件操作、Shell 执行、浏览器、白板、Swarm 控制、`context_policy_update` 等）都通过 `tools/adapter.py` 暴露为 OpenAI 格式的 Tool，由 `ToolAdapter` 统一注册到 Swarm 的工具中心。
+    *   **Node.js 零依赖**: 已移除 OpenClaw Bridge 与 Node.js 依赖，整个工具体系完全基于 Python 实现。
+    *   **Web Search**: 集成本地浏览器/HTTP 抓取能力，用于获取 2024–2026 年的最新信息。
+    *   **记忆优先**: 在构造提示词时优先从白板 + QMD 中抽取与当前问题强相关的上下文，并通过 `context_policy` 控制截断策略。
 
 ### 5. Tool & Skill Orchestration (Swarm-Level)
 *   **统一工具空间**: 所有工具（文件/网络/执行/记忆/自我控制）都通过 `tools/adapter.py` 暴露为 OpenAI Tool，核心包括：
@@ -56,7 +58,7 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     *   自我控制：`swarm_control`（修改架构/Provider/Overthinking 等）
 *   **Skill 支持**:
     *   本地技能：自动扫描 `~/.swarmbot/workspace/skills` 与内置 `swarmbot/nanobot/skills`，通过 `skill_summary` 列出，并用 `skill_load` 按需加载 `SKILL.md` 以节省 token。
-    *   ClawHub 技能：通过 ClawHub 提供的命令（结合 `shell_exec`）安装社区技能，再由 `skill_summary` 暴露给 Swarm。
+    *   EvoMap 技能：可以使用 `skill_fetch` 工具从例如 `https://evomap.ai/skill.md` 获取远程 `SKILL.md`，缓存为本地技能目录（如 `skills/evomap/`），之后通过 `skill_summary` / `skill_load` 查看与复用。
 *   **Swarm 级调用**: 在 Swarm 架构中，`planner/master` 等核心 Agent 会默认加载全部工具与技能签名，能够在推理过程中主动选择、组合和调用这些工具/skills 完成复杂任务，而不仅仅是单 Agent 的被动调用。
 
 ### 4. Tri-Layer Memory (QMD Powered)
@@ -66,13 +68,14 @@ Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深�
     1.  **LocalMD (Short-term)**: 本地 Markdown 日志缓存，实时记录每日会话，作为短期工作记忆。
     2.  **MemoryMap (Whiteboard)**: 内存中的共享白板，存储任务全局状态、关键决策快照，确保多 Agent 信息同步。
     3.  **QMD (Long-term)**: 基于向量 + BM25 的持久化知识库，支持对历史文档和笔记的语义检索。
+    4.  **Context Policy**: 白板摘要、本地历史与 QMD 检索结果的长度和条数由 Whiteboard 中的 `context_policy` 控制，LLM 可通过 `context_policy_update` 工具在每次推理前动态设置不同场景下的上下文预算（例如复杂运维诊断 vs 轻量问答）。
 
 ### 6. Overthinking Loop (Deep Thinking)
 *   **功能**: 空闲时的后台深度思考循环（可选）。
 *   **能力**:
-    *   **记忆整理**: 从 LocalMD 提取关键事实与决策，沉淀为长期记忆 (QMD)。
+    *   **记忆整理**: 从 LocalMD 提取关键事实与决策，按照「Facts / Experiences / Theories」三类结构化写入 QMD，方便后续检索与重用。
     *   **自我拓展**: 基于现有记忆进行逻辑推演，主动发现知识盲区，并生成新的假设与理论。
-    *   **经验沉淀**: 将单次任务的成功/失败经验转化为通用的方法论。
+    *   **经验沉淀**: 将单次任务的成功/失败经验转化为通用的方法论，并记录在 QMD 的长期记忆集合中。
 *   **工作机制**: 
     1.  监控用户空闲状态。
     2.  启动思考者 (Thinker Agent) 对近期日志进行反思。
@@ -222,32 +225,21 @@ swarmbot heartbeat status
 swarmbot heartbeat trigger
 ```
 
-### 3. 推荐的 cron 定时任务模板
+### 3. 推荐的定时任务模板（系统级 cron）
 
-Swarmbot 已直接集成 nanobot 的 CronService，可用以下命令管理定时任务：
-
-```bash
-# 列出所有定时任务
-swarmbot cron list
-
-# 每 60 分钟执行一次 HEARTBEAT（适合轻量周期自检）
-swarmbot cron add \
-  --name "heartbeat-every-60m" \
-  --message "请执行一次 HEARTBEAT，并根据 HEARTBEAT.md 更新必要记录，然后回复 HEARTBEAT_OK 或简要总结。" \
-  --every-minutes 60
-```
-
-上面的定时任务模板会：
-- 每 60 分钟唤醒 Agent；
-- 由 Agent 根据 `HEARTBEAT.md` 中的内容执行任务；
-- 将执行情况写回日志或外部通道（如果在 CronPayload 中启用了 deliver/channel/to）。
-
-在需要时可以禁用或删除任务：
+当前版本中，Swarmbot 内置的 `swarmbot cron` 管理接口已禁用，仅保留配置结构用于兼容旧版本。生产环境推荐使用 **系统级 cron / 任务编排平台** 来调度以下命令：
 
 ```bash
-swarmbot cron disable --id <job_id>
-swarmbot cron remove --id <job_id>
+# 每 60 分钟执行一次 HEARTBEAT（轻量自检）
+swarmbot heartbeat trigger
+
+# 每 60 分钟执行一次 Feishu 连通性检测（可选）
+cd /root/swarmbot && python test_feishu_send.py
 ```
+
+上述模板实现：
+- Heartbeat：每小时唤醒一次 Agent，按照 `HEARTBEAT.md` 模板执行检查与记载；
+- Connectivity Test：最多每小时向指定 Feishu 会话发送一次 “Swarmbot Connectivity Test: Active Send”，既能发现通道异常，又避免过于频繁的探测带来噪音与额外负载。
 
 ### 4. 开机默认启动（systemd 示例）
 

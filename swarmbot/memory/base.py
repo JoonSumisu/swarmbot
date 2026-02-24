@@ -10,6 +10,5 @@ class MemoryStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_context(self, agent_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_context(self, agent_id: str, limit: int = 20, query: str | None = None) -> List[Dict[str, Any]]:
         raise NotImplementedError
-

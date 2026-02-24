@@ -33,7 +33,6 @@ class OverthinkingLoop:
             AgentContext("overthinker", "Reflective Thinker"),
             self.llm,
             self.memory,
-            use_nanobot=False # Pure LLM logic for safety
         )
 
     def start(self) -> None:
@@ -121,25 +120,38 @@ class OverthinkingLoop:
 
     def _step_consolidate_short_term(self) -> None:
         """1. 清理短期记忆写入 QMD"""
-        # Get recent logs from LocalMD
-        # For simplicity, we read today's log
         date_str = time.strftime("%Y-%m-%d")
-        log_file = f"chat_log_{date_str}.md"
-        content = self.memory.local_cache.read(log_file)
-        
-        if not content: return
+        cache_root = self.memory.local_cache.root
+        try:
+            files = []
+            for name in os.listdir(cache_root):
+                if name.startswith("chat_log_") and name.endswith(f"_{date_str}.md"):
+                    files.append(os.path.join(cache_root, name))
+        except FileNotFoundError:
+            files = []
+
+        chunks = []
+        for path in files:
+            text = self.memory.local_cache.read(os.path.basename(path))
+            if text:
+                chunks.append(text)
+
+        if not chunks:
+            return
+
+        joined = "\n\n".join(chunks)
 
         prompt = (
-            "You are organizing memories. "
-            "Extract key facts, decisions, and insights from the following chat log. "
-            "Ignore trivial chit-chat. Format as concise notes.\n\n"
-            f"{content[-2000:]}" # Process last chunk
+            "You are organizing memories from recent chat logs.\n"
+            "1) Extract objective facts only under a heading 'Facts'.\n"
+            "2) Extract concrete actions and outcomes under 'Experiences'.\n"
+            "3) Extract generalized principles or hypotheses under 'Theories'.\n"
+            "Be concise and avoid duplication.\n\n"
+            f"{joined[-4000:]}"
         )
         summary = self.thinker.step(prompt)
-        
-        # Save to QMD
+
         self.memory.persist_to_qmd(f"# Memory Consolidation {date_str}\n\n{summary}", collection="core_memory")
-        self.memory.local_cache.write(log_file, "")
 
     def _step_compress_qmd(self) -> None:
         """2. 精简压缩 QMD 记忆"""
@@ -152,9 +164,10 @@ class OverthinkingLoop:
         """3. 基于以前的记忆进行思考拓展完善"""
         # Random reflection or goal-oriented?
         prompt = (
-            "Based on your recent memories, what are the potential long-term implications? "
-            "Are there any gaps in your knowledge or planning? "
-            "Propose 3 questions to investigate."
+            "Based on your recent memories, reflect in three parts:\n"
+            "1) Facts: list undisputed facts you rely on.\n"
+            "2) Experiences: list concrete scenarios that taught you something.\n"
+            "3) Theories: list 3–5 generalized principles or hypotheses derived from这些经验，标记哪些需要进一步验证。\n"
         )
         reflection = self.thinker.step(prompt)
         self.memory.persist_to_qmd(f"# Reflection {int(time.time())}\n\n{reflection}", collection="thoughts")

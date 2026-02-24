@@ -98,6 +98,8 @@ class SwarmManager:
         self.llm = OpenAICompatibleClient(self.config.llm)
         self.sessions: Dict[str, SwarmSession] = {}
         self._display_mode = "simple" # Global default
+        self._swarmboot_cache: Optional[str] = None
+        self._masterboot_cache: Optional[str] = None
 
     @classmethod
     def from_swarmbot_config(cls, cfg: SwarmbotConfig) -> "SwarmManager":
@@ -169,35 +171,72 @@ class SwarmManager:
         self._log("--- Phase 3: Cleanup & Consolidation ---")
         self._persist_log(session, user_input, swarm_result)
 
-        # Clear whiteboard for next turn, unless we want to keep it?
-        # For now, clear to avoid pollution, as history is in memory.
         try:
             if hasattr(session.memory.whiteboard, "clear"):
-                session.memory.whiteboard.clear()
+                # 保留核心结构，仅清理临时键，支持跨循环渐进式推进
+                session.memory.whiteboard.clear(preserve_core=True)
             elif isinstance(session.memory.whiteboard, dict):
                 session.memory.whiteboard.clear()
         except:
             pass
 
         # Master Agent Interpretation
-        return self._master_agent_interpret(session, user_input, swarm_result)
+        master_response = self._master_agent_interpret(session, user_input, swarm_result)
+        if master_response is None:
+            master_response = ""
+        if not str(master_response).strip():
+            fallback = swarm_result if swarm_result is not None else ""
+            if not str(fallback).strip():
+                fallback = "Swarmbot 没有生成可用回答，请稍后重试或简化你的问题。"
+            return str(fallback)
+        return str(master_response)
 
     def _boot_swarm_context(self, session: SwarmSession, user_input: str) -> None:
         self._log("--- Phase 1: Swarm Boot (Memory Retrieval & Context Injection) ---")
         
-        # Load swarmboot.md
+        # 生命周期管理：循环开始时恢复 / 初始化 Whiteboard 核心结构与循环计数
+        try:
+            if hasattr(session.memory, "whiteboard"):
+                wb = session.memory.whiteboard
+                if hasattr(wb, "ensure_task_frame"):
+                    wb.ensure_task_frame()
+                # 检查点恢复
+                try:
+                    cache_root = session.memory.local_cache.root
+                    ckpt_path = os.path.join(cache_root, f"checkpoint_{session.session_id}.json")
+                    if os.path.exists(ckpt_path):
+                        with open(ckpt_path, "r", encoding="utf-8") as f:
+                            ckpt_data = json.load(f)
+                        if isinstance(ckpt_data, dict):
+                            for k, v in ckpt_data.items():
+                                wb.update(k, v)
+                except Exception:
+                    pass
+                # 更新循环计数
+                loop_counter = wb.get("loop_counter") or 0
+                wb.update("loop_counter", int(loop_counter) + 1)
+                wb.update("current_state", "PLANNING")
+        except:
+            pass
+        
         swarmboot_content = ""
         user_boot_path = os.path.expanduser("~/.swarmbot/boot/swarmboot.md")
         pkg_boot_path = os.path.join(os.path.dirname(__file__), "../boot/swarmboot.md")
-        try:
-            if os.path.exists(user_boot_path):
-                with open(user_boot_path, "r", encoding="utf-8") as f:
-                    swarmboot_content = f.read()
-            elif os.path.exists(pkg_boot_path):
-                with open(pkg_boot_path, "r", encoding="utf-8") as f:
-                    swarmboot_content = f.read()
-        except:
-            pass
+        if self._swarmboot_cache is not None:
+            swarmboot_content = self._swarmboot_cache
+        else:
+            try:
+                if os.path.exists(user_boot_path):
+                    with open(user_boot_path, "r", encoding="utf-8") as f:
+                        swarmboot_content = f.read()
+                elif os.path.exists(pkg_boot_path):
+                    with open(pkg_boot_path, "r", encoding="utf-8") as f:
+                        swarmboot_content = f.read()
+            except:
+                swarmboot_content = ""
+            self._swarmboot_cache = swarmboot_content
+        if swarmboot_content and len(swarmboot_content) > 8000:
+            swarmboot_content = swarmboot_content[:8000] + "\n...[swarmboot truncated]\n"
 
         # Clear events (short term volatile)
         try:
@@ -205,10 +244,16 @@ class SwarmManager:
         except:
             pass
 
-        # RAG Retrieval
         qmd_context = ""
         try:
-            results = session.memory.search(user_input, limit=3)
+            q_len = len(user_input or "")
+            if q_len < 40:
+                q_limit = 3
+            elif q_len < 120:
+                q_limit = 5
+            else:
+                q_limit = 10
+            results = session.memory.search(user_input, limit=q_limit)
             if results:
                 parts = []
                 for r in results:
@@ -217,27 +262,85 @@ class SwarmManager:
                     else:
                         parts.append(str(r))
                 qmd_context = "\n".join(parts)
+                if len(qmd_context) > 4000:
+                    qmd_context = qmd_context[:4000] + "\n...[qmd context truncated]\n"
         except:
             pass
 
-        # Recent Chat History from Local Cache
         md_excerpt = ""
         try:
             date_str = time.strftime("%Y-%m-%d")
             log_file = f"chat_log_{session.session_id}_{date_str}.md"
             md_text = session.memory.local_cache.read(log_file)
             if md_text:
-                md_excerpt = md_text[-2000:]
+                segments = md_text.split("\n## Loop ")
+                if len(segments) > 1:
+                    loops = []
+                    base = segments[0]
+                    for seg in segments[1:]:
+                        loops.append("## Loop " + seg)
+                    def _extract_terms(text: str) -> list[str]:
+                        terms: list[str] = []
+                        if not text:
+                            return terms
+                        for w in text.split():
+                            if len(w) >= 3:
+                                terms.append(w)
+                        buf = []
+                        for ch in text:
+                            if "\u4e00" <= ch <= "\u9fff":
+                                buf.append(ch)
+                            else:
+                                if len(buf) >= 2:
+                                    terms.append("".join(buf))
+                                buf = []
+                        if len(buf) >= 2:
+                            terms.append("".join(buf))
+                        return list(dict.fromkeys(terms))
+                    query_terms = _extract_terms(user_input or "")
+                    def score_loop(text: str) -> int:
+                        if not query_terms:
+                            return 0
+                        s = 0
+                        for t in query_terms:
+                            if t and t in text:
+                                s += 1
+                        return s
+                    scored = []
+                    for idx, lp in enumerate(loops):
+                        s = score_loop(lp)
+                        scored.append((s, idx, lp))
+                    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                    top = [lp for s, i, lp in scored[:5] if s > 0]
+                    if not top:
+                        top = loops[-3:]
+                    def _shrink_loop(text: str) -> str:
+                        start = text.find("### Input")
+                        if start == -1:
+                            return text
+                        end = text.find("### Whiteboard Snapshot")
+                        if end == -1:
+                            end = len(text)
+                        return text[start:end].strip()
+                    shrunk = []
+                    for lp in top:
+                        s = _shrink_loop(lp)
+                        shrunk.append(s)
+                    md_excerpt = "\n".join(shrunk)
+                    if len(md_excerpt) > 4000:
+                        md_excerpt = md_excerpt[:4000] + "\n...[local history truncated]\n"
+                else:
+                    md_excerpt = md_text[-2000:]
         except:
             pass
 
         system_caps = {}
         try:
-            from nanobot.config.loader import load_config as _nb_load_config, get_data_dir as _nb_get_data_dir
+            from ..config_manager import WORKSPACE_PATH
             from pathlib import Path
-            nb_cfg = _nb_load_config()
-            workspace = Path(nb_cfg.workspace_path)
-            cron_store = _nb_get_data_dir() / "cron" / "jobs.json"
+
+            workspace = Path(WORKSPACE_PATH)
+            cron_store = workspace / "cron" / "jobs.json"
             daemon_state = os.path.expanduser("~/.swarmbot/daemon_state.json")
             skills_workspace = workspace / "skills"
             skills_builtin = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
@@ -245,21 +348,21 @@ class SwarmManager:
                 "daemon": {
                     "state_file": str(daemon_state),
                     "config_section": "daemon",
-                    "services": ["gateway", "overthinking", "backup", "health"]
+                    "services": ["gateway", "overthinking", "backup", "health"],
                 },
                 "cron": {
                     "store_path": str(cron_store),
-                    "cli": "swarmbot cron"
+                    "cli": "swarmbot cron",
                 },
                 "heartbeat": {
                     "workspace_heartbeat": str(workspace / "HEARTBEAT.md"),
-                    "cli": "swarmbot heartbeat"
+                    "cli": "swarmbot heartbeat",
                 },
                 "skills": {
                     "workspace_dir": str(skills_workspace),
                     "builtin_dir": str(skills_builtin),
-                    "summary_tool": "skill_summary"
-                }
+                    "summary_tool": "skill_summary",
+                },
             }
         except Exception:
             system_caps = {}
@@ -291,14 +394,89 @@ class SwarmManager:
             
             whiteboard_dump = json.dumps(whiteboard_data, ensure_ascii=False, indent=2)
             snippet = result[:1200] if result else ""
-            
-            entry = (
-                f"\n## [TASK_SUMMARY] {time.strftime('%H:%M:%S')}\n"
-                f"### Prompt\n{user_input}\n\n"
-                f"### Result (snippet)\n{snippet}\n\n"
-                f"### Whiteboard Context\n```json\n{whiteboard_dump}\n```\n"
+
+            # 结构化 Loop 记录
+            loop_counter = 0
+            current_state = whiteboard_data.get("current_state") or "UNKNOWN"
+            try:
+                loop_counter = int(whiteboard_data.get("loop_counter") or 0)
+            except Exception:
+                loop_counter = 0
+
+            timestamp = time.strftime("%H:%M:%S")
+
+            loop_entry = (
+                f"\n## Loop {loop_counter} [{timestamp}] - State: {current_state}\n\n"
+                f"### Input\n\n{user_input}\n\n"
+                f"### Result (snippet)\n\n{snippet}\n\n"
+                f"### Whiteboard Snapshot\n\n```json\n{whiteboard_dump}\n```\n"
             )
-            session.memory.local_cache.append(log_file, entry)
+
+            # 若文件不存在，则先写入前置信息头，再追加 Loop 记录
+            cache = session.memory.local_cache
+            from os import path as _path
+            full_path = _path.join(cache.root, log_file)
+
+            if not _path.exists(full_path):
+                header = (
+                    "---\n"
+                    f"session_id: {session.session_id}\n"
+                    f"date: {date_str}\n"
+                    "task_type: general\n"
+                    "loops: 0\n"
+                    "final_status: running\n"
+                    "---\n"
+                )
+                cache.write(log_file, header + loop_entry)
+            else:
+                cache.append(log_file, loop_entry)
+
+            # QMD 写入流：处理 qmd_candidates
+            try:
+                candidates = whiteboard_data.get("qmd_candidates") or []
+                if isinstance(candidates, list):
+                    for item in candidates:
+                        if not isinstance(item, dict):
+                            continue
+                        content = item.get("content") or ""
+                        if not str(content).strip():
+                            continue
+                        score = float(item.get("confidence_score") or 0)
+                        status = str(item.get("verification_status") or "").lower()
+                        if score <= 0.7 or status == "pending":
+                            continue
+                        collection = item.get("collection") or "core_memory"
+                        meta = {}
+                        for k, v in item.items():
+                            if k != "content":
+                                meta[k] = v
+                        session.memory.persist_to_qmd(str(content), collection=collection)
+            except:
+                pass
+
+            # 检查点数据持久化
+            try:
+                core_keys = [
+                    "task_specification",
+                    "execution_plan",
+                    "current_state",
+                    "loop_counter",
+                    "completed_subtasks",
+                    "pending_subtasks",
+                    "intermediate_results",
+                    "content_registry",
+                    "checkpoint_data",
+                ]
+                checkpoint = {}
+                for k in core_keys:
+                    if k in whiteboard_data:
+                        checkpoint[k] = whiteboard_data[k]
+                cache_root = cache.root
+                ckpt_path = _path.join(cache_root, f"checkpoint_{session.session_id}.json")
+                with open(ckpt_path, "w", encoding="utf-8") as f:
+                    json.dump(checkpoint, f, ensure_ascii=False)
+            except:
+                pass
         except:
             pass
 
@@ -311,15 +489,19 @@ class SwarmManager:
         masterboot_content = ""
         user_boot_path = os.path.expanduser("~/.swarmbot/boot/masteragentboot.md")
         pkg_boot_path = os.path.join(os.path.dirname(__file__), "../boot/masteragentboot.md")
-        try:
-             if os.path.exists(user_boot_path):
-                 with open(user_boot_path, "r", encoding="utf-8") as f:
-                     masterboot_content = f.read()
-             elif os.path.exists(pkg_boot_path):
-                 with open(pkg_boot_path, "r", encoding="utf-8") as f:
-                     masterboot_content = f.read()
-        except:
-             pass
+        if self._masterboot_cache is not None:
+            masterboot_content = self._masterboot_cache
+        else:
+            try:
+                 if os.path.exists(user_boot_path):
+                     with open(user_boot_path, "r", encoding="utf-8") as f:
+                         masterboot_content = f.read()
+                 elif os.path.exists(pkg_boot_path):
+                     with open(pkg_boot_path, "r", encoding="utf-8") as f:
+                         masterboot_content = f.read()
+            except:
+                 masterboot_content = ""
+            self._masterboot_cache = masterboot_content
 
         master_prompt = (
             f"System Boot Configuration:\n{masterboot_content}\n\n"

@@ -20,12 +20,7 @@ import shutil
 
 
 def load_nanobot_config() -> dict:
-    # DEPRECATED: We should not read ~/.nanobot/config.json directly anymore if possible.
-    # But for migration/compatibility we might read it once to import.
-    # However, user requested "All config in .swarmbot/config.json".
-    # So we should modify this to return config from SwarmbotConfig.channels
     cfg = load_config()
-    # Convert SwarmbotConfig.channels back to dict format expected by legacy code
     channels_dict = {}
     for name, c_cfg in cfg.channels.items():
         channels_dict[name] = c_cfg.config.copy()
@@ -33,8 +28,6 @@ def load_nanobot_config() -> dict:
     return {"channels": channels_dict}
 
 def save_nanobot_config(config: dict) -> None:
-    # When saving "nanobot config", we actually want to save to Swarmbot config
-    # We need to map the dict back to SwarmbotConfig structure
     cfg = load_config()
     
     if "channels" in config:
@@ -52,24 +45,9 @@ def save_nanobot_config(config: dict) -> None:
                 cfg.channels[name] = ChannelConfig(enabled=enabled, config=conf)
     
     save_config(cfg)
-    
-    # OPTIONAL: Still sync to ~/.nanobot/config.json for the underlying nanobot process?
-    # User said "Don't read separate nanobot config".
-    # But nanobot library MIGHT read it internally.
-    # To be safe and compliant with user request "All config in .swarmbot/config.json",
-    # we should probably WRITE to ~/.nanobot/config.json as a *mirror* only, 
-    # so the underlying library works, but the source of truth is swarmbot config.
-    nanobot_path = os.path.expanduser("~/.nanobot/config.json")
-    try:
-        os.makedirs(os.path.dirname(nanobot_path), exist_ok=True)
-        with open(nanobot_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
 
 
 def cmd_channels(args: argparse.Namespace, extra_args: list[str]) -> None:
-    # Handle local channel management instead of passthrough
     if not extra_args:
         cmd_channels_list()
         return
@@ -104,8 +82,7 @@ def cmd_channels(args: argparse.Namespace, extra_args: list[str]) -> None:
                 params[k] = v
         cmd_channels_config(name, params)
     else:
-        # Fallback to passthrough for other commands like 'status', 'login'
-        cmd_passthrough("channels", extra_args)
+        print(f"Unsupported channels action: {action}")
 
 def cmd_channels_list() -> None:
     cfg = load_nanobot_config()
@@ -214,19 +191,6 @@ def cmd_onboard() -> None:
                 else:
                     print(f"  Skipped {filename} (already exists)")
     
-    try:
-        # Check if nanobot config exists to decide on overwrite
-        nanobot_config = os.path.expanduser("~/.nanobot/config.json")
-        if os.path.exists(nanobot_config):
-             print(f"Nanobot config already exists at {nanobot_config}, skipping interactive onboard.")
-             # We can run 'nanobot onboard --no-interactive' if supported, or just skip.
-             # Nanobot onboard is interactive by default. 
-             # Best to skip if config exists to avoid blocking.
-             pass
-        else:
-             subprocess.run(["nanobot", "onboard"], check=False)
-    except FileNotFoundError:
-        pass
     print(f"Swarmbot 已完成初始化，配置文件位于: {CONFIG_PATH}")
     print(f"个性化 Boot 配置位于: {BOOT_CONFIG_PATH}")
 
@@ -269,190 +233,40 @@ def get_available_port(start_port: int, step: int = 20, max_tries: int = 5) -> i
 def cmd_gateway() -> None:
     # Kill any existing gateway processes first to ensure clean state
     # This prevents zombie processes or port conflicts
-    try:
-        subprocess.run(["pkill", "-f", "swarmbot gateway"], check=False, stderr=subprocess.DEVNULL)
-        subprocess.run(["pkill", "-f", "gateway_wrapper.py"], check=False, stderr=subprocess.DEVNULL)
-        # Also kill nanobot gateway if it was running independently
-        subprocess.run(["pkill", "-f", "nanobot gateway"], check=False, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
-    # 检查端口冲突并自动递增
-    # Default nanobot gateway port is 18990
-    try:
-        # Load config to inject environment variables for nanobot
-        cfg = load_config()
-        env = os.environ.copy()
-        
-        # Inject API credentials if custom/openai provider is set
-        if cfg.provider.api_key and cfg.provider.base_url:
-            env["OPENAI_API_BASE"] = cfg.provider.base_url
-            env["OPENAI_API_KEY"] = cfg.provider.api_key
-            # We don't override LITELLM_MODEL here as nanobot config handles it,
-            # but ensuring base/key env vars usually fixes "Connection error" for openai-compatible providers.
-
-        port = get_available_port(18990)
-        env["OPENCLAW_GATEWAY_PORT"] = str(port)
-        env["PYTHONUNBUFFERED"] = "1"
-        
-        # SIMPLER STRATEGY for this task:
-        # We create a 'gateway_wrapper.py' that imports nanobot and injects our SwarmManager logic.
-        # Then we run `python gateway_wrapper.py` instead of `nanobot gateway`.
-        
-        wrapper_path = os.path.join(os.path.dirname(__file__), "gateway_wrapper.py")
-        
-        log_dir = os.path.expanduser("~/.swarmbot/logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, "gateway.log")
-        
-        print(f"Starting Swarmbot Gateway on port {port} (background mode)...")
-        print(f"Logs will be written to: {log_file}")
-        
-        with open(log_file, "a") as f:
-            # Use subprocess.Popen for non-blocking execution (background)
-            subprocess.Popen(
-                [sys.executable, "-u", wrapper_path, "gateway", "--port", str(port)],
-                env=env, 
-                stdout=f, 
-                stderr=subprocess.STDOUT,
-                start_new_session=True # Detach from terminal
-            )
-        print("Gateway started successfully.")
-        
-    except FileNotFoundError:
-        print("未找到 nanobot 命令，请先安装 nanobot-ai。", file=sys.stderr)
-    except Exception as e:
-        print(f"Gateway failed: {e}", file=sys.stderr)
+    print("Gateway 功能当前已禁用（nanobot 依赖已移除）。")
 
 def cmd_heartbeat(args: argparse.Namespace) -> None:
+    from .config_manager import WORKSPACE_PATH
+    from pathlib import Path
+
+    hb_path = Path(WORKSPACE_PATH) / "HEARTBEAT.md"
+
     if args.action == "status":
-        try:
-            from nanobot.config.loader import load_config
-            from nanobot.heartbeat.service import HeartbeatService, _is_heartbeat_empty
-            from pathlib import Path
-            cfg = load_config()
-            hb = HeartbeatService(workspace=Path(cfg.workspace_path), on_heartbeat=None)
-            if not hb.heartbeat_file.exists():
-                print("HEARTBEAT.md 不存在。")
-                return
-            content = hb.heartbeat_file.read_text(encoding="utf-8")
-            if _is_heartbeat_empty(content):
-                print("HEARTBEAT.md 存在但当前没有待办任务。")
-            else:
-                print("HEARTBEAT.md 存在且包含待办任务。")
-        except Exception as e:
-            print(f"Heartbeat 状态检查失败: {e}")
+        if not hb_path.exists():
+            print("HEARTBEAT.md 不存在。")
+            return
+        content = hb_path.read_text(encoding="utf-8")
+        stripped = "".join(line for line in content.splitlines() if not line.strip().startswith(">")).strip()
+        if not stripped:
+            print("HEARTBEAT.md 存在但当前没有待办任务。")
+        else:
+            print("HEARTBEAT.md 存在且包含待办任务。")
     elif args.action == "trigger":
-        try:
-            import asyncio
-            from pathlib import Path
-            from nanobot.config.loader import load_config, get_data_dir
-            from nanobot.bus.queue import MessageBus
-            from nanobot.agent.loop import AgentLoop
-            from nanobot.cron.service import CronService
-            from nanobot.session.manager import SessionManager
-            from nanobot.heartbeat.service import HeartbeatService
-            from nanobot.cli.commands import _make_provider
-            cfg = load_config()
-            bus = MessageBus()
-            provider = _make_provider(cfg)
-            session_manager = SessionManager(cfg.workspace_path)
-            cron_store_path = get_data_dir() / "cron" / "jobs.json"
-            cron = CronService(cron_store_path)
-            agent = AgentLoop(
-                bus=bus,
-                provider=provider,
-                workspace=cfg.workspace_path,
-                model=cfg.agents.defaults.model,
-                temperature=cfg.agents.defaults.temperature,
-                max_tokens=cfg.agents.defaults.max_tokens,
-                max_iterations=cfg.agents.defaults.max_tool_iterations,
-                memory_window=cfg.agents.defaults.memory_window,
-                brave_api_key=cfg.tools.web.search.api_key or None,
-                exec_config=cfg.tools.exec,
-                cron_service=cron,
-                restrict_to_workspace=cfg.tools.restrict_to_workspace,
-                session_manager=session_manager,
-                mcp_servers=cfg.tools.mcp_servers,
-            )
-            async def run_once() -> None:
-                async def on_heartbeat(prompt: str) -> str:
-                    return await agent.process_direct(prompt, session_key="heartbeat")
-                hb = HeartbeatService(workspace=Path(cfg.workspace_path), on_heartbeat=on_heartbeat)
-                result = await hb.trigger_now()
-                if result:
-                    print(result)
-                await agent.close_mcp()
-            asyncio.run(run_once())
-        except Exception as e:
-            print(f"Heartbeat 触发失败: {e}")
+        if not hb_path.exists():
+            print("HEARTBEAT.md 不存在，无法触发。")
+            return
+        print("当前 Heartbeat 任务清单如下（需手动执行）：")
+        print(hb_path.read_text(encoding="utf-8"))
 
 def cmd_tool() -> None:
-    # 透传 nanobot tool 命令（可能需要传参，这里简单实现为透传所有后续参数）
-    # 注意：argparse 会截断参数，若需完整透传，需要 sys.argv 处理，这里简化为调用默认 tool list 或类似
-    try:
-        # 简单调用 nanobot tool list 作为示例，实际可能需要更复杂的参数透传机制
-        # 如果用户输入 swarmbot tool list，这里 args.command 只是 "tool"
-        # 更好的做法是在 main 中使用 parse_known_args
-        subprocess.run(["nanobot", "tool", "list"], check=True)
-    except FileNotFoundError:
-        print("未找到 nanobot 命令，请先安装 nanobot-ai。", file=sys.stderr)
+    print("工具管理 CLI 已简化，请在对话中通过 LLM 工具调用使用工具。")
 
 from .loops.overthinking import OverthinkingLoop
 import threading
 
 
 def cmd_cron(args: argparse.Namespace) -> None:
-    try:
-        from nanobot.config.loader import get_data_dir
-        from nanobot.cron.service import CronService
-        from nanobot.cron.types import CronSchedule
-        store_path = get_data_dir() / "cron" / "jobs.json"
-        service = CronService(store_path)
-        if args.action == "list":
-            jobs = service.list_jobs(include_disabled=True)
-            if not jobs:
-                print("当前没有任何定时任务。")
-                return
-            for j in jobs:
-                status = "启用" if j.enabled else "禁用"
-                next_run = j.state.next_run_at_ms or 0
-                print(f"{j.id} [{status}] 每 {int((j.schedule.every_ms or 0) / 60000)} 分钟: {j.name} -> {j.payload.message}")
-        elif args.action == "add":
-            interval_m = args.every_minutes
-            if interval_m is None or interval_m <= 0:
-                print("every-minutes 必须为正整数。")
-                return
-            schedule = CronSchedule(kind="every", every_ms=int(interval_m) * 60 * 1000)
-            job = service.add_job(
-                name=args.name,
-                schedule=schedule,
-                message=args.message,
-                deliver=bool(args.deliver),
-                channel=args.channel,
-                to=args.to,
-            )
-            print(f"已添加定时任务: id={job.id}, name={job.name}")
-        elif args.action == "remove":
-            ok = service.remove_job(args.id)
-            if ok:
-                print(f"已删除定时任务 {args.id}")
-            else:
-                print(f"未找到定时任务 {args.id}")
-        elif args.action == "enable":
-            job = service.enable_job(args.id, True)
-            if job:
-                print(f"已启用定时任务 {args.id}")
-            else:
-                print(f"未找到定时任务 {args.id}")
-        elif args.action == "disable":
-            job = service.enable_job(args.id, False)
-            if job:
-                print(f"已禁用定时任务 {args.id}")
-            else:
-                print(f"未找到定时任务 {args.id}")
-    except Exception as e:
-        print(f"Cron 操作失败: {e}")
+    print("Cron 管理功能当前已禁用（nanobot 依赖已移除）。")
 
 def cmd_overthinking(args: argparse.Namespace) -> None:
     cfg = load_config()
@@ -611,23 +425,12 @@ def cmd_daemon(args: argparse.Namespace) -> None:
             pass
 
 
-def cmd_passthrough(command: str, extra_args: list[str]) -> None:
-    """Helper to passthrough commands to nanobot."""
-    cmd = ["nanobot", command] + extra_args
-    try:
-        subprocess.run(cmd, check=True)
-    except FileNotFoundError:
-        print("未找到 nanobot 命令，请先安装 nanobot-ai。", file=sys.stderr)
-    except subprocess.CalledProcessError as e:
-        sys.exit(e.returncode)
-
-
 def main() -> None:
     # Use parse_known_args so we can grab extra args for passthrough commands
     parser = argparse.ArgumentParser(description="Swarmbot CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("onboard", help="初始化配置和工作区，并尝试调用 nanobot onboard")
+    subparsers.add_parser("onboard", help="初始化配置和工作区")
 
     subparsers.add_parser("run", help="与 Swarmbot 进行连续对话（本地调试）")
 
@@ -639,12 +442,8 @@ def main() -> None:
     heartbeat_sub.add_parser("status", help="查看 heartbeat 状态")
     heartbeat_sub.add_parser("trigger", help="立即执行一次 heartbeat 检查")
 
-    # Tool passthrough
-    # We use parse_known_args in main to handle subcommands for tool/channels/cron
-    subparsers.add_parser("tool", help="管理 nanobot 的 tool channel（透传功能）")
-    
-    # Channels passthrough (New)
-    subparsers.add_parser("channels", help="管理 nanobot 的 channels（透传功能）")
+    subparsers.add_parser("tool", help="查看和使用 Swarmbot 暴露的工具（简化模式）")
+    subparsers.add_parser("channels", help="管理 Swarmbot 的消息通道配置")
     
     cron_parser = subparsers.add_parser("cron", help="管理 Swarmbot 的定时任务")
     cron_sub = cron_parser.add_subparsers(dest="action", required=True)
@@ -663,8 +462,7 @@ def main() -> None:
     cron_disable = cron_sub.add_parser("disable", help="禁用定时任务")
     cron_disable.add_argument("--id", required=True, help="任务 ID")
     
-    # Agent passthrough (New - direct single agent chat)
-    subparsers.add_parser("agent", help="直接与 nanobot agent 对话（透传功能）")
+    subparsers.add_parser("agent", help="保留占位符（原 nanobot agent 透传已禁用）")
 
     subparsers.add_parser("status", help="查看当前 Swarmbot 状态")
 
@@ -711,7 +509,7 @@ def main() -> None:
         help="是否启用 AutoSwarmBuilder",
     )
 
-    subparsers.add_parser("skill", help="查看当前可用的技能（透传到 nanobot skill list）")
+    subparsers.add_parser("skill", help="查看当前可用的技能（内部通过 ToolAdapter 实现）")
 
     daemon_parser = subparsers.add_parser("daemon", help="管理 Swarmbot 守护进程")
     daemon_sub = daemon_parser.add_subparsers(dest="action", required=True)
@@ -741,14 +539,13 @@ def main() -> None:
     elif args.command == "heartbeat":
         cmd_heartbeat(args)
     elif args.command == "tool":
-        # Pass all extra args
-        cmd_passthrough("tool", sys.argv[2:])
+        cmd_tool()
     elif args.command == "channels":
         cmd_channels(args, sys.argv[2:])
     elif args.command == "cron":
         cmd_cron(args)
     elif args.command == "agent":
-        cmd_passthrough("agent", sys.argv[2:])
+        print("直接与底层 nanobot agent 对话的功能已禁用。")
     elif args.command == "status":
         cmd_status()
     elif args.command == "provider":
@@ -759,7 +556,7 @@ def main() -> None:
     elif args.command == "config":
         cmd_config(args)
     elif args.command == "skill":
-        cmd_passthrough("skill", sys.argv[2:])
+        print("技能管理请通过对话中的 skill_summary / skill_load 工具完成。")
     elif args.command == "overthinking":
         cmd_overthinking(args)
     elif args.command == "daemon":
