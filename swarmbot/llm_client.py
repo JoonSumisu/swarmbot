@@ -138,14 +138,28 @@ class OpenAICompatibleClient:
             except RateLimitError as e:
                 if attempt == max_retries - 1:
                     raise e
-                
-                # Calculate delay with jitter: base * 2^attempt + jitter
                 delay = (base_delay * (2 ** attempt)) + (random.random() * 0.5)
                 print(f"[LLMClient] Rate limit hit. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
                 time.sleep(delay)
             except Exception as e:
-                # Also catch Quota Exceeded as it might be transient if concurrency related
-                if "quota" in str(e).lower() or "429" in str(e):
+                msg = str(e)
+                if "failed to process regex" in msg.lower():
+                    try:
+                        import re as _re
+                        def _clean(obj: Any) -> Any:
+                            if isinstance(obj, str):
+                                return _re.sub(r"[()\\`]", "", obj)
+                            if isinstance(obj, list):
+                                return [_clean(x) for x in obj]
+                            if isinstance(obj, dict):
+                                return {k: _clean(v) for k, v in obj.items()}
+                            return obj
+                        cleaned_messages = _clean(params.get("messages", []))
+                        params["messages"] = cleaned_messages
+                        return litellm_completion(**params)
+                    except Exception as e2:
+                        msg = str(e2)
+                if "quota" in msg.lower() or "429" in msg:
                     if attempt == max_retries - 1:
                         raise e
                     delay = (base_delay * (2 ** attempt)) + 1.0

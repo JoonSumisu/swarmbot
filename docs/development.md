@@ -165,3 +165,36 @@ Overthinking 循环在 v0.3.1 中对记忆写入方式作了结构化约束，�
 ```bash
 python -m unittest discover -s tests -p "test*.py" -v
 ```
+
+## 常见问题：Litellm 400 - Failed to process regex
+
+- **问题现象**  
+  返回 `400`，错误内容包含 `{'error': 'Failed to process regex'}`，多出现在输入或上下文中包含大量 `(`、`)`、反引号、反斜杠等特殊字符时。
+
+- **系统内置处理**  
+  Swarmbot 在调用 Litellm 失败且错误信息包含 `failed to process regex` 时，会自动对请求消息做一次清洗：  
+  - 递归遍历 `messages`；  
+  - 对所有字符串字段执行正则替换，去掉 `(`、`)`、`` ` ``、`\` 等字符；  
+  - 使用清洗后的 `messages` 立即重试一次调用。  
+  这一逻辑内置在 `swarmbot/llm_client.py` 中，通常可以消除大部分由正则解析器引起的 400 错误。
+
+- **推荐人工排错流程**（当仍持续出现类似错误时）  
+  1. **统一输入格式**：尽量使用纯自然语言或标准 JSON，避免在同一条消息中混用大量正则符号。  
+  2. **预处理清洗**：在上游业务里对原始输入做一次清洗，例如：  
+     ```python
+     cleaned = re.sub(r'[()\\/`]', '', raw_text)
+     ```  
+  3. **拆分长句**：将一长串复合指令拆成若干条清晰的 action item，分别交给 Swarm。  
+  4. **写入 Whiteboard 供 Planner 使用**：  
+     - 写入预处理后的问题：  
+       ```json
+       {"key": "prepared_input", "value": "好，找出问题，给我一个问题的优化方法"}
+       ```  
+     - 写入行动计划：  
+       ```json
+       {
+         "key": "action_items",
+         "value": ["使用纯文本/标准 JSON", "拆分长句", "转义特殊符号"]
+       }
+       ```  
+     - 之后以 `prepared_input` 为主问题重新跑 Planner，使后续 Agent 可以直接复用 Whiteboard 中的结构化信息。
