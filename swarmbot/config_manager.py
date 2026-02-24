@@ -24,18 +24,19 @@ class ProviderConfig:
 @dataclass
 class SwarmSettings:
     agent_count: int = 4
+    # Default roles list is just a suggestion or pool; if dynamic allocation is used, this might be ignored or extended
     roles: List[str] = field(default_factory=lambda: ["planner", "coder", "critic", "summarizer"])
-    architecture: str = "concurrent"
+    architecture: str = "auto" # Default to auto for dynamic behavior
     max_turns: int = 16
-    auto_builder: bool = False
+    auto_builder: bool = True # Enable dynamic role building by default
     display_mode: str = "simple"  # simple or log
 
 
 @dataclass
 class OverthinkingConfig:
-    enabled: bool = False
+    enabled: bool = True
     interval_minutes: int = 30
-    max_steps: int = 0 # Default 0 means no autonomous exploration actions unless configured
+    max_steps: int = 20 # Default 0 means no autonomous exploration actions unless configured
 
 
 @dataclass
@@ -69,7 +70,7 @@ class SwarmbotConfig:
         ProviderConfig(name="primary"),
         ProviderConfig(name="backup")
     ])
-    provider: ProviderConfig = field(default_factory=ProviderConfig) # Deprecated, kept for backward compat
+    # Deprecated 'provider' field removed to avoid confusion/conflicts
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
@@ -116,6 +117,7 @@ def load_config() -> SwarmbotConfig:
             p.name = "primary"
             # Keep old provider + add backup template
             cfg.providers = [p, ProviderConfig(name="backup")]
+            # Clean up old key on next save implicitly by not loading it into a field
             
         # 2. Load Swarm Settings
         if "swarm" in data:
@@ -205,8 +207,6 @@ def save_config(cfg: SwarmbotConfig) -> None:
 
     data = {
         "providers": providers_list,
-        # Keep deprecated 'provider' for older tools if needed, sync with primary
-        "provider": asdict(cfg.providers[0]) if cfg.providers else asdict(cfg.provider),
         "swarm": asdict(cfg.swarm),
         "overthinking": asdict(cfg.overthinking),
         "tools": asdict(cfg.tools),
