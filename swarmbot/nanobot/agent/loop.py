@@ -3,7 +3,10 @@
 import asyncio
 from contextlib import AsyncExitStack
 import json
-import json_repair
+try:
+    import json_repair
+except ImportError:
+    import swarmbot.json_repair as json_repair
 from pathlib import Path
 import re
 from typing import Any, Awaitable, Callable
