@@ -27,29 +27,45 @@ class WorkMapMemory:
         self._load_local_skills()
 
     def _load_local_skills(self) -> None:
-        """从 nanobot 加载本地技能"""
-        try:
-            # 假设 nanobot skill list 输出某种格式，这里简化处理
-            # 实际需解析 nanobot 输出
-            result = subprocess.run(
-                ["nanobot", "skill", "list", "--json"],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                try:
-                    data = json.loads(result.stdout)
-                    for item in data:
-                        self.skills.append(Skill(
-                            name=item.get("name", "unknown"),
-                            description=item.get("description", ""),
-                            usage=item.get("usage", "")
-                        ))
-                except json.JSONDecodeError:
-                    pass
-        except FileNotFoundError:
-            pass
+        """从本地目录加载技能 (不再依赖 nanobot CLI)"""
+        from swarmbot.config_manager import WORKSPACE_PATH
+        from pathlib import Path
+
+        # 1. Scan Workspace Skills
+        workspace_skills = Path(WORKSPACE_PATH) / "skills"
+        if workspace_skills.exists():
+            for skill_dir in workspace_skills.iterdir():
+                if skill_dir.is_dir():
+                    readme = skill_dir / "README.md"
+                    skill_md = skill_dir / "SKILL.md"
+                    
+                    target_file = skill_md if skill_md.exists() else (readme if readme.exists() else None)
+                    
+                    if target_file:
+                        try:
+                            content = target_file.read_text(encoding="utf-8")
+                            # Simple parsing of description
+                            desc = f"Local skill: {skill_dir.name}"
+                            usage = "See documentation."
+                            
+                            # Try to extract description (first paragraph after header)
+                            lines = content.split('\n')
+                            for i, line in enumerate(lines):
+                                if line.startswith('# '):
+                                    # Found title, next non-empty line might be description
+                                    for next_line in lines[i+1:]:
+                                        if next_line.strip():
+                                            desc = next_line.strip()[:200] # Truncate
+                                            break
+                                    break
+                                    
+                            self.skills.append(Skill(
+                                name=skill_dir.name,
+                                description=desc,
+                                usage=usage
+                            ))
+                        except Exception:
+                            pass
 
         # 添加内置基础能力
         self.skills.append(Skill("llm_reasoning", "通用推理能力", "直接使用 LLM 进行回答"))

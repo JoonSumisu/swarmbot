@@ -113,7 +113,10 @@ class SwarmSession:
 class SwarmManager:
     def __init__(self, config: SwarmConfig | None = None) -> None:
         self.config = config or SwarmConfig()
-        self.llm = OpenAICompatibleClient(self.config.llm)
+        # Fix: Pass config as named argument to ensure it's treated as a single config,
+        # or wrap in list if passing as positional 'configs' argument.
+        # OpenAICompatibleClient(config=...) is cleaner.
+        self.llm = OpenAICompatibleClient(config=self.config.llm)
         self.sessions: Dict[str, SwarmSession] = {}
         self._display_mode = "simple" # Global default
         self._swarmboot_cache: Optional[str] = None

@@ -231,9 +231,25 @@ def get_available_port(start_port: int, step: int = 20, max_tries: int = 5) -> i
     raise RuntimeError(f"Could not find available port starting from {start_port}")
 
 def cmd_gateway() -> None:
-    # Kill any existing gateway processes first to ensure clean state
-    # This prevents zombie processes or port conflicts
-    print("Gateway 功能当前已禁用（nanobot 依赖已移除）。")
+    # Gateway functionality relies on nanobot (vendored).
+    # We must run gateway_wrapper.py in a separate process to ensure 
+    # proper patching of nanobot modules before they are imported.
+    import sys
+    import subprocess
+    
+    cmd = [sys.executable, "-m", "swarmbot.gateway_wrapper", "gateway"]
+    
+    # Pass through any additional arguments if needed, 
+    # but currently cmd_gateway doesn't accept args in this signature.
+    # We'll just run the default gateway command.
+    
+    print("Starting Swarmbot Gateway (nanobot-based)...")
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Gateway process exited with error: {e}")
+    except KeyboardInterrupt:
+        print("\nGateway stopped.")
 
 def cmd_heartbeat(args: argparse.Namespace) -> None:
     from .config_manager import WORKSPACE_PATH
