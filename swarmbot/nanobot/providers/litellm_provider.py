@@ -1,9 +1,12 @@
 """LiteLLM provider implementation for multi-provider support."""
 
 import json
-import json_repair
+try:
+    import json_repair
+except ImportError:
+    import swarmbot.json_repair as json_repair
 import os
-from typing import Any
+from typing import Any, AsyncGenerator
 
 import litellm
 from litellm import acompletion

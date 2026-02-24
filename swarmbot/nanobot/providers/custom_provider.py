@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-import json_repair
+import json
+try:
+    import json_repair
+except ImportError:
+    import swarmbot.json_repair as json_repair
+from typing import Any, AsyncGenerator
 from openai import AsyncOpenAI
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
