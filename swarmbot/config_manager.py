@@ -25,7 +25,8 @@ class ProviderConfig:
 class SwarmSettings:
     agent_count: int = 4
     # Default roles list is just a suggestion or pool; if dynamic allocation is used, this might be ignored or extended
-    roles: List[str] = field(default_factory=lambda: ["planner", "coder", "critic", "summarizer"])
+    # Empty list by default to emphasize dynamic nature
+    roles: List[str] = field(default_factory=list)
     architecture: str = "auto" # Default to auto for dynamic behavior
     max_turns: int = 16
     auto_builder: bool = True # Enable dynamic role building by default
