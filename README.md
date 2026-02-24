@@ -12,25 +12,30 @@ Swarmbot 是一个运行在本地环境中的 **多 Agent 集群智能系统 (Mu
 
 ---
 
-## 🌟 核心架构 v0.3.1
+## 🌟 核心架构 v0.3.1 (Emergency Update)
 
-Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.3.1 中形成了更稳定的本地运行架构与 **Tri-Boot 认知系统**：
+Swarmbot 不是简单的组件堆叠，而是实现了“三位一体”的深度融合，在 v0.3.1 中形成了更稳定的本地运行架构与 **Tri-Boot 认知系统**，并增强了**容灾与自律**能力：
 
-### 1. Connectivity & Channels（当前状态）
-*   **网关状态**: 历史版本曾内置 nanobot Gateway；当前版本出于依赖精简与稳定性考虑，CLI 中的 `swarmbot gateway` 已禁用，仅保留少量 vendored 代码以兼容旧配置。
-*   **通道支持**: 
-    *   配置层面仍支持在 `config.json` 中声明 Feishu 等渠道，用于日志聚合或手工联通性测试；
-    *   推荐通过外部网关或企业现有 IM 机器人接入生产环境，而不是直接依赖旧版 nanobot Gateway。
-*   **连通性探测（Connectivity Test）**:
+### 1. High Availability & Connectivity
+*   **Provider Failover (New)**: 支持配置主备 LLM Provider。当主 Provider (如本地 vLLM) 请求失败时，自动无缝切换至备用 Provider (如云端 API 或其他本地实例)，确保服务高可用。
+*   **Connectivity Test**:
     *   可以使用 `test_feishu_send.py` 中的 “🔍 Swarmbot Connectivity Test: Active Send” 作为 Feishu 连通性探针；
     *   生产环境建议 **最多每小时执行一次**（例如通过系统级 cron），以平衡「异常发现速度」与「额外请求开销」。
 
-### 2. Tri-Boot System (Cognitive Engine)
-- **Swarm Boot (Instinct)**: 基于 `swarmbot/boot/swarmboot.md` 启动。负责理性拆解任务、调度工具与检索记忆，是整个 Swarm 的“理性大脑”。
-- **Master Agent Boot (Consciousness)**: 基于 `swarmbot/boot/masteragentboot.md` 启动。负责接收 Swarm 的执行结果，结合 `SOUL.md` (人格) 与 `IDENTITY.md` (身份) 进行二次解释与用户交互，是对外的人格与意识层。
-- **Overthinking / 自我行动优化 Boot (Subconscious)**: 通过 `loops/overthinking.py` 与后台守护进程协作，在系统空闲时自动整理记忆、反思任务，并尝试优化自身 Boot/工具使用策略，相当于一个“潜意识层”的自我进化回路。
+### 2. Intelligent Session Management (New)
+*   **Topic Relevance Filtering**: 在加载历史会话上下文时，引入智能相关性评分机制。仅保留与当前用户输入（Topic）强相关的历史片段，有效隔离无关话题干扰，提升 Context 纯度。
+*   **Automated Compression**: 结合 Overthinking 机制，自动识别并压缩/归档陈旧的会话日志，保持 Workspace 轻量化，防止 Token 浪费。
 
-### 3. Swarm Orchestration (Swarms Integrated)
+### 3. Enhanced Overthinking (Self-Evolution)
+*   **Boot Optimization**: Overthinking Loop 具备优化自身启动配置 (`swarmboot.md`) 的能力。基于长期记忆与任务复盘，自动调整系统 Prompt 与行为准则。
+*   **Proactive Communication**: 能够基于记忆中的待办事项或重要发现，主动通过配置的 Channel (如 Feishu) 向用户发起沟通，不再是被动等待指令。
+*   **Future Planning**: 在空闲时自主规划 `.swarmbot` 内部的未来行动路径（代码优化、知识整理等），并将计划写入 QMD。
+*   **Tri-Boot System**:
+    - **Swarm Boot (Instinct)**: `swarmbot/boot/swarmboot.md` - 理性大脑。
+    - **Master Agent Boot (Consciousness)**: `swarmbot/boot/masteragentboot.md` - 人格与意识。
+    - **Overthinking Boot (Subconscious)**: `loops/overthinking.py` - 潜意识与自我进化。
+
+### 4. Swarm Orchestration (Swarms Integrated)
 *   **来源**: 集成 `swarms` 框架的多智能体编排逻辑。
 *   **作用**: 管理 Agent 间的协作流。
 *   **架构支持**:

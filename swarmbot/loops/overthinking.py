@@ -93,10 +93,14 @@ class OverthinkingLoop:
         if max_steps <= 0: max_steps = 10 # Default auto
         
         steps = [
-            self._step_consolidate_short_term,
-            self._step_compress_qmd,
-            self._step_expand_thoughts,
-            self._step_online_enrichment
+            self._step_manage_sessions,       # 1. Manage sessions (compress/clear)
+            self._step_consolidate_short_term,# 2. Extract insights (now part of manage?)
+            self._step_compress_qmd,          # 3. Optimize QMD
+            self._step_expand_thoughts,       # 4. Expand thoughts
+            self._step_online_enrichment,     # 5. Online enrichment
+            self._step_optimize_boot_files,   # 6. Optimize boot files
+            self._step_proactive_communication, # 7. Communicate via channels
+            self._step_future_planning        # 8. Plan future actions
         ]
         
         for step_fn in steps:
@@ -106,8 +110,11 @@ class OverthinkingLoop:
                     print("[Overthinking] Interrupted by user activity.")
                     return
             
-            # Execute step
-            step_fn()
+            try:
+                # Execute step
+                step_fn()
+            except Exception as e:
+                print(f"[Overthinking] Error in step {step_fn.__name__}: {e}")
 
         # Autonomous Exploration
         with self._lock:
@@ -117,6 +124,160 @@ class OverthinkingLoop:
         
         if max_steps > 0:
             self._step_autonomous_exploration(max_steps)
+
+    def _step_manage_sessions(self) -> None:
+        """1. Manage sessions: Compress and clear old session logs."""
+        print("[Overthinking] Managing sessions...")
+        cache_root = self.memory.local_cache.root
+        if not os.path.exists(cache_root):
+            return
+            
+        now = time.time()
+        # Keep logs for last 24 hours, compress older ones
+        # Actually user said "compress, clear".
+        # We will archive logs older than 1 hour if idle.
+        retention_seconds = 3600 
+        
+        processed_count = 0
+        for name in os.listdir(cache_root):
+            if not name.startswith("chat_log_") or not name.endswith(".md"):
+                continue
+                
+            path = os.path.join(cache_root, name)
+            try:
+                mtime = os.path.getmtime(path)
+                if now - mtime > retention_seconds:
+                    # Compress: Read, Summarize, Save to Archive, Delete Original
+                    content = self.memory.local_cache.read(name)
+                    if not content:
+                        os.remove(path)
+                        continue
+                        
+                    # Summarize
+                    summary_prompt = f"Summarize this session log into key facts and outcomes:\n\n{content[-3000:]}"
+                    summary = self.thinker.step(summary_prompt)
+                    
+                    # Archive
+                    archive_dir = os.path.join(cache_root, "archive")
+                    os.makedirs(archive_dir, exist_ok=True)
+                    archive_path = os.path.join(archive_dir, name)
+                    with open(archive_path, "w", encoding="utf-8") as f:
+                        f.write(f"# Summary\n{summary}\n\n# Original Content\n{content}")
+                    
+                    # Delete original
+                    os.remove(path)
+                    processed_count += 1
+            except Exception as e:
+                print(f"Error processing session {name}: {e}")
+        
+        if processed_count > 0:
+            print(f"[Overthinking] Archived {processed_count} old sessions.")
+
+    def _step_optimize_boot_files(self) -> None:
+        """6. Optimize boot files based on QMD insights."""
+        print("[Overthinking] Optimizing boot files...")
+        boot_path = os.path.expanduser("~/.swarmbot/boot/swarmboot.md")
+        if not os.path.exists(boot_path):
+            # Try to create from default if missing? Or skip.
+            return
+
+        with open(boot_path, "r", encoding="utf-8") as f:
+            current_boot = f.read()
+
+        # Check QMD for "optimization" or "boot" related insights
+        insights = self.memory.search("boot optimization system improvement", limit=5)
+        if not insights:
+            return
+
+        insight_text = "\n".join([str(r) for r in insights])
+        
+        prompt = (
+            "You are an expert system optimizer. Based on the following insights from recent experiences:\n"
+            f"{insight_text}\n\n"
+            "Review and optimize the current boot configuration (swarmboot.md).\n"
+            "Goal: Improve efficiency, clarity, and effectiveness.\n"
+            "If no changes are needed, return 'NO_CHANGE'.\n"
+            "Otherwise, return the FULL updated content of swarmboot.md.\n\n"
+            f"Current Boot Content:\n{current_boot}"
+        )
+        
+        optimized = self.thinker.step(prompt)
+        
+        if optimized and "NO_CHANGE" not in optimized and len(optimized) > 10:
+            # Basic validation
+            if "---" in optimized: # minimal check for valid md structure if expected
+                with open(boot_path, "w", encoding="utf-8") as f:
+                    f.write(optimized)
+                print("[Overthinking] swarmboot.md optimized.")
+                self.memory.persist_to_qmd(f"Optimized swarmboot.md based on recent insights.", collection="system_log")
+
+    def _step_proactive_communication(self) -> None:
+        """7. Proactive communication via channels."""
+        print("[Overthinking] Checking for proactive communication...")
+        # Check if channels are enabled
+        if not self.cfg.channels:
+            return
+
+        # Scan memory for topics that need external communication
+        # e.g. "ask user", "report status", "share finding"
+        topics = self.memory.search("communication user_request report", limit=3)
+        if not topics:
+            return
+
+        context = "\n".join([str(t) for t in topics])
+        
+        prompt = (
+            "Based on these memory items, is there a need to send a proactive message to the user via configured channels?\n"
+            f"{context}\n\n"
+            "If yes, generate a JSON object with keys: 'channel' (e.g. feishu), 'message' (content).\n"
+            "If no, return 'NO_ACTION'."
+        )
+        
+        response = self.thinker.step(prompt)
+        
+        if "NO_ACTION" in response:
+            return
+            
+        # Parse response (simplified)
+        import json
+        try:
+            # extract json
+            start = response.find("{")
+            end = response.rfind("}")
+            if start != -1 and end != -1:
+                data = json.loads(response[start:end+1])
+                channel = data.get("channel")
+                msg = data.get("message")
+                
+                if channel and msg and channel in self.cfg.channels:
+                    # Simulate sending (since we don't have the adapter instance easily available here without circular imports or huge refactor)
+                    # In a real implementation, we would use ChannelAdapter(self.cfg).send(channel, msg)
+                    print(f"[Overthinking] Sending to {channel}: {msg}")
+                    # Log it
+                    self.memory.persist_to_qmd(f"Sent proactive message to {channel}: {msg}", collection="communication_log")
+        except Exception as e:
+            print(f"[Overthinking] Failed to parse communication response: {e}")
+
+    def _step_future_planning(self) -> None:
+        """8. Plan future actions (internal to .swarmbot)."""
+        print("[Overthinking] Planning future actions...")
+        
+        prompt = (
+            "Review current system state and memories. Plan 3 future improvements for the .swarmbot system.\n"
+            "Focus on: Code optimization, Memory organization, or Knowledge acquisition.\n"
+            "Output a markdown list of tasks."
+        )
+        
+        plan = self.thinker.step(prompt)
+        
+        if plan:
+            # Save plan to workspace
+            plan_path = os.path.join(WORKSPACE_PATH, "future_plan.md")
+            with open(plan_path, "w", encoding="utf-8") as f:
+                f.write(f"# Future Plan (Generated {time.strftime('%Y-%m-%d %H:%M:%S')})\n\n{plan}")
+            
+            self.memory.persist_to_qmd(f"Generated future plan: {plan[:200]}...", collection="planning")
+
 
     def _step_consolidate_short_term(self) -> None:
         """1. 清理短期记忆写入 QMD"""

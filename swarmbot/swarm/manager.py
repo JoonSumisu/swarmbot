@@ -312,8 +312,12 @@ class SwarmManager:
                         scored.append((s, idx, lp))
                     scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
                     top = [lp for s, i, lp in scored[:5] if s > 0]
-                    if not top:
+                    if not top and not query_terms:
                         top = loops[-3:]
+                    # Strict filtering: if query terms exist but no matches found, 
+                    # do NOT fallback to last 3. Keep top empty.
+                    # This avoids context pollution from irrelevant previous sessions.
+                    
                     def _shrink_loop(text: str) -> str:
                         start = text.find("### Input")
                         if start == -1:

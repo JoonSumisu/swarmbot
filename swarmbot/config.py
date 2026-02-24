@@ -11,6 +11,8 @@ class LLMConfig:
     api_key: str = ""
     model: str = ""
     timeout: float = 120.0
+    max_tokens: int = 4096
+    temperature: float = 0.6
 
 
 @dataclass

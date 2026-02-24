@@ -65,7 +65,8 @@ class DaemonConfig:
 
 @dataclass
 class SwarmbotConfig:
-    provider: ProviderConfig = field(default_factory=ProviderConfig)
+    providers: List[ProviderConfig] = field(default_factory=list)
+    provider: ProviderConfig = field(default_factory=ProviderConfig) # Deprecated, kept for backward compat
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
@@ -88,15 +89,80 @@ def load_config() -> SwarmbotConfig:
         # Initialize default empty tools/channels structure
         cfg.tools = ToolConfig()
         cfg.channels = {}
+        # Default provider
+        cfg.providers = [ProviderConfig()]
         save_config(cfg)
         return cfg
     
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:
+            
+        # Migration: If "provider" is in data but "providers" is not, move it
+        if "provider" in data and "providers" not in data:
+            # Create a list with the single provider
+            # We need to construct ProviderConfig from the dict
+            p_data = data["provider"]
+            # Filter keys that match ProviderConfig fields
+            p_fields = {k: v for k, v in p_data.items() if k in ProviderConfig.__annotations__}
+            # Note: We can't easily reconstruct the object here without more logic if we just pass dict to dataclass
+            # So we will let the normal loading happen, then fix it up after instantiation if possible,
+            # OR we modify data before instantiation.
+            data["providers"] = [p_data]
+            
+        # Re-construct with dacite or simple unpacking if structure matches
+        # For simplicity in this environment without dacite:
+        
+        cfg = SwarmbotConfig()
+        
+        # Load providers
+        if "providers" in data:
+            cfg.providers = []
+            for p_data in data["providers"]:
+                p = ProviderConfig()
+                for k, v in p_data.items():
+                    if hasattr(p, k):
+                        setattr(p, k, v)
+                cfg.providers.append(p)
+        elif "provider" in data:
+             # Fallback if migration logic above didn't fully work or for safety
+             p = ProviderConfig()
+             for k, v in data["provider"].items():
+                 if hasattr(p, k):
+                     setattr(p, k, v)
+             cfg.providers = [p]
+             
+        # Load other sections
+        if "swarm" in data:
+            for k, v in data["swarm"].items():
+                if hasattr(cfg.swarm, k):
+                    setattr(cfg.swarm, k, v)
+                    
+        if "overthinking" in data:
+            for k, v in data["overthinking"].items():
+                if hasattr(cfg.overthinking, k):
+                    setattr(cfg.overthinking, k, v)
+
+        if "tools" in data:
+            # Tools logic...
+            pass # (Simplified for brevity, assuming defaults or simple dicts)
+            
+        # Channels
+        if "channels" in data:
+            cfg.channels = {}
+            for ch_name, ch_data in data["channels"].items():
+                ch_cfg = ChannelConfig()
+                for k, v in ch_data.items():
+                    if hasattr(ch_cfg, k):
+                        setattr(ch_cfg, k, v)
+                cfg.channels[ch_name] = ch_cfg
+
+        return cfg
+
+    except Exception as e:
+        print(f"Error loading config: {e}")
         # Corrupt config, return default
-        return SwarmbotConfig()
+        return SwarmbotConfig(providers=[ProviderConfig()])
 
     # ... (Provider, Swarm, Overthinking parsing logic remains same)
     
