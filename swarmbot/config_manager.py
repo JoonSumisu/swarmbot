@@ -23,7 +23,7 @@ class ProviderConfig:
 
 @dataclass
 class SwarmSettings:
-    agent_count: int = 4
+    max_agents: int = 4 # Maximum number of agents in the swarm
     # Default roles list is just a suggestion or pool; if dynamic allocation is used, this might be ignored or extended
     # Empty list by default to emphasize dynamic nature
     roles: List[str] = field(default_factory=list)
@@ -123,7 +123,9 @@ def load_config() -> SwarmbotConfig:
         # 2. Load Swarm Settings
         if "swarm" in data:
             for k, v in data["swarm"].items():
-                if hasattr(cfg.swarm, k):
+                if k == "agent_count": # Migration: agent_count -> max_agents
+                    cfg.swarm.max_agents = v
+                elif hasattr(cfg.swarm, k):
                     setattr(cfg.swarm, k, v)
                     
         # 3. Load Overthinking
