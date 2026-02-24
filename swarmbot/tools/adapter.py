@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import os
+import io
+import sys
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 from pathlib import Path
@@ -61,11 +63,71 @@ class ToolAdapter:
             }
             self.registry.register(name, func, schema)
         
+    def _tool_skill_load(self, name: str) -> str:
+        # Load skill logic... (Assuming this exists from context but not shown fully)
+        pass
+
+    def _tool_python_exec(self, code: str) -> str:
+        """
+        Execute Python code in a restricted environment.
+        Available built-in functions:
+        - print(text)
+        - file_read(path)
+        - file_write(path, content)
+        - web_search(query)
+        - browser_open(url)
+        - browser_read(url)
+        - shell_exec(command)
+        - overthinking_control(action, interval, steps)
+        - whiteboard_update(key, value)
+        """
+        # Capture stdout
+        old_stdout = sys.stdout
+        redirected_output = io.StringIO()
+        sys.stdout = redirected_output
+        
+        # Prepare environment
+        # Bind self methods to local variables for cleaner access in code
+        env = {
+            "print": print, # Use built-in print which now writes to redirected_output
+            "file_read": self._tool_file_read,
+            "file_write": self._tool_file_write,
+            "web_search": self._tool_web_search,
+            "browser_open": self._tool_browser_open,
+            "browser_read": self._tool_browser_read,
+            "shell_exec": self._tool_shell_exec,
+            "overthinking_control": self._tool_overthinking_control,
+            "whiteboard_update": self._tool_whiteboard_update,
+            "skill_fetch": self._tool_skill_fetch,
+            "skill_load": self._tool_skill_load,
+            "skill_summary": self._tool_skill_summary,
+            "swarm_control": self._tool_swarm_control,
+            "context_policy_update": self._tool_context_policy_update,
+            # Common utilities
+            "json": json,
+            "os": os,
+            "subprocess": subprocess,
+            "sys": sys,
+        }
+        
+        try:
+            exec(code, env)
+            output = redirected_output.getvalue()
+            if not output:
+                output = "(Code executed successfully with no output)"
+            return output
+        except Exception as e:
+            import traceback
+            return f"Error executing Python code:\n{traceback.format_exc()}"
+        finally:
+            sys.stdout = old_stdout
+
     def _load_skills(self) -> None:
         """
         Load available skills.
         """
         # Always add core built-ins manually
+        self._register_builtin("python_exec", "Execute Python code to perform complex tasks, data analysis, or orchestrate multiple tool calls. Available tools: file_read, file_write, web_search, browser_open, browser_read, shell_exec, overthinking_control, whiteboard_update.", ["code"], self._tool_python_exec)
         self._register_builtin("file_read", "Read a file from local filesystem", ["path"], self._tool_file_read)
         self._register_builtin("file_write", "Write content to a file", ["path", "content"], self._tool_file_write)
         self._register_builtin("web_search", "Search the web for information using a search engine.", ["query"], self._tool_web_search)

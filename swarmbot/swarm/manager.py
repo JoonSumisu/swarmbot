@@ -39,6 +39,35 @@ class SwarmSession:
         
         self._init_default_agents()
 
+    def _get_default_skill_map(self) -> Dict[str, List[str]]:
+        return {
+            "finance": ["web_search", "python_exec"],
+            "market": ["web_search", "python_exec"],
+            "research": ["web_search", "browser_open", "browser_read", "python_exec"],
+            "code": ["file_write", "shell_exec", "file_read", "python_exec"],
+            "coder": ["file_write", "shell_exec", "file_read", "python_exec"],
+            "developer": ["file_write", "shell_exec", "file_read", "python_exec"],
+            "data": ["python_exec", "file_read", "file_write"],
+            "writer": ["web_search", "python_exec"],
+            "analyst": ["web_search", "browser_read", "python_exec"],
+            "reviewer": ["file_read", "python_exec"],
+            "critic": ["web_search", "python_exec"],
+            "summarizer": ["file_read", "python_exec"],
+        }
+
+    def _apply_skills(self, agent_slot: SwarmAgentSlot, role: str) -> None:
+        agent_slot.agent.ctx.skills = {}
+        # Always allow whiteboard update
+        agent_slot.agent.ctx.skills["whiteboard_update"] = True
+        # Always allow python_exec for everyone if requested by user (PTC integration)
+        # But let's stick to the map for granularity
+        
+        skill_map = self._get_default_skill_map()
+        for key, tools in skill_map.items():
+            if key in role.lower():
+                for tool in tools:
+                    agent_slot.agent.ctx.skills[tool] = True
+
     def _init_default_agents(self) -> None:
         # Default initialization based on count
         roles = ["planner", "coder", "critic", "summarizer", "researcher", "analyst", "writer", "reviewer"]
@@ -47,7 +76,9 @@ class SwarmSession:
             ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
             # Agents share the session's memory store
             agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
-            self.agents.append(SwarmAgentSlot(agent=agent, weight=1.0))
+            slot = SwarmAgentSlot(agent=agent, weight=1.0)
+            self._apply_skills(slot, role)
+            self.agents.append(slot)
 
     def resize_swarm(self, target_count: int) -> None:
         current_count = len(self.agents)
@@ -56,7 +87,12 @@ class SwarmSession:
                 role = f"worker-{i+1}"
                 ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
                 agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
-                self.agents.append(SwarmAgentSlot(agent=agent, weight=1.0))
+                slot = SwarmAgentSlot(agent=agent, weight=1.0)
+                # Apply default skills for workers? Workers might be generic.
+                # If role is generic 'worker', maybe give them basic tools?
+                # For now, let them be tool-less unless assigned specific role later.
+                # Or give them python_exec by default?
+                self.agents.append(slot)
         elif target_count < current_count:
             self.agents = self.agents[:target_count]
 
@@ -64,29 +100,11 @@ class SwarmSession:
         required_count = min(len(new_roles), 10)
         self.resize_swarm(required_count)
         
-        skill_map = {
-            "finance": ["web_search"],
-            "market": ["web_search"],
-            "research": ["web_search", "browser_open", "browser_read"],
-            "code": ["file_write", "shell_exec", "file_read"],
-            "developer": ["file_write", "shell_exec", "file_read"],
-            "data": ["python_exec"],
-            "writer": ["web_search"],
-            "analyst": ["web_search", "browser_read"],
-            "reviewer": ["file_read"]
-        }
-        
         for i, slot in enumerate(self.agents):
             if i < len(new_roles):
                 role = new_roles[i]
                 slot.agent.ctx.role = role
-                slot.agent.ctx.skills = {}
-                slot.agent.ctx.skills["whiteboard_update"] = True
-                
-                for key, tools in skill_map.items():
-                    if key in role.lower():
-                        for tool in tools:
-                            slot.agent.ctx.skills[tool] = True
+                self._apply_skills(slot, role)
             else:
                 slot.agent.ctx.role = "observer"
                 slot.agent.ctx.skills = {}
