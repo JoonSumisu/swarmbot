@@ -19,6 +19,7 @@ dependencies = [
   "litellm>=1.0.0",
   "fastapi>=0.100.0",
   "uvicorn>=0.20.0",
+  "lark-oapi>=1.0.0",
 ]
 
 [project.scripts]

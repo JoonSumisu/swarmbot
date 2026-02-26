@@ -232,35 +232,16 @@ def get_available_port(start_port: int, step: int = 20, max_tries: int = 5) -> i
 
 def cmd_gateway() -> None:
     """
-    Run the Gateway in-process with SwarmAgentLoop patch.
-    This avoids the need for a separate wrapper script.
+    Run the Gateway in native mode.
+    This replaces the legacy nanobot CLI wrapper with a direct Python implementation.
     """
-    import sys
-    import logging
-    
-    # 1. Patch nanobot to use SwarmAgentLoop
     try:
-        from swarmbot.swarm.agent_adapter import SwarmAgentLoop
-        import nanobot.agent.loop as agent_loop_module
-        
-        # Replace the class in the module
-        agent_loop_module.AgentLoop = SwarmAgentLoop
-        print("Successfully replaced AgentLoop class with SwarmAgentLoop.")
+        from swarmbot.gateway.server import run_gateway
+        run_gateway()
     except Exception as e:
-        print(f"Failed to patch nanobot: {e}")
-        return
-
-    # 2. Run nanobot gateway command
-    print("Starting Swarmbot Gateway (nanobot-based)...")
-    try:
-        # We need to import after patching
-        from nanobot.cli.commands import gateway
-        # Run directly
-        gateway(port=18790, verbose=False)
-    except Exception as e:
-        print(f"Gateway exited with error: {e}")
-    except KeyboardInterrupt:
-        print("\nGateway stopped.")
+        print(f"Gateway crashed: {e}")
+        import traceback
+        traceback.print_exc()
 
 def cmd_heartbeat(args: argparse.Namespace) -> None:
     from .config_manager import WORKSPACE_PATH

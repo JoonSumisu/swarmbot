@@ -10,7 +10,11 @@ from typing import Any, AsyncGenerator
 import httpx
 from loguru import logger
 
-from oauth_cli_kit import get_token as get_codex_token
+try:
+    from oauth_cli_kit import get_token as get_codex_token
+except ImportError:
+    from swarmbot.oauth_cli_kit import get_token as get_codex_token
+
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 DEFAULT_CODEX_URL = "https://chatgpt.com/backend-api/codex/responses"
