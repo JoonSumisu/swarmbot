@@ -13,9 +13,9 @@
 ## 🌟 版本 v0.4.1 更新亮点
 
 *   **Gateway In-Process**: 彻底移除了对外部 `nanobot` 进程的依赖。Gateway 现在直接作为 Swarmbot 的子模块运行，大幅降低了部署复杂度和资源占用。
+*   **Native Loop Architecture**: 重构了核心 Agent 循环 (`CoreAgent Loop`)，支持多轮工具调用与最终自动汇总。
 *   **Feishu Channel Restore**: 修复并增强了 Feishu 通道支持，包括消息清洗、Markdown 格式修正和长文本自动截断。
 *   **Skill System Optimization**: 移除了对 CLI 工具的依赖，改为纯 Python 实现的本地技能发现与加载机制，性能显著提升。
-*   **Robust Dependencies**: 修复了 `json_repair` 等关键依赖缺失问题，增强了容错性。
 
 ---
 
@@ -67,6 +67,13 @@ swarmbot run
 
 ---
 
+## 📖 文档
+
+*   **[架构详解 (Memory & Loop)](docs/memory_and_loop_architecture.md)**: 深入了解 Swarmbot 的核心循环、三层记忆系统和多 Agent 编排机制。
+*   **[开发指南](docs/development.md)**: 如何贡献代码、添加新工具或适配新通道。
+
+---
+
 ## 🧩 核心特性
 
 ### 1. 多智能体编排 (Swarm Orchestration)
@@ -89,10 +96,6 @@ swarmbot run
 *   **经验沉淀**: 将成功/失败的经验提炼为方法论写入 QMD。
 
 ---
-
-## 🛠️ 开发与贡献
-
-请参阅 [开发文档](docs/development.md) 了解架构细节与贡献指南。
 
 ## 📄 License
 

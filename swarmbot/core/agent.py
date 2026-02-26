@@ -218,6 +218,15 @@ class CoreAgent:
 
                 completion_kwargs["messages"] = messages
             else:
+                # If we exhausted max_tool_rounds, we force a final response generation
+                # based on the accumulated tool results.
+                print(f"[CoT] {self.ctx.role} exhausted tool rounds. Generating final response...")
+                # Remove tools to force a text response (optional, but safer to avoid infinite loops)
+                if "tools" in completion_kwargs:
+                    del completion_kwargs["tools"]
+                
+                resp = self.llm.completion(**completion_kwargs)
+                content = resp.choices[0].message.content or ""
                 if content:
                     print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
 
