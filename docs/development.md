@@ -16,9 +16,9 @@ Swarmbot v0.4.1 采用了 **In-Process Gateway** 架构，将核心组件紧密�
     *   它拦截了标准的消息处理流程，将其路由到 `SwarmManager`。
     *   实现了 Feishu 消息的特殊处理（格式清洗、截断）。
 
-3.  **Gateway (`swarmbot.cli.cmd_gateway`)**:
+3.  **Gateway (`swarmbot.gateway.server`)**:
     *   启动入口。它不再是外部进程，而是直接在 CLI 中初始化 `nanobot` 组件。
-    *   在启动前，它会动态 Patch `nanobot.agent.loop.AgentLoop`，将其替换为 `SwarmAgentLoop`。
+    *   它实例化 `SwarmAgentLoop` 并通过 Native Python API 启动 MessageBus 和 Channels。
 
 4.  **ToolAdapter (`swarmbot.tools.adapter`)**:
     *   统一的工具注册中心。
@@ -34,6 +34,7 @@ Swarmbot v0.4.1 采用了 **In-Process Gateway** 架构，将核心组件紧密�
 *   `json_repair`: 增强 LLM 输出 JSON 的解析鲁棒性。
 *   `litellm`: 统一的大模型接口调用。
 *   `loguru`, `typer`, `rich`: CLI 与日志体验。
+*   `lark-oapi`: 飞书/Lark 官方 SDK。
 
 安装依赖：
 ```bash
@@ -45,7 +46,7 @@ pip install .
 ### 1. 本地运行 Gateway
 在开发过程中，推荐直接运行 Gateway 来测试改动：
 ```bash
-python -m swarmbot.cli gateway
+swarmbot gateway
 ```
 这会启动 Web Server (默认 18790 端口) 并开始监听配置的通道（如 Feishu）。
 
@@ -67,7 +68,7 @@ self._register_builtin(
 在提交前，请确保：
 *   版本号已更新 (`pyproject.toml` 和 `swarmbot/__init__.py`)。
 *   没有硬编码的 API Key 或 Secret。
-*   执行简单的冒烟测试（如 `python -m swarmbot.cli --help`）。
+*   执行简单的冒烟测试（如 `swarmbot --help`）。
 
 ## 🧪 测试
 

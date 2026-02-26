@@ -51,7 +51,7 @@ swarmbot provider add \
 
 ```bash
 # 前台启动
-python -m swarmbot.cli gateway
+swarmbot gateway
 
 # 或者使用守护进程模式
 swarmbot daemon start
