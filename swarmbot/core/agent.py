@@ -5,10 +5,12 @@ from typing import Any, Dict, List, Optional
 
 from ..llm_client import OpenAICompatibleClient
 from ..memory.base import MemoryStore
-from ..memory.hot_memory import HotMemoryStore
+from ..memory.hot_memory import HotMemory
 from ..tools.adapter import ToolAdapter
 import json
-
+from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional
+from ..llm_client import OpenAICompatibleClient
 
 @dataclass
 class AgentContext:
@@ -23,7 +25,7 @@ class CoreAgent:
         ctx: AgentContext,
         llm: OpenAICompatibleClient,
         memory: MemoryStore,
-        hot_memory: Optional[HotMemoryStore] = None,
+        hot_memory: Optional[HotMemory] = None,
     ) -> None:
         self.ctx = ctx
         self.llm = llm
@@ -32,8 +34,6 @@ class CoreAgent:
         self._tool_adapter = ToolAdapter()
         
         # Bind memory stores to adapter
-        # Assuming memory has whiteboard (which is attached to session usually, 
-        # but here passed via memory object or we need to pass it explicitly)
         if hasattr(memory, "whiteboard"):
             self._tool_adapter.whiteboard = memory.whiteboard
         

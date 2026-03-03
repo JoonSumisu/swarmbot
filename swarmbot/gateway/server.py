@@ -1,177 +1,44 @@
-import asyncio
-import sys
-import logging
-from pathlib import Path
-
-# --- Path Setup for Vendored Nanobot ---
-# Ensure 'nanobot' can be imported as a top-level package
-CURRENT_DIR = Path(__file__).resolve().parent.parent # swarmbot/swarmbot
-if str(CURRENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CURRENT_DIR))
-
-# Also ensure 'nanobot' is importable if it's not already
-try:
-    import nanobot
-except ImportError:
-    # Fallback: alias swarmbot.nanobot to nanobot in sys.modules
-    import swarmbot.nanobot
-    sys.modules["nanobot"] = swarmbot.nanobot
-
-from loguru import logger
-
-# --- Imports ---
-from swarmbot.config_manager import load_config, SwarmbotConfig
-from swarmbot.swarm.agent_adapter import SwarmAgentLoop
-from nanobot.bus.queue import MessageBus
-from nanobot.channels.feishu import FeishuChannel
-from nanobot.config.schema import FeishuConfig
-from nanobot.providers.base import LLMProvider, LLMResponse
-from swarmbot.loops.overthinking import OverthinkingLoop
-import threading
-
-# --- Dummy Provider for AgentLoop compatibility ---
-class NoOpProvider(LLMProvider):
-    async def chat(self, messages, tools=None, **kwargs):
-        # This should never be called if SwarmAgentLoop intercepts correctly.
-        # But if it is called, return a safe dummy response.
-        return LLMResponse(content="SwarmAgentLoop should intercept this.")
-
-    def get_default_model(self):
-        return "noop-model"
-
-class GatewayServer:
-    def __init__(self):
-        self.config: SwarmbotConfig = load_config()
-        self.bus = MessageBus()
-        self.channels = []
-        self.agent = None
-        self.overthinking = None
-        self._stop_event = threading.Event()
+    async def _run_message_loop(self):
+        logger.info("Gateway is ready. Listening for messages...")
         
-    async def start(self):
-        logger.info("Starting Swarmbot Gateway (Native Mode)...")
-        
-        # 1. Initialize Channels
-        await self._init_channels()
-        
-        # 2. Initialize Swarm Agent Loop
-        await self._init_agent()
-        
-        # 2.5 Initialize Overthinking Loop
-        self.overthinking = OverthinkingLoop(self._stop_event)
-        self.overthinking.start()
-        
-        # 3. Start Components
-        await self._run_loop()
-
-    async def _init_channels(self):
-        # Feishu
-        feishu_conf = self.config.channels.get("feishu")
-        # Check if feishu_conf is a dict or ChannelConfig object
-        if feishu_conf:
-            is_enabled = False
-            if isinstance(feishu_conf, dict):
-                is_enabled = feishu_conf.get("enabled", False)
-                app_id = feishu_conf.get("app_id", "")
-                app_secret = feishu_conf.get("app_secret", "")
-                encrypt_key = feishu_conf.get("encrypt_key", "")
-                verification_token = feishu_conf.get("verification_token", "")
-                allow_from = feishu_conf.get("config", {}).get("allow_from", [])
-            else: # Dataclass
-                is_enabled = feishu_conf.enabled
-                app_id = feishu_conf.app_id
-                app_secret = feishu_conf.app_secret
-                encrypt_key = feishu_conf.encrypt_key
-                verification_token = feishu_conf.verification_token
-                # allow_from might be in 'config' dict or direct field depending on ChannelConfig definition
-                # ChannelConfig has 'config' dict field, but FeishuConfig expects 'allow_from'
-                # Let's assume it's in config dict for now as ChannelConfig doesn't have allow_from field explicitly
-                # Wait, looking at ChannelConfig in previous turn, it has `config: Dict[str, Any]`.
-                allow_from = feishu_conf.config.get("allow_from", [])
-
-            if is_enabled:
-                logger.info("Initializing Feishu channel...")
-                try:
-                    pydantic_conf = FeishuConfig(
-                        enabled=True,
-                        app_id=app_id,
-                        app_secret=app_secret,
-                        encrypt_key=encrypt_key,
-                        verification_token=verification_token,
-                        allow_from=allow_from
-                    )
-                    
-                    channel = FeishuChannel(pydantic_conf, self.bus)
-                    self.channels.append(channel)
-                    logger.info("Feishu channel initialized.")
-                except Exception as e:
-                    logger.error(f"Failed to init Feishu channel: {e}")
-
-    async def _init_agent(self):
-        logger.info("Initializing SwarmAgentLoop...")
-        
-        # SwarmAgentLoop needs to be initialized with parameters expected by AgentLoop
-        # We pass a NoOpProvider because SwarmAgentLoop delegates to SwarmManager
-        
-        # Use config_manager's WORKSPACE_PATH if not in config object
-        from swarmbot.config_manager import WORKSPACE_PATH
-        workspace = Path(WORKSPACE_PATH)
-        
-        self.agent = SwarmAgentLoop(
-            bus=self.bus,
-            provider=NoOpProvider(),
-            workspace=workspace,
-            model="swarm-v1", # Placeholder
-            max_iterations=10,
-            # Pass other required args with defaults
-            temperature=0.7,
-            max_tokens=4096,
-            memory_window=10,
-            brave_api_key=None,
-            exec_config=None,
-            cron_service=None,
-            restrict_to_workspace=True,
-            session_manager=None, # Will use default
-            mcp_servers={}
-        )
-
-    async def _run_loop(self):
-        # Start all channels
-        for channel in self.channels:
-            asyncio.create_task(channel.start())
-        
-        # Run agent loop (blocking)
-        logger.info("Gateway is running. Press Ctrl+C to stop.")
         try:
-            await self.agent.run()
+            while not self._stop_event.is_set():
+                # Wait for message
+                message: InboundMessage = await self.bus.recv()
+                
+                if not message:
+                    continue
+                    
+                logger.info(f"Received message from {message.source}: {message.content[:50]}...")
+                
+                # Launch async handler
+                asyncio.create_task(self._handle_message_async(message))
+                
         except asyncio.CancelledError:
-            logger.info("Gateway stopping...")
+            logger.info("Message loop cancelled.")
         finally:
-            # Cleanup
-            logger.info("Stopping Overthinking...")
-            if self.overthinking:
-                self.overthinking.stop()
+            self.stop()
+
+    async def _handle_message_async(self, message: InboundMessage):
+        """Async wrapper for blocking inference."""
+        loop = asyncio.get_running_loop()
+        try:
+            # Run blocking inference in thread pool
+            response_text = await loop.run_in_executor(
+                self._executor, 
+                self.inference_loop.run, 
+                message.content,
+                message.chat_id or "unknown"
+            )
             
-            logger.info("Stopping Channels...")
-            for channel in self.channels:
-                await channel.stop()
-            if self.agent:
-                self.agent.stop()
-
-def run_gateway():
-    """Entry point for CLI."""
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
-    logger.remove()
-    logger.add(sys.stderr, level="INFO")
-    
-    try:
-        server = GatewayServer()
-        asyncio.run(server.start())
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        logger.exception(f"Gateway crashed: {e}")
-
-if __name__ == "__main__":
-    run_gateway()
+            # Send reply (back on async loop)
+            reply = OutboundMessage(
+                content=response_text,
+                chat_id=message.chat_id,
+                reply_to_message_id=message.message_id,
+                source="swarmbot"
+            )
+            await self.bus.send(reply)
+            
+        except Exception as e:
+            logger.error(f"Inference processing failed: {e}")

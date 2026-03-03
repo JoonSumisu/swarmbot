@@ -90,7 +90,13 @@ class ToolAdapter:
     def _tool_python_exec(self, code: str) -> str:
         """
         Execute Python code in a restricted environment.
-        Available built-in functions:
+        
+        IMPORTANT:
+        - Built-in tools (print, file_read, web_search, hot_memory_update, etc.) are PRE-LOADED as global functions.
+        - DO NOT import them. Just call them directly. e.g., `web_search(query="...")`.
+        - Standard libraries (json, time, math, etc.) CAN be imported.
+        
+        Available Globals:
         - print(text)
         - file_read(path)
         - file_write(path, content)
@@ -98,7 +104,6 @@ class ToolAdapter:
         - browser_open(url)
         - browser_read(url)
         - shell_exec(command)
-        - overthinking_control(action, interval, steps)
         - whiteboard_update(key, value)
         - hot_memory_update(content)
         """

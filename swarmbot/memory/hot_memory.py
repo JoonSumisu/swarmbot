@@ -1,64 +1,43 @@
 from pathlib import Path
 import os
 import time
-from typing import Optional
 
-class HotMemoryStore:
+class HotMemory:
     """
-    L2 Hot Memory: Simple human-like short-term memory.
-    Stores 'Past', 'Present', 'Future', and 'Todo' in a markdown file.
-    Global scope (singleton-like access via file).
+    L2 Hot Memory: Short-term persistent memory (1-7 days).
+    File: hot_memory.md
+    Content: Past events, Present context, Future plans, Todo list.
     """
-    
     def __init__(self, workspace_path: str):
         self.file_path = Path(workspace_path) / "hot_memory.md"
-        self._init_file()
+        self._ensure_file()
 
-    def _init_file(self):
+    def _ensure_file(self):
         if not self.file_path.exists():
-            initial_content = """# Hot Memory
-
-## Short-term Past
-- (Empty)
-
-## Present
-- (Empty)
-
-## Future / Scheduled
-- (Empty)
-
-## Todo List
-- [ ] Initialize system
-"""
-            self.file_path.write_text(initial_content, encoding="utf-8")
+            self.file_path.parent.mkdir(parents=True, exist_ok=True)
+            self.file_path.write_text("# Hot Memory\n\n## Past (Recent)\n\n## Present\n\n## Future\n\n## Todo List\n", encoding="utf-8")
 
     def read(self) -> str:
-        """Read the entire hot memory."""
-        if not self.file_path.exists():
-            self._init_file()
         return self.file_path.read_text(encoding="utf-8")
 
-    def update(self, content: str) -> None:
-        """
-        Overwrite the hot memory with new content.
-        Agents are expected to read, modify, and write back.
-        """
+    def update(self, content: str):
+        """Direct overwrite (used by agents or self-optimization)"""
         self.file_path.write_text(content, encoding="utf-8")
 
-    def append_todo(self, item: str) -> None:
-        """Helper to quickly add a todo item."""
+    def append_todo(self, item: str):
         content = self.read()
         if "## Todo List" in content:
-            # Simple append
-            new_content = content.replace("## Todo List", f"## Todo List\n- [ ] {item}")
-            self.update(new_content)
+            lines = content.split('\n')
+            new_lines = []
+            inserted = False
+            for line in lines:
+                new_lines.append(line)
+                if line.strip() == "## Todo List":
+                    new_lines.append(f"- [ ] {item}")
+                    inserted = True
+            if not inserted:
+                new_lines.append("\n## Todo List")
+                new_lines.append(f"- [ ] {item}")
+            self.update("\n".join(new_lines))
         else:
             self.update(content + f"\n\n## Todo List\n- [ ] {item}")
-
-    def archive_to_qmd(self, qmd_store) -> str:
-        """
-        Logic for Overthinking to archive old items.
-        For now (1 month trial), we might just log what would be archived.
-        """
-        # Placeholder for complex archiving logic
-        pass

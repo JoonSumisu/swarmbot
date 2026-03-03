@@ -10,7 +10,7 @@ from ..config import SwarmConfig
 from ..config_manager import SwarmbotConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.qmd import QMDMemoryStore
-from ..memory.hot_memory import HotMemoryStore
+from ..memory.hot_memory import HotMemory
 from ..core.agent import AgentContext, CoreAgent
 
 
@@ -37,7 +37,7 @@ class SwarmSession:
         # Actually SwarmConfig doesn't have workspace_path in definition usually.
         # Let's check config object.
         workspace = getattr(config, "workspace_path", os.path.expanduser("~/.swarmbot/workspace"))
-        self.hot_memory = HotMemoryStore(workspace)
+        self.hot_memory = HotMemory(workspace)
         
         self.agents: List[SwarmAgentSlot] = []
         self.architecture: Literal[
