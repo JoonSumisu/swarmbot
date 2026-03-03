@@ -10,6 +10,7 @@ from ..config import SwarmConfig
 from ..config_manager import SwarmbotConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.qmd import QMDMemoryStore
+from ..memory.hot_memory import HotMemoryStore
 from ..core.agent import AgentContext, CoreAgent
 
 
@@ -29,6 +30,15 @@ class SwarmSession:
         self.config = config
         self.llm = llm_client
         self.memory = QMDMemoryStore()
+        # Initialize Hot Memory (Global/Shared for now per user instruction "Global unique")
+        # But we pass workspace path from somewhere. config has it?
+        # SwarmConfig usually doesn't have workspace_path, SwarmbotConfig does.
+        # We'll assume default workspace or try to find it.
+        # Actually SwarmConfig doesn't have workspace_path in definition usually.
+        # Let's check config object.
+        workspace = getattr(config, "workspace_path", os.path.expanduser("~/.swarmbot/workspace"))
+        self.hot_memory = HotMemoryStore(workspace)
+        
         self.agents: List[SwarmAgentSlot] = []
         self.architecture: Literal[
             "sequential", "concurrent", "agent_rearrange", "graph", "mixture",
@@ -44,23 +54,25 @@ class SwarmSession:
             "finance": ["web_search", "python_exec"],
             "market": ["web_search", "python_exec"],
             "research": ["web_search", "browser_open", "browser_read", "python_exec"],
-            "code": ["file_write", "shell_exec", "file_read", "python_exec"],
-            "coder": ["file_write", "shell_exec", "file_read", "python_exec"],
-            "developer": ["file_write", "shell_exec", "file_read", "python_exec"],
+            "code": ["file_write", "shell_exec", "file_read", "python_exec", "hot_memory_update"],
+            "coder": ["file_write", "shell_exec", "file_read", "python_exec", "hot_memory_update"],
+            "developer": ["file_write", "shell_exec", "file_read", "python_exec", "hot_memory_update"],
             "data": ["python_exec", "file_read", "file_write"],
             "writer": ["web_search", "python_exec"],
             "analyst": ["web_search", "browser_read", "python_exec"],
-            "reviewer": ["file_read", "python_exec"],
+            "reviewer": ["file_read", "python_exec", "hot_memory_update"],
             "critic": ["web_search", "python_exec"],
-            "summarizer": ["file_read", "python_exec"],
+            "summarizer": ["file_read", "python_exec", "hot_memory_update"],
+            "planner": ["hot_memory_update", "web_search", "python_exec"],
         }
 
     def _apply_skills(self, agent_slot: SwarmAgentSlot, role: str) -> None:
         agent_slot.agent.ctx.skills = {}
         # Always allow whiteboard update
         agent_slot.agent.ctx.skills["whiteboard_update"] = True
-        # Always allow python_exec for everyone if requested by user (PTC integration)
-        # But let's stick to the map for granularity
+        # Always allow hot_memory update for everyone? Or just specific roles?
+        # User said "human simple memory", likely everyone should access it.
+        agent_slot.agent.ctx.skills["hot_memory_update"] = True
         
         skill_map = self._get_default_skill_map()
         for key, tools in skill_map.items():
@@ -75,7 +87,7 @@ class SwarmSession:
             role = roles[idx] if idx < len(roles) else f"worker-{idx+1}"
             ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
             # Agents share the session's memory store
-            agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
+            agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory, hot_memory=self.hot_memory)
             slot = SwarmAgentSlot(agent=agent, weight=1.0)
             self._apply_skills(slot, role)
             self.agents.append(slot)
@@ -86,7 +98,7 @@ class SwarmSession:
             for i in range(current_count, target_count):
                 role = f"worker-{i+1}"
                 ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
-                agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
+                agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory, hot_memory=self.hot_memory)
                 slot = SwarmAgentSlot(agent=agent, weight=1.0)
                 # Apply default skills for workers? Workers might be generic.
                 # If role is generic 'worker', maybe give them basic tools?
@@ -198,8 +210,12 @@ class SwarmManager:
 
         try:
             if hasattr(session.memory.whiteboard, "clear"):
-                # 保留核心结构，仅清理临时键，支持跨循环渐进式推进
-                session.memory.whiteboard.clear(preserve_core=True)
+                # Clear all except core keys if needed, but optimization plan says "Clear after loop"
+                # "类似一个缓存，讨论的时候用的白板" -> So we should clear it mostly.
+                # But we might want to keep it if the conversation continues in same session?
+                # User said: "Whiteboard只用于loop推理当中，结束后会被清除"
+                # So we clear it.
+                session.memory.whiteboard.clear()
             elif isinstance(session.memory.whiteboard, dict):
                 session.memory.whiteboard.clear()
         except:
@@ -268,6 +284,15 @@ class SwarmManager:
             session.memory._events.clear()
         except:
             pass
+
+        # --- Inject Hot Memory (L2) ---
+        hot_mem_content = ""
+        try:
+            raw_hot = session.hot_memory.read()
+            if raw_hot and len(raw_hot.strip()) > 10:
+                hot_mem_content = f"\n\n[HOT MEMORY (L2) - Short-term Context & Todo]\n{raw_hot}\n"
+        except Exception as e:
+            self._log(f"Failed to read hot memory: {e}")
 
         qmd_context = ""
         try:

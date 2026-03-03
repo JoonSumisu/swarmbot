@@ -26,6 +26,8 @@ from nanobot.bus.queue import MessageBus
 from nanobot.channels.feishu import FeishuChannel
 from nanobot.config.schema import FeishuConfig
 from nanobot.providers.base import LLMProvider, LLMResponse
+from swarmbot.loops.overthinking import OverthinkingLoop
+import threading
 
 # --- Dummy Provider for AgentLoop compatibility ---
 class NoOpProvider(LLMProvider):
@@ -43,6 +45,8 @@ class GatewayServer:
         self.bus = MessageBus()
         self.channels = []
         self.agent = None
+        self.overthinking = None
+        self._stop_event = threading.Event()
         
     async def start(self):
         logger.info("Starting Swarmbot Gateway (Native Mode)...")
@@ -52,6 +56,10 @@ class GatewayServer:
         
         # 2. Initialize Swarm Agent Loop
         await self._init_agent()
+        
+        # 2.5 Initialize Overthinking Loop
+        self.overthinking = OverthinkingLoop(self._stop_event)
+        self.overthinking.start()
         
         # 3. Start Components
         await self._run_loop()
@@ -105,7 +113,9 @@ class GatewayServer:
         # SwarmAgentLoop needs to be initialized with parameters expected by AgentLoop
         # We pass a NoOpProvider because SwarmAgentLoop delegates to SwarmManager
         
-        workspace = Path(self.config.workspace_path)
+        # Use config_manager's WORKSPACE_PATH if not in config object
+        from swarmbot.config_manager import WORKSPACE_PATH
+        workspace = Path(WORKSPACE_PATH)
         
         self.agent = SwarmAgentLoop(
             bus=self.bus,
@@ -138,6 +148,11 @@ class GatewayServer:
             logger.info("Gateway stopping...")
         finally:
             # Cleanup
+            logger.info("Stopping Overthinking...")
+            if self.overthinking:
+                self.overthinking.stop()
+            
+            logger.info("Stopping Channels...")
             for channel in self.channels:
                 await channel.stop()
             if self.agent:

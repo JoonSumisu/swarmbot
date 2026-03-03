@@ -63,9 +63,29 @@ class ToolAdapter:
             }
             self.registry.register(name, func, schema)
         
+    def get_tool_definitions(self) -> List[Dict[str, Any]]:
+        """Return list of tool definitions in OpenAI format."""
+        tools = []
+        for name, skill in self.skills.items():
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": skill.name,
+                    "description": skill.description,
+                    "parameters": skill.parameters
+                }
+            })
+        return tools
+
     def _tool_skill_load(self, name: str) -> str:
         # Load skill logic... (Assuming this exists from context but not shown fully)
         pass
+
+    def _tool_hot_memory_update(self, content: str) -> str:
+        if hasattr(self, "hot_memory") and self.hot_memory:
+            self.hot_memory.update(content)
+            return "Hot Memory updated successfully."
+        return "Error: No Hot Memory attached."
 
     def _tool_python_exec(self, code: str) -> str:
         """
@@ -80,6 +100,7 @@ class ToolAdapter:
         - shell_exec(command)
         - overthinking_control(action, interval, steps)
         - whiteboard_update(key, value)
+        - hot_memory_update(content)
         """
         # Capture stdout
         old_stdout = sys.stdout
@@ -98,6 +119,7 @@ class ToolAdapter:
             "shell_exec": self._tool_shell_exec,
             "overthinking_control": self._tool_overthinking_control,
             "whiteboard_update": self._tool_whiteboard_update,
+            "hot_memory_update": self._tool_hot_memory_update,
             "skill_fetch": self._tool_skill_fetch,
             "skill_load": self._tool_skill_load,
             "skill_summary": self._tool_skill_summary,
@@ -156,6 +178,8 @@ class ToolAdapter:
         
         # Add Whiteboard Tools
         self._register_builtin("whiteboard_update", "Update the shared Whiteboard memory with key information.", ["key", "value"], self._tool_whiteboard_update)
+
+        self._register_builtin("hot_memory_update", "Update the Hot Memory (L2) with new content. Use this for persistent Todo lists or short-term context that should survive across sessions.", ["content"], self._tool_hot_memory_update)
 
         # Add Overthinking Control Tool
         self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps"], self._tool_overthinking_control)

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from ..llm_client import OpenAICompatibleClient
 from ..memory.base import MemoryStore
+from ..memory.hot_memory import HotMemoryStore
 from ..tools.adapter import ToolAdapter
 import json
 
@@ -22,11 +23,22 @@ class CoreAgent:
         ctx: AgentContext,
         llm: OpenAICompatibleClient,
         memory: MemoryStore,
+        hot_memory: Optional[HotMemoryStore] = None,
     ) -> None:
         self.ctx = ctx
         self.llm = llm
         self.memory = memory
+        self.hot_memory = hot_memory
         self._tool_adapter = ToolAdapter()
+        
+        # Bind memory stores to adapter
+        # Assuming memory has whiteboard (which is attached to session usually, 
+        # but here passed via memory object or we need to pass it explicitly)
+        if hasattr(memory, "whiteboard"):
+            self._tool_adapter.whiteboard = memory.whiteboard
+        
+        if hot_memory:
+            self._tool_adapter.hot_memory = hot_memory
 
     def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
         history = self.memory.get_context(self.ctx.agent_id, limit=8, query=user_input)
@@ -98,20 +110,19 @@ class CoreAgent:
             role_desc += f" You possess the following skills: {', '.join(self.ctx.skills.keys())}. "
         
         system_instructions = (
-            "【记忆与白板】\n"
-            "Whiteboard 用于存放当前任务的结构化状态，重点关注 task_specification、execution_plan、current_state、loop_counter、"
-            "completed_subtasks、pending_subtasks、intermediate_results、content_registry 和 checkpoint_data。"
-            "你可以在需要时向用户索取检索关键词，并通过 'whiteboard_update' 只写入与当前问题紧密相关的关键信息。"
-            "写入时使用结构化格式，例如 {\"content\": 内容, \"source\": 来源, \"fact_checked\": true/false}。"
-            "未核实的信息必须标记为 fact_checked=false，如果某条内容值得长期保存，可追加到 qmd_candidates 并赋予 confidence_score 和 verification_status。\n\n"
-            "如果任务较复杂、上下文较长，你可以通过调用 'context_policy_update' 主动设置 max_whiteboard_chars、max_history_items、max_history_chars_per_item、max_qmd_chars、max_qmd_docs 等参数，以平衡上下文信息密度与模型可用 token。\n\n"
+            "【记忆与白板分层】\n"
+            "1. **Whiteboard (L1)**: 会话级临时白板。用于当前 Loop 的推理状态、临时变量、Step 拆解。任务结束后会被清除。使用 `whiteboard_update`。\n"
+            "   - 适用：当前任务的 intermediate_results, execution_plan。\n"
+            "2. **Hot Memory (L2)**: 短期持久记忆。用于记录跨会话的 Todo List、近期计划、重要备忘。使用 `hot_memory_update`。\n"
+            "   - 适用：用户明确要求的待办事项（如 'Add to todo'）、跨天计划。\n"
+            "   - 注意：这是全局共享的，请谨慎覆盖，通常应追加或更新特定章节。\n\n"
             "【Programmatic Tool Calling】\n"
             "For complex tasks involving data processing, multi-step workflows, or when outputting large data is inefficient, "
             "use the 'python_exec' tool. This allows you to write Python code to orchestrate other tools "
             "(e.g., file_read, web_search) and process their output locally. "
             "Instead of making multiple individual tool calls, write a single script to handle the logic and return only the final result.\n\n"
             "【工具与 Skill 使用】\n"
-            "调用工具前先查看 Whiteboard 的 current_task_context 和已有结果：若已存在 fact_checked=true 的可靠结论，应优先复用；"
+            "调用工具前先查看 Whiteboard 的 current_task_context 和 Hot Memory 的 L2 Context：若已存在 fact_checked=true 的可靠结论，应优先复用；"
             "若只有 fact_checked=false 的假设，需要通过工具补充或复核后再做判断。"
             "使用技能时，优先调用 'skill_summary' 获取列表，仅在确实需要时再用 'skill_load' 加载单个技能详情，避免一次性加载全部技能。\n\n"
             "【系统能力与运维】\n"

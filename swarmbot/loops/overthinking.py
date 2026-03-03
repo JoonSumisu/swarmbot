@@ -10,6 +10,7 @@ from ..config_manager import load_config, save_config, SwarmbotConfig, WORKSPACE
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.qmd import QMDMemoryStore
+from ..memory.hot_memory import HotMemoryStore
 
 class OverthinkingLoop:
     """
@@ -27,12 +28,16 @@ class OverthinkingLoop:
         self.cfg = load_config()
         self.llm = OpenAICompatibleClient.from_provider(providers=self.cfg.providers)
         self.memory = QMDMemoryStore()
+        # Assume default workspace path for now or get from config if available
+        workspace = getattr(self.cfg, "workspace_path", os.path.expanduser("~/.swarmbot/workspace"))
+        self.hot_memory = HotMemoryStore(workspace)
         
         # Thinking Agent (Self-Reflector)
         self.thinker = CoreAgent(
             AgentContext("overthinker", "Reflective Thinker"),
             self.llm,
             self.memory,
+            hot_memory=self.hot_memory
         )
 
     def start(self) -> None:
@@ -95,6 +100,7 @@ class OverthinkingLoop:
         steps = [
             self._step_manage_sessions,       # 1. Manage sessions (compress/clear)
             self._step_consolidate_short_term,# 2. Extract insights (now part of manage?)
+            self._step_process_hot_memory,    # 2.5 Process Hot Memory (New)
             self._step_compress_qmd,          # 3. Optimize QMD
             self._step_expand_thoughts,       # 4. Expand thoughts
             self._step_online_enrichment,     # 5. Online enrichment
@@ -124,6 +130,62 @@ class OverthinkingLoop:
         
         if max_steps > 0:
             self._step_autonomous_exploration(max_steps)
+
+    def _step_process_hot_memory(self) -> None:
+        """Process Hot Memory: Archive completed/old items to QMD."""
+        print("[Overthinking] Processing Hot Memory...")
+        try:
+            content = self.hot_memory.read()
+            if not content or len(content) < 50:
+                return
+
+            # Auto-Archive Logic
+            # 1. Identify completed todos (marked with [x])
+            # 2. Identify old events (heuristic or LLM based)
+            
+            prompt = (
+                "You are the memory manager. Review the current Hot Memory (L2).\n"
+                "Your goal is to ARCHIVE completed items and keep the active list clean.\n\n"
+                f"Current Hot Memory:\n{content}\n\n"
+                "Instructions:\n"
+                "1. Extract any completed todo items (e.g., '- [x] ...') or clearly finished tasks.\n"
+                "2. Summarize these completed items into a concise 'Achievement Log'.\n"
+                "3. Generate a NEW Hot Memory content that REMOVES these completed items but KEEPS all pending/active ones.\n"
+                "4. Return a JSON object: {\"archive_summary\": \"...\", \"new_hot_memory\": \"...\"}\n"
+                "If no changes needed, return {\"archive_summary\": null, \"new_hot_memory\": null}."
+            )
+            
+            resp = self.thinker.step(prompt)
+            
+            # Simple JSON parsing (robustness improvement needed for production)
+            import json
+            import re
+            
+            # Try to find JSON block
+            match = re.search(r"\{.*\}", resp, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                    archive_summary = data.get("archive_summary")
+                    new_hot_memory = data.get("new_hot_memory")
+                    
+                    if archive_summary and new_hot_memory:
+                        # 1. Archive to QMD
+                        print(f"[Overthinking] Archiving: {archive_summary}")
+                        self.memory.add(
+                            content=archive_summary,
+                            collection="achievements",
+                            meta={"source": "hot_memory_archive", "date": time.strftime("%Y-%m-%d")}
+                        )
+                        
+                        # 2. Update Hot Memory
+                        self.hot_memory.update(new_hot_memory)
+                        print("[Overthinking] Hot Memory updated (cleaned).")
+                except json.JSONDecodeError:
+                    print("[Overthinking] Failed to parse JSON from memory manager.")
+            
+        except Exception as e:
+            print(f"Error processing hot memory: {e}")
 
     def _step_manage_sessions(self) -> None:
         """1. Manage sessions: Compress and clear old session logs."""

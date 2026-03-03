@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README_EN.md)
 
-**Swarmbot (v0.4.1)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
+**Swarmbot (v0.5.0)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
 
 它集成了 **QMD 四层记忆系统**（白板、热记忆、温记忆、冷记忆），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互，并具备 **Overthinking**（后台深度思考与自我进化）能力。
 
@@ -10,12 +10,12 @@
 
 ---
 
-## 🌟 版本 v0.4.1 更新亮点
+## 🌟 版本 v0.5.0 更新亮点
 
-*   **Gateway In-Process**: 彻底移除了对外部 `nanobot` 进程的依赖。Gateway 现在直接作为 Swarmbot 的子模块运行，大幅降低了部署复杂度和资源占用。
-*   **Native Loop Architecture**: 重构了核心 Agent 循环 (`CoreAgent Loop`)，支持多轮工具调用与最终自动汇总。
-*   **Feishu Channel Restore**: 修复并增强了 Feishu 通道支持，包括消息清洗、Markdown 格式修正和长文本自动截断。
-*   **Skill System Optimization**: 移除了对 CLI 工具的依赖，改为纯 Python 实现的本地技能发现与加载机制，性能显著提升。
+*   **4-Layer Memory Architecture**: 正式实装四层记忆模型 (L1 Whiteboard, L2 Hot, L3 Warm, L4 Cold)，实现从短期推理到长期知识的完整闭环。
+*   **Auto-Archive (Overthinking)**: 后台 Overthinking Loop 新增自动化归档功能，能智能识别已完成的 Todo 事项并将其从 Hot Memory 迁移至 QMD (Achievements)。
+*   **Feishu Channel Integration**: 深度优化的飞书通道支持，支持 Markdown 渲染、消息清洗与长文本处理，且配置更加简便。
+*   **Native Loop Stability**: 修复了 Agent Loop 中的工具调用逻辑，确保多轮推理后的最终汇总更加精准。
 
 ---
 
