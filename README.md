@@ -4,7 +4,7 @@
 
 **Swarmbot (v0.4.1)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
 
-它集成了 **QMD 三层记忆系统**（短期工作记忆、共享白板、长期向量知识库），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互，并具备 **Overthinking**（后台深度思考与自我进化）能力。
+它集成了 **QMD 四层记忆系统**（白板、热记忆、温记忆、冷记忆），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互，并具备 **Overthinking**（后台深度思考与自我进化）能力。
 
 > **核心理念**: "All-in-One" —— 将网关、记忆、工具链和多智能体编排融合在一个轻量级进程中。
 
@@ -67,10 +67,36 @@ swarmbot run
 
 ---
 
-## 📖 文档
+## 🧠 核心架构与记忆系统
 
-*   **[架构详解 (Memory & Loop)](docs/memory_and_loop_architecture.md)**: 深入了解 Swarmbot 的核心循环、三层记忆系统和多 Agent 编排机制。
-*   **[开发指南](docs/development.md)**: 如何贡献代码、添加新工具或适配新通道。
+Swarmbot 采用先进的 **Loop + Memory** 架构，确保智能体在长期交互中保持连贯性与成长性。详细设计请参阅 [架构文档](docs/memory_and_loop_architecture.md)。
+
+### 1. 四层记忆结构 (Memory Layers)
+
+*   **L1 白板 (Whiteboard)**: 
+    *   **类型**: 结构化易失记忆 (Session级)。
+    *   **内容**: 当前任务的 Prompt、执行计划、Worker 结论、最终答案。
+    *   **作用**: Agent 间的实时信息同步，任务结束后归档或清除。
+*   **L2 热记忆 (Hot Memory)**: 
+    *   **类型**: 短期持久化 (`hot_memory.md`)。
+    *   **内容**: 用户的短期上下文（过去/现在/将来）、待办事项 (Todo List)。
+    *   **作用**: 维持跨会话的短期连贯性（如：“正如昨天提到的...”）。
+*   **L3 温记忆 (Warm Memory)**: 
+    *   **类型**: 时序日志 (`memory/YYYY-MM-DD.md`)。
+    *   **内容**: 完整记录每天的对话流、结论与事实。
+    *   **作用**: 原始数据的追溯与备份。
+*   **L4 冷记忆 (Cold Memory / QMD)**: 
+    *   **类型**: 语义向量数据库 (QMD)。
+    *   **内容**: 经由 **Overthinking** 从温记忆中提炼出的事实、经验、理论。
+    *   **作用**: 长期知识复用，支持语义搜索。
+
+### 2. 运行循环 (The Loop)
+
+*   **Ingress**: 接收 Feishu 消息，进行格式清洗。
+*   **Boot**: 加载 Soul (人设) + 检索 QMD (冷) + 读取 Hot/Warm (热/温) + 恢复 Whiteboard。
+*   **Orchestrate**: 动态编排 Agent（如 Planner -> Coder -> Reviewer）。
+*   **Execute**: Agent 执行工具 (Python/WebSearch)，更新 Whiteboard。
+*   **Overthinking**: 后台进程在空闲时自动运行，负责将 Warm 转为 Cold，并整理 Hot。
 
 ---
 
@@ -82,18 +108,20 @@ swarmbot run
 *   **Sequential**: 线性流水线，适合 SOP 任务。
 *   **Mixture of Experts (MoE)**: 动态专家网络，支持多轮辩论。
 
-### 2. 三层记忆系统 (Tri-Layer Memory)
-*   **LocalMD**: 短期会话日志。
-*   **Whiteboard**: 内存中的共享白板，用于 Agent 间实时信息同步与状态管理。
-*   **QMD**: 基于向量检索的长期知识库，存储持久化经验与文档。
-
-### 3. 通道集成 (Channels)
+### 2. 通道集成 (Channels)
 *   **Feishu (飞书)**: 完整支持接收消息、回复（含 Markdown）、图片理解（需模型支持）。
 *   在 `config.json` 中配置 `channels.feishu` 即可启用。
 
-### 4. 自我进化 (Overthinking)
+### 3. 自我进化 (Overthinking)
 *   **后台思考**: 空闲时自动启动 `Overthinking Loop`，对历史交互进行复盘。
 *   **经验沉淀**: 将成功/失败的经验提炼为方法论写入 QMD。
+
+---
+
+## 📖 文档
+
+*   **[架构详解 (Memory & Loop)](docs/memory_and_loop_architecture.md)**: 深入了解 Swarmbot 的核心循环、三层记忆系统和多 Agent 编排机制。
+*   **[开发指南](docs/development.md)**: 如何贡献代码、添加新工具或适配新通道。
 
 ---
 
