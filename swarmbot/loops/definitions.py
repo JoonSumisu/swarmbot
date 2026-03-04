@@ -1,4 +1,4 @@
-# Swarmbot Loop Prompts (v0.5)
+# Swarmbot Loop Prompts (v0.5 Optimized)
 
 STEP_ANALYSIS_PROMPT = """
 You are an Analysis Worker. Load 'swarmboot.md' logic.
@@ -10,13 +10,17 @@ Input Prompt:
 Task:
 1. Identify the task type (Programming, General Chat, Emotional Support, etc.).
 2. Extract key requirements and domain.
-3. Output a structured JSON object.
+3. **CRITICAL: Perform a Logical Constraint Check.**
+   - Are there hidden physical constraints? (e.g., moving objects requires force/transport)
+   - Are there logical contradictions?
+   - Identify pre-conditions (e.g., "To wash a car, the car must be at the location").
 
 Output JSON:
 {{
   "type": "...",
   "domain": "...",
   "intent": "...",
+  "constraints": ["constraint1", "constraint2"],
   "requirements": ["...", "..."]
 }}
 """
@@ -36,7 +40,7 @@ Context available:
 Task:
 1. Synthesize relevant info from memories.
 2. Use tools (web_search, etc.) if current info is insufficient.
-3. Output a structured JSON.
+3. Check if the 'constraints' from Analysis require specific data (e.g., distance, weight, rules).
 
 Output JSON:
 {{
@@ -56,7 +60,9 @@ Whiteboard Info:
 Task:
 1. Break down the request into concrete subtasks.
 2. Assign specific workers/tools to each subtask.
-3. Output a structured JSON list of tasks.
+3. **Feasibility Check**: Ensure the plan respects all identified constraints.
+   - If a constraint says "Car must be moved", do not plan "Walk".
+   - If the goal is impossible, plan a "Clarification/Correction" task.
 
 Output JSON:
 {{
@@ -75,7 +81,8 @@ Context: {context}
 
 Task:
 1. Use your tools to complete the work.
-2. Output your conclusion or result.
+2. **Sanity Check**: Does your result make sense in the real world?
+3. Output your conclusion or result.
 """
 
 STEP_EVALUATION_PROMPT = """
@@ -87,18 +94,20 @@ Results: {results_json}
 
 Task:
 1. Verify factuality and requirement coverage.
-2. Vote 'PASS' if 100% satisfactory, else 'FAIL'.
-3. Output JSON ONLY. Do not use tools.
+2. **Logical Consistency Check**:
+   - Does the result violate basic logic or physics? (e.g., "Walk 50m to wash car" -> Impossible if car stays home).
+   - If illogical, vote FAIL.
+3. Output JSON ONLY.
 
 Output JSON:
 {{
   "vote": "PASS",
-  "reason": "All requirements met."
+  "reason": "..."
 }}
 OR
 {{
   "vote": "FAIL",
-  "reason": "Missing..."
+  "reason": "Logical error: Cannot wash car without driving it to the location."
 }}
 """
 
