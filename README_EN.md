@@ -6,6 +6,24 @@ Swarmbot (v0.5.0) is a multi-agent collective intelligence system designed for l
 
 ---
 
+## 🧠 v0.6 Logic Enhanced
+
+To address common logical pitfalls in traditional Agents (e.g., "Walking 50m is faster than driving, so walk to the car wash"), v0.6 introduces multiple logical frameworks:
+
+1.  **Modal Logic**:
+    *   Distinguishes **Necessity (□)** from **Possibility (◇)**.
+    *   Enforces pre-condition checks (e.g., "Car wash requires vehicle presence").
+2.  **Deontic Logic**:
+    *   Analyzes **Obligations**, **Prohibitions**, and **Permissions**.
+3.  **Epistemic Logic**:
+    *   Separates **Knowledge** (Facts) from **Beliefs** (Assumptions) to reduce hallucinations.
+4.  **Cybernetics**:
+    *   Implements Feedback Loops for self-correction and optimization.
+
+These constraints are deeply integrated into the System Prompts, ensuring Swarmbot prioritizes "Physical/Logical Consistency" over mere "Efficiency".
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Install (cross-platform, venv-safe)

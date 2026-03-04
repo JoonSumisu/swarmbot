@@ -40,6 +40,9 @@ from swarmbot.config_manager import load_config, WORKSPACE_PATH
 from pathlib import Path
 cfg = load_config()
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_gateway():
     print("Initializing SwarmAgentLoop...")
     

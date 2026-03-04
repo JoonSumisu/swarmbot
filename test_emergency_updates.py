@@ -9,6 +9,9 @@ sys.path.append("/root/swarmbot_dev")
 from swarmbot.config_manager import load_config
 from swarmbot.llm_client import OpenAICompatibleClient, LLMConfig
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_failover():
     print("Testing Provider Failover...")
     
