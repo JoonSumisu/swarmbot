@@ -65,20 +65,36 @@ class GatewayServer:
         if feishu_conf:
             # Handle both dict and object config
             if isinstance(feishu_conf, dict):
-                conf_data = feishu_conf
+                # If it's a dict, it might be the raw config from json
+                # In config_manager, channels are usually ChannelConfig objects
+                # But let's be safe
+                enabled = feishu_conf.get("enabled", False)
+                conf_data = feishu_conf.get("config", {}) if "config" in feishu_conf else feishu_conf
             else:
-                conf_data = feishu_conf.__dict__
+                # It is a ChannelConfig object
+                enabled = feishu_conf.enabled
+                conf_data = feishu_conf.config
 
-            if conf_data.get("enabled", False):
+            if enabled:
                 logger.info("Initializing Feishu channel...")
                 try:
+                    # Support both snake_case (standard) and camelCase (legacy)
+                    app_id = conf_data.get("app_id") or conf_data.get("appId")
+                    app_secret = conf_data.get("app_secret") or conf_data.get("appSecret")
+                    encrypt_key = conf_data.get("encrypt_key") or conf_data.get("encryptKey")
+                    verification_token = conf_data.get("verification_token") or conf_data.get("verificationToken")
+                    
+                    if not app_id or not app_secret:
+                        logger.error("Feishu app_id or app_secret missing in config")
+                        return
+
                     pydantic_conf = FeishuConfig(
                         enabled=True,
-                        app_id=conf_data.get("app_id", ""),
-                        app_secret=conf_data.get("app_secret", ""),
-                        encrypt_key=conf_data.get("encrypt_key", ""),
-                        verification_token=conf_data.get("verification_token", ""),
-                        allow_from=conf_data.get("config", {}).get("allow_from", [])
+                        app_id=app_id,
+                        app_secret=app_secret,
+                        encrypt_key=encrypt_key,
+                        verification_token=verification_token,
+                        allow_from=conf_data.get("allow_from", [])
                     )
                     channel = FeishuChannel(pydantic_conf, self.bus)
                     self.channels.append(channel)

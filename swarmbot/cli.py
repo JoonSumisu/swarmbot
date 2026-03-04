@@ -117,12 +117,12 @@ def cmd_channels_enable(name: str, args: list[str]) -> None:
 
     # Interactive setup for Feishu
     if name == "feishu":
+        # Required keys for Feishu (snake_case internally)
         required_keys = ["app_id", "app_secret"]
         current_config = cfg.get("channels", {}).get(name, {})
         
-        # Check missing keys (only if not provided in args and not in config)
-        # But if user runs 'add feishu', they likely want to configure it even if exists?
-        # Let's check if args are empty and config is empty-ish
+        # Check if user provided keys via args (camelCase or snake_case)
+        # We already normalized params to snake_case above
         
         missing = [k for k in required_keys if k not in params and k not in current_config]
         
@@ -147,10 +147,26 @@ def cmd_channels_enable(name: str, args: list[str]) -> None:
 
     if name not in cfg["channels"]:
         print(f"Channel '{name}' not found in default config. Creating new entry...")
-        cfg["channels"][name] = {"enabled": True, "allowFrom": []}
+        cfg["channels"][name] = {"enabled": True}
     
     cfg["channels"][name]["enabled"] = True
     cfg["channels"][name].update(params)
+    
+    # Clean up any camelCase keys if they exist in the config to avoid duplication/confusion
+    # The runtime expects snake_case
+    camel_map = {
+        "appId": "app_id",
+        "appSecret": "app_secret",
+        "encryptKey": "encrypt_key",
+        "verificationToken": "verification_token"
+    }
+    for camel, snake in camel_map.items():
+        if camel in cfg["channels"][name]:
+            # If snake_case missing, move value over
+            if snake not in cfg["channels"][name]:
+                cfg["channels"][name][snake] = cfg["channels"][name][camel]
+            # Remove camelCase
+            del cfg["channels"][name][camel]
             
     save_nanobot_config(cfg)
     print(f"Channel '{name}' enabled and configured.")
