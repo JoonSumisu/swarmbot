@@ -106,9 +106,18 @@ def cmd_channels_enable(name: str, args: list[str]) -> None:
             k, v = arg.split("=", 1)
             params[k] = v
 
+    if "appId" in params and "app_id" not in params:
+        params["app_id"] = params.pop("appId")
+    if "appSecret" in params and "app_secret" not in params:
+        params["app_secret"] = params.pop("appSecret")
+    if "encryptKey" in params and "encrypt_key" not in params:
+        params["encrypt_key"] = params.pop("encryptKey")
+    if "verificationToken" in params and "verification_token" not in params:
+        params["verification_token"] = params.pop("verificationToken")
+
     # Interactive setup for Feishu
     if name == "feishu":
-        required_keys = ["appId", "appSecret"]
+        required_keys = ["app_id", "app_secret"]
         current_config = cfg.get("channels", {}).get(name, {})
         
         # Check missing keys (only if not provided in args and not in config)
@@ -127,14 +136,14 @@ def cmd_channels_enable(name: str, args: list[str]) -> None:
                         params[k] = val
             
             # Optional keys
-            if "encryptKey" not in params and "encryptKey" not in current_config:
-                val = input("Enter encryptKey (optional, press Enter to skip): ").strip()
+            if "encrypt_key" not in params and "encrypt_key" not in current_config:
+                val = input("Enter encrypt_key (optional, press Enter to skip): ").strip()
                 if val:
-                    params["encryptKey"] = val
-            if "verificationToken" not in params and "verificationToken" not in current_config:
-                val = input("Enter verificationToken (optional, press Enter to skip): ").strip()
+                    params["encrypt_key"] = val
+            if "verification_token" not in params and "verification_token" not in current_config:
+                val = input("Enter verification_token (optional, press Enter to skip): ").strip()
                 if val:
-                    params["verificationToken"] = val
+                    params["verification_token"] = val
 
     if name not in cfg["channels"]:
         print(f"Channel '{name}' not found in default config. Creating new entry...")
@@ -381,6 +390,10 @@ def cmd_daemon(args: argparse.Namespace) -> None:
     from .config_manager import CONFIG_HOME
     pid_file = os.path.join(CONFIG_HOME, "daemon.pid")
     if args.action == "start":
+        try:
+            cmd_onboard()
+        except Exception:
+            pass
         if os.path.exists(pid_file):
             try:
                 with open(pid_file, "r", encoding="utf-8") as f:
