@@ -4,7 +4,7 @@ import os
 import sys
 
 # Add project root to path
-sys.path.append("/root/swarmbot")
+sys.path.append("/root/swarmbot_dev")
 
 from swarmbot.config_manager import load_config
 from swarmbot.llm_client import OpenAICompatibleClient, LLMConfig

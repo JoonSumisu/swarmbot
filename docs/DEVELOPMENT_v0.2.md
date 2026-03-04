@@ -1,6 +1,6 @@
 # Swarmbot v0.2 开发文档
 
-本文件为历史版本开发说明，当前以 [development.md](file:///root/swarmbot/docs/development.md) 为准。
+本文件为历史版本开发说明，当前以 [development.md](file:///root/swarmbot_dev/docs/development.md) 为准。
 
 ## 1. 系统概述
 Swarmbot 是一个本地优先的多 Agent 集群智能系统，v0.2 版本引入了 **双 Boot 架构**、**动态角色生成** 和 **深度记忆闭环**。

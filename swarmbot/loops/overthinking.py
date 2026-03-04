@@ -72,15 +72,29 @@ class OverthinkingLoop:
         res = self.agent.step(prompt)
         try:
             import re
-            match = re.search(r"\{.*\}", res, re.DOTALL)
+            # Try to find JSON block first
+            match = re.search(r"```json\s*(\{.*?\})\s*```", res, re.DOTALL)
+            if not match:
+                # Fallback to loose brace matching
+                match = re.search(r"\{.*\}", res, re.DOTALL)
+            
             if match:
-                data = json.loads(match.group(0))
+                json_str = match.group(1) if "```json" in match.group(0) else match.group(0)
+                data = json.loads(json_str)
+                
+                count = 0
                 for entry in data.get("entries", []):
                     self.cold_memory.add(
                         content=entry.get("content"),
-                        collection=entry.get("type", "experience"),
-                        meta={"source": "overthinking", "date": time.strftime("%Y-%m-%d")}
+                        meta={
+                            "source": "overthinking", 
+                            "date": time.strftime("%Y-%m-%d"),
+                            "collection": entry.get("type", "experience")
+                        }
                     )
-                print(f"[Overthinking] Added {len(data.get('entries', []))} entries to Cold Memory.")
-        except:
-            print("[Overthinking] Failed to parse compression result.")
+                    count += 1
+                print(f"[Overthinking] Added {count} entries to Cold Memory.")
+            else:
+                print(f"[Overthinking] No JSON found in response: {res[:100]}...")
+        except Exception as e:
+            print(f"[Overthinking] Failed to parse compression result: {e}")

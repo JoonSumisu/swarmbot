@@ -6,27 +6,31 @@
 
 STEP_ANALYSIS_PROMPT = """
 You are an Analysis Worker. Load 'swarmboot.md' logic.
-Your goal is to analyze the user's input using advanced logical frameworks.
+Your goal is to analyze the user's input using strict logical and physical constraints.
 
 Input Prompt:
 {user_input}
 
 Task:
-1. **Modal Logic Analysis**: Identify what is *Possible* (◇) vs *Necessary* (□). Distinguish hard constraints from flexible options.
-2. **Non-monotonic Logic**: List "Defeasible Assumptions" (beliefs that hold unless proven false).
-3. **Intent & Domain**: Classify the problem type.
-4. **Constraint Check**: Identify physical/logical pre-conditions (e.g., "Movement implies Transport").
+1. **Goal Identification**: What is the ultimate state change desired? (e.g., "Car becomes clean").
+2. **Object/Location State Analysis**:
+   - Where is the subject (User)? Where is the object (Car)?
+   - Where does the action need to take place?
+   - **CRITICAL**: If the action requires the object to be at a specific location, how does it get there?
+3. **Modal/Physical Constraints**:
+   - Necessity (□): What *must* happen for the goal to be achieved? (e.g., "Car must move to wash").
+   - Possibility (◇): What implies a failure? (e.g., "Walking leaves car behind").
 
 Output JSON:
 {{
   "type": "...",
   "domain": "...",
   "intent": "...",
-  "modal_analysis": {{
-    "necessary": ["..."],
-    "possible": ["..."]
+  "physical_states": {{
+    "current_location": "...",
+    "target_location": "...",
+    "object_to_move": "..."
   }},
-  "defeasible_assumptions": ["..."],
   "constraints": ["..."],
   "requirements": ["..."]
 }}
@@ -34,53 +38,44 @@ Output JSON:
 
 STEP_COLLECTION_PROMPT = """
 You are a Collection Worker. Load 'swarmboot.md' logic.
-Your goal is to gather context using Epistemic Logic (Knowledge vs Belief).
+Your goal is to gather context and verify physical assumptions.
 
 Analysis:
 {analysis_json}
 
-Context available:
-- Hot Memory (L2): {hot_memory}
-- Warm Memory (L3): {warm_memory}
-- Cold Memory (L4): {cold_memory}
-
 Task:
-1. **Epistemic Sorting**: Distinguish between Known Facts (Knowledge) and Inferred/Uncertain info (Belief).
-2. **Information Retrieval**: Synthesize from memory.
-3. **Tool Usage**: Use web_search if Knowledge is missing.
-4. **Constraint Validation**: Check if data supports the necessary constraints.
+1. **Epistemic Check**: Do we know the location of the car? Do we know if "walking" transports the car?
+2. **Constraint Verification**: confirm if the proposed action (e.g., walking) violates the necessary physical constraint (moving the car).
+3. **Synthesize**: Combine facts to support or refute the user's options.
 
 Output JSON:
 {{
   "synthesized_context": "...",
-  "epistemic_state": {{
-    "knowledge": ["..."],
-    "beliefs": ["..."]
-  }},
-  "memory_references": ["..."],
+  "verification_of_constraints": "...",
   "external_info": "..."
 }}
 """
 
 STEP_PLANNING_PROMPT = """
 You are a Planning Worker. Load 'swarmboot.md' logic.
-Your goal is to create a strategic plan using Game Theory and Deontic Logic.
+Your goal is to create a concrete execution plan.
 
 Whiteboard Info:
 {info_json}
 
 Task:
-1. **Deontic Logic**: Identify Obligations (Must do), Prohibitions (Must not do), and Permissions (Can do).
-2. **Game Theoretic Strategy**: Analyze the "Payoff" (Cost/Benefit) of different approaches. Select the optimal strategy (Nash Equilibrium).
-3. **Plan Construction**: Break down into subtasks.
-4. **Feasibility**: Ensure plan respects Deontic obligations and Modal necessities.
+1. **Strategy Selection**: Choose the path that satisfies ALL physical constraints.
+   - If Option A (Walk) violates Constraint X (Car must move), discard it or flag it as impossible.
+   - If Option B (Drive) satisfies constraints, prioritize it despite costs.
+2. **Task Generation**: Create specific reasoning tasks to explain *why* an option is chosen.
+   - Do NOT create generic "analysis" tasks. Create specific checks like "Verify if walking transports vehicle".
 
 Output JSON:
 {{
   "strategy_rationale": "...",
-  "deontic_rules": ["..."],
   "tasks": [
-    {{"id": 1, "desc": "...", "worker": "coder/researcher/...", "tool": "..."}}
+    {{"id": 1, "desc": "Check if walking moves the car to the destination", "worker": "reasoner", "tool": "none"}},
+    {{"id": 2, "desc": "Compare total time including vehicle transport", "worker": "analyst", "tool": "none"}}
   ]
 }}
 """
@@ -176,6 +171,8 @@ Task:
 1. **Pattern Recognition**: Identify recurring themes or logical structures across the memories.
 2. **Abstraction**: Compress specific details into general Rules or Theories.
 3. **Archive**: Select high-value Knowledge for Cold Memory (QMD).
+
+Output JSON ONLY. Do not include thinking process or markdown text outside the JSON block.
 
 Output JSON:
 {{

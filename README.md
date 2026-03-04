@@ -25,6 +25,24 @@
 
 ---
 
+## 🧠 v0.6 Logic Enhanced (逻辑增强)
+
+为了解决传统 Agent 容易陷入"效率陷阱"（如"50米走路比开车快，所以走路去洗车"）的逻辑漏洞，v0.6 引入了多重逻辑框架进行约束：
+
+1.  **模态逻辑 (Modal Logic)**:
+    *   区分 **必要性 (Necessary, □)** 与 **可能性 (Possible, ◇)**。
+    *   强制检查前置条件（如：洗车必须带车）。
+2.  **规范逻辑 (Deontic Logic)**:
+    *   分析 **义务 (Obligation)**、**禁止 (Prohibition)** 与 **许可 (Permission)**。
+3.  **认知逻辑 (Epistemic Logic)**:
+    *   区分 **知识 (Knowledge)** 与 **信念 (Belief)**，减少幻觉。
+4.  **控制论 (Cybernetics)**:
+    *   引入反馈回路 (Feedback Loop) 进行自我纠错与系统优化。
+
+这些逻辑约束被深度集成到 System Prompts 中，确保 Swarmbot 在推理时不仅考虑"怎么做最快"，更优先考虑"这样做是否符合物理/逻辑规律"。
+
+---
+
 ## 🚀 快速开始
 
 ### 1. 安装
