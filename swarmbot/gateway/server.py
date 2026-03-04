@@ -1,15 +1,106 @@
+import asyncio
+import sys
+import logging
+import threading
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
+# --- Path Setup ---
+CURRENT_DIR = Path(__file__).resolve().parent.parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
+# Ensure nanobot compatibility
+try:
+    import nanobot
+except ImportError:
+    import swarmbot.nanobot
+    sys.modules["nanobot"] = swarmbot.nanobot
+
+from loguru import logger
+
+# --- Imports ---
+from swarmbot.config_manager import load_config, SwarmbotConfig, WORKSPACE_PATH
+from nanobot.bus.queue import MessageBus, InboundMessage, OutboundMessage
+from nanobot.channels.feishu import FeishuChannel
+from nanobot.config.schema import FeishuConfig
+
+from swarmbot.loops.inference import InferenceLoop
+from swarmbot.loops.overthinking import OverthinkingLoop
+from swarmbot.loops.overaction import OveractionLoop
+
+class GatewayServer:
+    def __init__(self):
+        self.config: SwarmbotConfig = load_config()
+        self.bus = MessageBus()
+        self.channels = []
+        
+        # Loops
+        self.inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
+        self.overthinking_loop = None
+        self.overaction_loop = None
+        
+        self._stop_event = threading.Event()
+        self._executor = ThreadPoolExecutor(max_workers=5) # Concurrent inference sessions
+
+    async def start(self):
+        logger.info("Starting Swarmbot Gateway (v0.5 Optimized)...")
+        
+        # 1. Initialize Channels
+        await self._init_channels()
+        
+        # 2. Start Background Loops
+        self.overthinking_loop = OverthinkingLoop(self._stop_event)
+        self.overthinking_loop.start()
+        
+        self.overaction_loop = OveractionLoop(self._stop_event)
+        self.overaction_loop.start()
+        
+        # 3. Start Message Processing Loop
+        await self._run_message_loop()
+
+    async def _init_channels(self):
+        # Feishu
+        feishu_conf = self.config.channels.get("feishu")
+        if feishu_conf:
+            # Handle both dict and object config
+            if isinstance(feishu_conf, dict):
+                conf_data = feishu_conf
+            else:
+                conf_data = feishu_conf.__dict__
+
+            if conf_data.get("enabled", False):
+                logger.info("Initializing Feishu channel...")
+                try:
+                    pydantic_conf = FeishuConfig(
+                        enabled=True,
+                        app_id=conf_data.get("app_id", ""),
+                        app_secret=conf_data.get("app_secret", ""),
+                        encrypt_key=conf_data.get("encrypt_key", ""),
+                        verification_token=conf_data.get("verification_token", ""),
+                        allow_from=conf_data.get("config", {}).get("allow_from", [])
+                    )
+                    channel = FeishuChannel(pydantic_conf, self.bus)
+                    self.channels.append(channel)
+                except Exception as e:
+                    logger.error(f"Failed to init Feishu channel: {e}")
+
+        # Start channels
+        for ch in self.channels:
+            asyncio.create_task(ch.start())
+
     async def _run_message_loop(self):
         logger.info("Gateway is ready. Listening for messages...")
         
         try:
             while not self._stop_event.is_set():
                 # Wait for message
-                message: InboundMessage = await self.bus.recv()
+                message: InboundMessage = await self.bus.consume_inbound()
                 
                 if not message:
                     continue
                     
-                logger.info(f"Received message from {message.source}: {message.content[:50]}...")
+                logger.info(f"Received message from {message.channel}: {message.content[:50]}...")
                 
                 # Launch async handler
                 asyncio.create_task(self._handle_message_async(message))
@@ -33,12 +124,37 @@
             
             # Send reply (back on async loop)
             reply = OutboundMessage(
+                channel=message.channel,
                 content=response_text,
                 chat_id=message.chat_id,
-                reply_to_message_id=message.message_id,
-                source="swarmbot"
+                reply_to=message.message_id
             )
-            await self.bus.send(reply)
+            await self.bus.publish_outbound(reply)
             
         except Exception as e:
             logger.error(f"Inference processing failed: {e}")
+
+    def stop(self):
+        logger.info("Stopping Gateway...")
+        self._stop_event.set()
+        if self.overthinking_loop: self.overthinking_loop.stop()
+        if self.overaction_loop: self.overaction_loop.stop()
+        for ch in self.channels:
+            asyncio.create_task(ch.stop())
+        self._executor.shutdown(wait=False)
+
+def run_gateway():
+    logging.basicConfig(level=logging.INFO)
+    logger.remove()
+    logger.add(sys.stderr, level="INFO")
+    
+    try:
+        server = GatewayServer()
+        asyncio.run(server.start())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        logger.exception(f"Gateway crashed: {e}")
+
+if __name__ == "__main__":
+    run_gateway()

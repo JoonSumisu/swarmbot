@@ -38,10 +38,10 @@ class InferenceLoop:
                 return open(p, "r", encoding="utf-8").read()
         return f"Boot file {filename} not found."
 
-    def _create_worker(self, role: str) -> CoreAgent:
+    def _create_worker(self, role: str, enable_tools: bool = True) -> CoreAgent:
         ctx = AgentContext(agent_id=f"worker-{role}-{int(time.time())}", role=role)
         # Workers get Cold and Hot memory access
-        return CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory)
+        return CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=enable_tools)
 
     def run(self, user_input: str, session_id: str) -> str:
         self.whiteboard.clear()
@@ -50,46 +50,55 @@ class InferenceLoop:
         
         print(f"[InferenceLoop] Start: {user_input[:50]}...")
 
-        # Step 2: Problem Analysis (2 Workers)
+        # Step 2: Problem Analysis (No Tools)
         self._step_analysis()
         
-        # Step 3: Information Collection (3 Workers)
+        # Step 3: Information Collection (Tools Enabled - User Requirement)
         self._step_collection()
         
-        # Step 4: Action Planning
+        # Step 4: Action Planning (No Tools - JSON Gen)
         self._step_planning()
         
-        # Step 5 & 6: Inference & Evaluation (Max 3 Loops)
+        # Step 5 & 6: Inference & Evaluation (Max 3 Loops with Re-planning)
         max_eval_loops = 3
         for i in range(max_eval_loops):
             self.whiteboard.update("evaluation_report", {"retry_count": i})
+            
+            # Step 5: Inference (Tools Enabled)
             self._step_inference()
+            
+            # Step 6: Evaluation (No Tools - Logic Check)
             if self._step_evaluation():
                 break
+            
             print(f"[InferenceLoop] Evaluation failed, retrying {i+1}/{max_eval_loops}")
+            # Re-planning Logic: If failed, adjust plan before next inference
+            if i < max_eval_loops - 1:
+                self._step_replanning(retry_idx=i)
 
-        # Step 7: Output Translation
+        # Step 7: Output Translation (Tools Enabled - User Requirement)
         final_response = self._step_translation()
         self.whiteboard.update("final_response", final_response)
         
-        # Step 8: Organization & Persistence
+        # Step 8: Organization & Persistence (No Tools)
         self._step_organization()
         
         return final_response
 
-    def _run_parallel(self, prompt: str, count: int, role: str) -> List[str]:
+    def _run_parallel(self, prompt: str, count: int, role: str, enable_tools: bool = True) -> List[str]:
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
-            futures = [executor.submit(self._create_worker(role).step, prompt) for _ in range(count)]
+            futures = [executor.submit(self._create_worker(role, enable_tools).step, prompt) for _ in range(count)]
             for f in concurrent.futures.as_completed(futures):
                 try: results.append(f.result())
                 except Exception as e: print(f"Worker {role} error: {e}")
         return results
 
     def _step_analysis(self):
-        print("[Step 2] Analysis...")
+        print("[Step 2] Analysis (No Tools)...")
         prompt = STEP_ANALYSIS_PROMPT.format(user_input=self.whiteboard.get("input_prompt"))
-        results = self._run_parallel(prompt, 2, "analyst")
+        # Optimized: enable_tools=False
+        results = self._run_parallel(prompt, 2, "analyst", enable_tools=False)
         # Simple merge of analysis
         merged = {}
         for r in results:
@@ -98,7 +107,7 @@ class InferenceLoop:
         self.whiteboard.update("problem_analysis", merged)
 
     def _step_collection(self):
-        print("[Step 3] Collection...")
+        print("[Step 3] Collection (Tools Enabled)...")
         analysis = self.whiteboard.get("problem_analysis")
         # Gather memory snapshots
         hot = self.hot_memory.read()
@@ -111,7 +120,8 @@ class InferenceLoop:
             warm_memory=warm[:2000],
             cold_memory=cold[:2000]
         )
-        results = self._run_parallel(prompt, 3, "collector")
+        # Tools Enabled per requirement
+        results = self._run_parallel(prompt, 3, "collector", enable_tools=True)
         
         merged = {"synthesized_context": "", "memory_references": [], "external_info": ""}
         for r in results:
@@ -124,26 +134,54 @@ class InferenceLoop:
         self.whiteboard.update("information_gathering", merged)
 
     def _step_planning(self):
-        print("[Step 4] Planning...")
+        print("[Step 4] Planning (No Tools)...")
         info = self.whiteboard.get("information_gathering")
         prompt = STEP_PLANNING_PROMPT.format(info_json=json.dumps(info))
-        res = self._create_worker("planner").step(prompt)
+        # Optimized: enable_tools=False
+        res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
             plan = json.loads(self._extract_json(res))
             self.whiteboard.update("action_plan", plan)
         except:
             self.whiteboard.update("action_plan", {"tasks": [{"id": 1, "desc": "Fallback task", "worker": "assistant", "tool": "none"}]})
 
+    def _step_replanning(self, retry_idx: int):
+        print(f"[Step 4b] Re-Planning (Attempt {retry_idx+1})...")
+        # Update plan based on evaluation feedback
+        eval_report = self.whiteboard.get("evaluation_report")
+        current_plan = self.whiteboard.get("action_plan")
+        
+        prompt = (
+            "You are the Planner. The previous execution failed evaluation.\n"
+            f"Evaluation Report: {json.dumps(eval_report)}\n"
+            f"Current Plan: {json.dumps(current_plan)}\n\n"
+            "Task: Adjust the plan to address the failure reasons.\n"
+            "Output the updated JSON plan."
+        )
+        res = self._create_worker("planner", enable_tools=False).step(prompt)
+        try:
+            new_plan = json.loads(self._extract_json(res))
+            self.whiteboard.update("action_plan", new_plan)
+        except: pass
+
     def _step_inference(self):
-        print("[Step 5] Inference...")
+        print("[Step 5] Inference (Tools Enabled)...")
         plan = self.whiteboard.get("action_plan")
         context = self.whiteboard.get("information_gathering").get("synthesized_context")
         
         results = []
         for task in plan.get("tasks", []):
-            worker = self._create_worker(task.get("worker", "assistant"))
+            worker_role = task.get("worker", "assistant")
+            # Decide if this specific task needs tools based on description or tool field
+            # Ideally we check task['tool'] != 'none'
+            # But user said "decide... then load".
+            # For simplicity, we enable tools if the plan suggests a tool.
+            task_tool = task.get("tool", "none")
+            need_tools = task_tool.lower() not in ["none", "null", ""]
+            
+            worker = self._create_worker(worker_role, enable_tools=need_tools)
             prompt = STEP_INFERENCE_PROMPT.format(
-                role=task.get("worker"),
+                role=worker_role,
                 task_desc=task.get("desc"),
                 context=context
             )
@@ -152,7 +190,7 @@ class InferenceLoop:
         self.whiteboard.update("inference_conclusions", results)
 
     def _step_evaluation(self) -> bool:
-        print("[Step 6] Evaluation...")
+        print("[Step 6] Evaluation (No Tools)...")
         plan = self.whiteboard.get("action_plan")
         results = self.whiteboard.get("inference_conclusions")
         
@@ -160,7 +198,8 @@ class InferenceLoop:
             plan_json=json.dumps(plan),
             results_json=json.dumps(results)
         )
-        evals = self._run_parallel(prompt, 3, "evaluator")
+        # Optimized: enable_tools=False
+        evals = self._run_parallel(prompt, 3, "evaluator", enable_tools=False)
         
         pass_count = 0
         reasons = []
@@ -176,22 +215,24 @@ class InferenceLoop:
         return passed
 
     def _step_translation(self) -> str:
-        print("[Step 7] Translation...")
+        print("[Step 7] Translation (Tools Enabled)...")
         conclusions = self.whiteboard.get("inference_conclusions")
         prompt = STEP_TRANSLATION_PROMPT.format(
             user_input=self.whiteboard.get("input_prompt"),
             conclusions_json=json.dumps(conclusions),
             soul_content=self.soul
         )
-        return self._create_worker("master").step(prompt)
+        # Tools Enabled per requirement
+        return self._create_worker("master", enable_tools=True).step(prompt)
 
     def _step_organization(self):
-        print("[Step 8] Organization...")
+        print("[Step 8] Organization (No Tools)...")
         prompt = STEP_ORGANIZATION_PROMPT.format(
             response=self.whiteboard.get("final_response"),
             conclusions_json=json.dumps(self.whiteboard.get("inference_conclusions"))
         )
-        res = self._create_worker("master").step(prompt)
+        # Optimized: enable_tools=False
+        res = self._create_worker("master", enable_tools=False).step(prompt)
         try:
             data = json.loads(self._extract_json(res))
             # 1. Update Hot Memory

@@ -26,11 +26,13 @@ class CoreAgent:
         llm: OpenAICompatibleClient,
         memory: MemoryStore,
         hot_memory: Optional[HotMemory] = None,
+        enable_tools: bool = True,
     ) -> None:
         self.ctx = ctx
         self.llm = llm
         self.memory = memory
         self.hot_memory = hot_memory
+        self.enable_tools = enable_tools
         self._tool_adapter = ToolAdapter()
         
         # Bind memory stores to adapter
@@ -39,6 +41,57 @@ class CoreAgent:
         
         if hot_memory:
             self._tool_adapter.hot_memory = hot_memory
+
+    def step(self, prompt: str) -> str:
+        """Single step execution with ReAct loop if tools enabled."""
+        messages = self._build_messages(prompt)
+        
+        # Tools configuration
+        tools = self._tool_adapter.get_tool_definitions() if self.enable_tools else None
+        
+        # If no tools, simple completion
+        if not tools:
+            try:
+                resp = self.llm.chat(messages=messages)
+                return resp.choices[0].message.content or ""
+            except Exception as e:
+                return f"Error: {e}"
+
+        # ReAct Loop
+        max_rounds = 5
+        current_round = 0
+        
+        while current_round < max_rounds:
+            try:
+                # API Call
+                resp = self.llm.chat(messages=messages, tools=tools)
+                msg = resp.choices[0].message
+                messages.append(msg)
+                
+                # Check for tool calls
+                if msg.tool_calls:
+                    print(f"[CoT] {self.ctx.role} calls tool: {msg.tool_calls[0].function.name}")
+                    for tool_call in msg.tool_calls:
+                        result = self._tool_adapter.execute(tool_call)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result
+                        })
+                    current_round += 1
+                else:
+                    # Final answer
+                    return msg.content or ""
+            except Exception as e:
+                print(f"[CoT] Error: {e}")
+                return f"Error: {e}"
+        
+        # Force final response if loop exhausted
+        try:
+            resp = self.llm.chat(messages=messages) # No tools
+            return resp.choices[0].message.content or ""
+        except:
+            return "Error: Tool loop exhausted."
 
     def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
         history = self.memory.get_context(self.ctx.agent_id, limit=8, query=user_input)
