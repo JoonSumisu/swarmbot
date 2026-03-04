@@ -8,6 +8,7 @@ from ..memory.hot_memory import HotMemory
 from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
 from ..config_manager import load_config
+from .definitions import OVERACTION_REFINE_PROMPT, OVERACTION_OPT_PROMPT
 
 class OveractionLoop:
     """
@@ -62,13 +63,7 @@ class OveractionLoop:
         # Find recent entries that might need web supplementation
         recent_qmd = self.cold_memory.search_text("recent facts", limit=10)
         
-        refine_prompt = (
-            "Review these recent long-term memory entries.\n"
-            "Identify any facts or theories that could be supplemented with web data.\n"
-            "Use 'web_search' to verify and expand them.\n"
-            "Then, rewrite them into QMD as refined Knowledge.\n\n"
-            f"Recent QMD:\n{recent_qmd}"
-        )
+        refine_prompt = OVERACTION_REFINE_PROMPT.format(recent_qmd=recent_qmd)
         # Agent will use web_search if it decides to
         self.agent.step(refine_prompt)
         
@@ -83,12 +78,7 @@ class OveractionLoop:
         
         # 3. Self-Adjustment (Boot/Hot)
         # Reflect on system performance and add optimizations
-        opt_prompt = (
-            "Analyze your recent performance and memory structure.\n"
-            "Suggest one optimization for your 'swarmboot.md' or 'hot_memory.md'.\n"
-            "If it's a todo, output JSON: {'todo': '...'}\n"
-            "If it's a boot update, output JSON: {'boot_update': '...'}"
-        )
+        opt_prompt = OVERACTION_OPT_PROMPT
         res = self.agent.step(opt_prompt)
         try:
             import re

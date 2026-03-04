@@ -8,6 +8,7 @@ from ..memory.hot_memory import HotMemory
 from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
 from ..config_manager import load_config
+from .definitions import OVERTHINKING_PROMPT
 
 class OverthinkingLoop:
     """
@@ -63,12 +64,9 @@ class OverthinkingLoop:
         
         # 3. Compress into QMD
         # Identify high-value facts/experience/theories
-        prompt = (
-            "Analyze the following short-term and sequential memories.\n"
-            "Extract valuable Facts, Experiences, and Theories for long-term storage.\n\n"
-            f"Hot Memory:\n{hot_content[:2000]}\n\n"
-            f"Warm Memory (Today):\n{warm_content[:4000]}\n\n"
-            "Output JSON with a list of 'entries' to add to QMD."
+        prompt = OVERTHINKING_PROMPT.format(
+            hot_content=hot_content[:2000],
+            warm_content=warm_content[:4000]
         )
         
         res = self.agent.step(prompt)
