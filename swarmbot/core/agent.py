@@ -191,21 +191,22 @@ class CoreAgent:
         all_tools = self._tool_adapter.get_tool_definitions()
         
         tools = []
-        if self.ctx.skills:
-            for tool in all_tools:
-                tool_name = tool["function"]["name"]
-                if tool_name in self.ctx.skills:
-                    tools.append(tool)
-        else:
-            # Default behavior: if no skills defined, expose none (or all? Safer to expose none for specialized agents)
-            # But for backward compatibility, if skills is empty dict (default), maybe we expose none?
-            # Or expose base tools?
-            # Let's assume empty skills means NO tools allowed unless specified.
-            # Except maybe for 'master' role which might get all?
-            if self.ctx.role in ["planner", "master"]:
-                 tools = all_tools
+        if self.enable_tools:
+            if self.ctx.skills:
+                for tool in all_tools:
+                    tool_name = tool["function"]["name"]
+                    if tool_name in self.ctx.skills:
+                        tools.append(tool)
             else:
-                 tools = []
+                # Default behavior: if no skills defined, expose none (or all? Safer to expose none for specialized agents)
+                # But for backward compatibility, if skills is empty dict (default), maybe we expose none?
+                # Or expose base tools?
+                # Let's assume empty skills means NO tools allowed unless specified.
+                # Except maybe for 'master' role which might get all?
+                if self.ctx.role in ["planner", "master"]:
+                     tools = all_tools
+                else:
+                     tools = []
         
         # Chain of Thought Logging
         print(f"[CoT] Agent {self.ctx.role} starting thought process...")

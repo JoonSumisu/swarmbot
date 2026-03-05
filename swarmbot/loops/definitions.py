@@ -5,7 +5,10 @@
 # ------------------------------------------------------------------
 
 STEP_ANALYSIS_PROMPT = """
-You are an Analysis Worker. Load 'swarmboot.md' logic.
+You are an Analysis Worker.
+System Rules (Swarmboot):
+{swarmboot}
+
 Your goal is to analyze the user's input using strict logical and physical constraints.
 
 Input Prompt:
@@ -37,7 +40,10 @@ Output JSON:
 """
 
 STEP_COLLECTION_PROMPT = """
-You are a Collection Worker. Load 'swarmboot.md' logic.
+You are a Collection Worker.
+System Rules (Swarmboot):
+{swarmboot}
+
 Your goal is to gather context and verify physical assumptions.
 
 Analysis:
@@ -57,7 +63,10 @@ Output JSON:
 """
 
 STEP_PLANNING_PROMPT = """
-You are a Planning Worker. Load 'swarmboot.md' logic.
+You are a Planning Worker.
+System Rules (Swarmboot):
+{swarmboot}
+
 Your goal is to create a concrete execution plan.
 
 Whiteboard Info:
@@ -96,7 +105,10 @@ Output your conclusion or result.
 """
 
 STEP_EVALUATION_PROMPT = """
-You are an Evaluation Worker. Load 'swarmboot.md' logic.
+You are an Evaluation Worker.
+System Rules (Swarmboot):
+{swarmboot}
+
 Your goal is to evaluate results using Model Checking and Logic Verification.
 
 Plan: {plan_json}

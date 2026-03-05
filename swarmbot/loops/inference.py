@@ -96,7 +96,10 @@ class InferenceLoop:
 
     def _step_analysis(self):
         print("[Step 2] Analysis (No Tools)...")
-        prompt = STEP_ANALYSIS_PROMPT.format(user_input=self.whiteboard.get("input_prompt"))
+        prompt = STEP_ANALYSIS_PROMPT.format(
+            user_input=self.whiteboard.get("input_prompt"),
+            swarmboot=self.swarmboot
+        )
         # Optimized: enable_tools=False
         results = self._run_parallel(prompt, 2, "analyst", enable_tools=False)
         # Simple merge of analysis
@@ -132,6 +135,7 @@ class InferenceLoop:
         
         prompt = STEP_COLLECTION_PROMPT.format(
             analysis_json=self._safe_dumps(analysis),
+            swarmboot=self.swarmboot,
             hot_memory=hot[:2000],
             warm_memory=warm[:2000],
             cold_memory=cold[:2000]
@@ -152,7 +156,10 @@ class InferenceLoop:
     def _step_planning(self):
         print("[Step 4] Planning (No Tools)...")
         info = self.whiteboard.get("information_gathering")
-        prompt = STEP_PLANNING_PROMPT.format(info_json=self._safe_dumps(info, max_len=6000))
+        prompt = STEP_PLANNING_PROMPT.format(
+            info_json=self._safe_dumps(info, max_len=6000),
+            swarmboot=self.swarmboot
+        )
         # Optimized: enable_tools=False
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
@@ -212,7 +219,8 @@ class InferenceLoop:
         
         prompt = STEP_EVALUATION_PROMPT.format(
             plan_json=self._safe_dumps(plan),
-            results_json=self._safe_dumps(results, max_len=2000)  # Aggressively truncate individual results
+            results_json=self._safe_dumps(results, max_len=2000),  # Aggressively truncate individual results
+            swarmboot=self.swarmboot
         )
         # Optimized: enable_tools=False
         evals = self._run_parallel(prompt, 3, "evaluator", enable_tools=False)
