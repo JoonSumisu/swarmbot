@@ -21,10 +21,13 @@ class ToolRegistry:
         Register a new tool with its function and schema.
         """
         if name in self._tools:
-            logger.warning(f"Overwriting existing tool: {name}")
+            # Downgrade to debug as re-registration is common in multi-agent setup
+            logger.debug(f"Overwriting existing tool: {name}")
+        else:
+            logger.info(f"Registered tool: {name}")
+            
         self._tools[name] = func
         self._schemas[name] = schema
-        logger.info(f"Registered tool: {name}")
 
     def get_tool(self, name: str) -> Optional[Callable]:
         return self._tools.get(name)

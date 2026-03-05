@@ -214,7 +214,34 @@ def _signal_handler(signum, frame) -> None:
     _shutdown = True
 
 
+def _validate_config() -> bool:
+    """Validate critical configuration before startup."""
+    try:
+        from .config_manager import load_config
+        cfg = load_config()
+        
+        # Check LLM Provider
+        if not cfg.llm or not cfg.llm.api_key:
+            print("Error: LLM Provider not configured. Run 'swarmbot provider add ...'")
+            return False
+            
+        # Check Channels (Warn only)
+        active_channels = [k for k,v in cfg.channels.items() if v.enabled]
+        if not active_channels:
+            print("Warning: No channels enabled. Swarmbot will run but cannot receive messages.")
+        
+        return True
+    except Exception as e:
+        print(f"Error validating config: {e}")
+        return False
+
+
 def main() -> None:
+    # Validate config before starting
+    if not _validate_config():
+        print("Configuration validation failed. Aborting startup.")
+        return
+
     os.makedirs(CONFIG_HOME, exist_ok=True)
     try:
         with open(PID_FILE, "w", encoding="utf-8") as f:

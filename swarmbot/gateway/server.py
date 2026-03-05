@@ -81,8 +81,8 @@ class GatewayServer:
                     # Support both snake_case (standard) and camelCase (legacy)
                     app_id = conf_data.get("app_id") or conf_data.get("appId")
                     app_secret = conf_data.get("app_secret") or conf_data.get("appSecret")
-                    encrypt_key = conf_data.get("encrypt_key") or conf_data.get("encryptKey")
-                    verification_token = conf_data.get("verification_token") or conf_data.get("verificationToken")
+                    encrypt_key = conf_data.get("encrypt_key") or conf_data.get("encryptKey") or ""
+                    verification_token = conf_data.get("verification_token") or conf_data.get("verificationToken") or ""
                     
                     if not app_id or not app_secret:
                         logger.error("Feishu app_id or app_secret missing in config")
