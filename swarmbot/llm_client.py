@@ -104,8 +104,13 @@ class OpenAICompatibleClient:
                     params["max_tokens"] = config.max_tokens
 
                 if tools is not None:
-                    params["tools"] = tools
-                    params["tool_choice"] = "auto"
+                    # FIX: Qwen/vLLM fails if tools is empty list []
+                    if len(tools) > 0:
+                        params["tools"] = tools
+                        params["tool_choice"] = "auto"
+                    else:
+                        # If tools list is empty, do NOT send tools param
+                        pass
                     
                 # litellm handles the call
                 # Note: Qwen models might be strict about tool definitions.
@@ -117,8 +122,18 @@ class OpenAICompatibleClient:
                 err_msg = str(e)
                 if "BadRequestError" in err_msg and "OpenAIException" in err_msg:
                     print(f"[LLM] Critical Schema Error with {config.model}: {e}")
+                    
+                    # DEBUG: Print the failing payload to help user debug
+                    import json
+                    try:
+                        print(f"[LLM DEBUG] Failing Messages Sample (Last 2): {json.dumps(messages[-2:], default=str)}")
+                        if "tools" in params:
+                            print(f"[LLM DEBUG] Failing Tools Sample (First 1): {json.dumps(params['tools'][:1], default=str)}")
+                    except:
+                        pass
+
                     # Attempt fallback: Try without tools if it was a tool call
-                    if tools is not None:
+                    if "tools" in params:
                          print(f"[LLM] Retrying {config.model} WITHOUT tools due to schema error...")
                          params.pop("tools", None)
                          params.pop("tool_choice", None)
