@@ -8,9 +8,6 @@ from ..memory.base import MemoryStore
 from ..memory.hot_memory import HotMemory
 from ..tools.adapter import ToolAdapter
 import json
-from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
-from ..llm_client import OpenAICompatibleClient
 
 @dataclass
 class AgentContext:
@@ -42,56 +39,38 @@ class CoreAgent:
         if hot_memory:
             self._tool_adapter.hot_memory = hot_memory
 
-    def step(self, prompt: str) -> str:
-        """Single step execution with ReAct loop if tools enabled."""
-        messages = self._build_messages(prompt)
-        
-        # Tools configuration
-        tools = self._tool_adapter.get_tool_definitions() if self.enable_tools else None
-        
-        # If no tools, simple completion
-        if not tools:
-            try:
-                resp = self.llm.chat(messages=messages)
-                return resp.choices[0].message.content or ""
-            except Exception as e:
-                return f"Error: {e}"
+    def _message_to_dict(self, message: Any) -> Dict[str, Any]:
+        role = getattr(message, "role", "assistant")
+        content = getattr(message, "content", "")
+        if content is None:
+            content = ""
+        tool_calls = getattr(message, "tool_calls", None)
+        normalized_tool_calls = []
+        if tool_calls:
+            for tc in tool_calls:
+                function = getattr(tc, "function", None)
+                normalized_tool_calls.append(
+                    {
+                        "id": getattr(tc, "id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": getattr(function, "name", ""),
+                            "arguments": getattr(function, "arguments", "{}"),
+                        },
+                    }
+                )
+        result = {"role": role, "content": content}
+        if normalized_tool_calls:
+            result["tool_calls"] = normalized_tool_calls
+        return result
 
-        # ReAct Loop
-        max_rounds = 5
-        current_round = 0
-        
-        while current_round < max_rounds:
-            try:
-                # API Call
-                resp = self.llm.chat(messages=messages, tools=tools)
-                msg = resp.choices[0].message
-                messages.append(msg)
-                
-                # Check for tool calls
-                if msg.tool_calls:
-                    print(f"[CoT] {self.ctx.role} calls tool: {msg.tool_calls[0].function.name}")
-                    for tool_call in msg.tool_calls:
-                        result = self._tool_adapter.execute(tool_call)
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": result
-                        })
-                    current_round += 1
-                else:
-                    # Final answer
-                    return msg.content or ""
-            except Exception as e:
-                print(f"[CoT] Error: {e}")
-                return f"Error: {e}"
-        
-        # Force final response if loop exhausted
-        try:
-            resp = self.llm.chat(messages=messages) # No tools
-            return resp.choices[0].message.content or ""
-        except:
-            return "Error: Tool loop exhausted."
+    def _clean_visible_content(self, content: str) -> str:
+        text = content or ""
+        lower = text.lower()
+        if "</think>" in lower:
+            idx = lower.rfind("</think>")
+            text = text[idx + len("</think>") :]
+        return text.strip() or (content or "")
 
     def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
         history = self.memory.get_context(self.ctx.agent_id, limit=8, query=user_input)
@@ -242,7 +221,7 @@ class CoreAgent:
                 resp = self.llm.completion(**completion_kwargs)
                 choice = resp.choices[0]
                 message = choice.message
-                content = message.content or ""
+                content = self._clean_visible_content(message.content or "")
                 tool_calls = message.tool_calls
 
                 if round_idx == 0 and content:
@@ -253,9 +232,16 @@ class CoreAgent:
                         print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
                     break
 
-                messages.append(message)
+                messages.append(self._message_to_dict(message))
                 for tool_call in tool_calls:
                     func_name = tool_call.function.name
+                    if self._tool_adapter.registry.get_tool(func_name) is None:
+                        import re
+                        matched = re.match(r"[A-Za-z0-9_]+", func_name or "")
+                        if matched:
+                            candidate = matched.group(0)
+                            if self._tool_adapter.registry.get_tool(candidate) is not None:
+                                func_name = candidate
                     func_args_str = tool_call.function.arguments
                     print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")
 
@@ -290,7 +276,7 @@ class CoreAgent:
                     del completion_kwargs["tools"]
                 
                 resp = self.llm.completion(**completion_kwargs)
-                content = resp.choices[0].message.content or ""
+                content = self._clean_visible_content(resp.choices[0].message.content or "")
                 if content:
                     print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
 
