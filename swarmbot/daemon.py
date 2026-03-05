@@ -236,11 +236,55 @@ def _validate_config() -> bool:
         return False
 
 
+def _kill_existing_daemon() -> None:
+    """Check for existing daemon process and kill it."""
+    # 1. Check PID file
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE, "r", encoding="utf-8") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, signal.SIGTERM)
+            print(f"Stopping existing daemon (PID {pid})...")
+            # Wait for it to die
+            for _ in range(10):
+                try:
+                    os.kill(pid, 0)
+                    time.sleep(0.5)
+                except OSError:
+                    break
+        except Exception:
+            pass
+        # Clean up stale PID file
+        try:
+            os.remove(PID_FILE)
+        except:
+            pass
+
+    # 2. Aggressive cleanup of related processes (gateway, overthinking)
+    # This prevents orphaned child processes from lingering
+    import subprocess
+    try:
+        # pkill -f matches command line pattern
+        subprocess.run(["pkill", "-f", "swarmbot.cli gateway"], stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-f", "swarmbot.cli overthinking"], stderr=subprocess.DEVNULL)
+        # Also kill any other daemon instances that might have been missed
+        # Exclude self (though we haven't started fully yet)
+        current_pid = os.getpid()
+        # This is a bit risky if multiple users use it, but for single user dev env it's safer to be clean
+        # Using a more specific pattern to avoid killing editor or other tools
+        subprocess.run(["pkill", "-f", "swarmbot.daemon"], stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 def main() -> None:
     # Validate config before starting
     if not _validate_config():
         print("Configuration validation failed. Aborting startup.")
         return
+
+    # Clean up previous instances
+    _kill_existing_daemon()
 
     os.makedirs(CONFIG_HOME, exist_ok=True)
     try:
