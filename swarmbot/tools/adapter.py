@@ -36,6 +36,10 @@ class ToolAdapter:
                  # optional
              elif arg in ["args"]: # Dict/Object types
                  props[arg] = {"type": "object"}
+                 # IMPORTANT: Qwen/vLLM might reject empty object schemas if not handled
+                 # But usually 'object' type should have properties or additionalProperties
+                 # Let's add additionalProperties: True for flexibility in 'args'
+                 props[arg]["additionalProperties"] = True
              else:
                  props[arg] = {"type": "string"}
                  if arg not in ["subcommand"]: # subcommand is optional for some commands
@@ -47,12 +51,9 @@ class ToolAdapter:
             "required": required
         }
         
-        # Ensure 'additionalProperties' is False for stricter models (like Qwen/OpenAI strict mode)
-        # However, some models dislike this field if not 'strict' mode.
-        # Let's keep it simple for now.
-        
-        # Qwen specific fix: description length limits?
-        # Qwen handles function calling well but schema must be clean.
+        # Qwen/vLLM often requires strict schema compliance.
+        # If 'required' is empty list, some versions might complain if not omitted, 
+        # but usually empty list is fine.
         
         # Store for internal use (compatibility)
         self.skills[name] = ToolDefinition(
@@ -199,6 +200,9 @@ class ToolAdapter:
         self._register_builtin("swarm_control", "Control Swarmbot configuration and lifecycle (CLI wrapper).", ["command", "subcommand", "args"], self._tool_swarm_control)
         self._register_builtin("skill_summary", "List available Swarm skills in a compact summary format.", [], self._tool_skill_summary)
         self._register_builtin("skill_load", "Load a specific skill markdown by name.", ["name"], self._tool_skill_load)
+        # Fix for tool schema with no arguments (Qwen strictness)
+        # If a tool has no args, we should ensure properties is empty dict
+        # _register_builtin handles this via empty args list
 
     def _tool_swarm_control(self, command: str, subcommand: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> str:
         """
