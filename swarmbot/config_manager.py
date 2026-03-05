@@ -58,8 +58,8 @@ class ChannelConfig:
 
 @dataclass
 class DaemonConfig:
-    manage_gateway: bool = False
-    manage_overthinking: bool = False
+    manage_gateway: bool = True  # Enable by default
+    manage_overthinking: bool = True  # Enable by default
     backup_interval_seconds: int = 60
     health_check_interval_seconds: int = 3600
     gateway_restart_delay_seconds: int = 10

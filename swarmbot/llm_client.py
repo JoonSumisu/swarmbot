@@ -9,6 +9,11 @@ from litellm import completion as litellm_completion, acompletion as litellm_aco
 from .config import LLMConfig
 from .config_manager import ProviderConfig, load_config
 
+# Disable LiteLLM logging noise
+litellm_completion.__globals__["litellm"].suppress_debug_info = True
+litellm_completion.__globals__["litellm"].drop_params = True
+
+
 
 class OpenAICompatibleClient:
     def __init__(self, configs: List[LLMConfig] = None, config: Optional[LLMConfig] = None) -> None:
