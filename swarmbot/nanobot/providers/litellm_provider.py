@@ -104,6 +104,12 @@ class LiteLLMProvider(LLMProvider):
         if spec and spec.litellm_prefix:
             if not any(model.startswith(s) for s in spec.skip_prefixes):
                 model = f"{spec.litellm_prefix}/{model}"
+        elif not spec and self.api_base and "/" not in model:
+             # Fallback for custom endpoints (vLLM/Ollama) where model has no provider.
+             # If no provider matched, and we have a custom api_base, 
+             # and model has no prefix, assume OpenAI-compatible.
+             # This handles "qwen3.5-27b" -> "openai/qwen3.5-27b" when using local vLLM.
+             model = f"openai/{model}"
         
         return model
     

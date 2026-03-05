@@ -44,7 +44,7 @@ class GatewayServer:
         self._executor = ThreadPoolExecutor(max_workers=5) # Concurrent inference sessions
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v0.5.3)...")
+        logger.info("Starting Swarmbot Gateway (v0.5.4)...")
         
         # 1. Initialize Channels
         await self._init_channels()
