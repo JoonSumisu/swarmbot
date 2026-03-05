@@ -45,6 +45,17 @@ class LiteLLMProvider(LLMProvider):
         if api_key:
             self._setup_env(api_key, api_base, default_model)
         
+        # Auto-fix api_base for local vLLM/OpenAI-compatible endpoints
+        if api_base:
+            # If it's a private IP or localhost and doesn't end with /v1, append it.
+            # This fixes "Unexpected endpoint" errors when users point to vLLM/Ollama root.
+            # Checks for: localhost, 127.0.0.1, 0.0.0.0, 10.x.x.x, 192.168.x.x, 172.16-31.x.x
+            is_local = any(x in api_base for x in ["localhost", "127.0.0.1", "0.0.0.0", "192.168.", "10."])
+            if is_local and not api_base.rstrip("/").endswith("/v1") and "/v1/" not in api_base:
+                 api_base = api_base.rstrip("/") + "/v1"
+                 # Update instance variable as well so chat() uses the fixed version
+                 self.api_base = api_base
+
         if api_base:
             litellm.api_base = api_base
         

@@ -272,9 +272,12 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
     ),
 
     # DashScope: Qwen models, needs "dashscope/" prefix.
+    # Note: We removed "qwen" from keywords because local vLLM/Ollama users often run "qwen" models
+    # via OpenAI-compatible endpoints. Mapping "qwen" -> "dashscope" forces Cloud API behavior.
+    # Cloud users should explicitly use "dashscope/qwen-..."
     ProviderSpec(
         name="dashscope",
-        keywords=("qwen", "dashscope"),
+        keywords=("dashscope",),  # Removed "qwen" to support local vLLM usage
         env_key="DASHSCOPE_API_KEY",
         display_name="DashScope",
         litellm_prefix="dashscope",         # qwen-max → dashscope/qwen-max
