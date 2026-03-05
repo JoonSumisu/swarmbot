@@ -47,6 +47,13 @@ class ToolAdapter:
             "required": required
         }
         
+        # Ensure 'additionalProperties' is False for stricter models (like Qwen/OpenAI strict mode)
+        # However, some models dislike this field if not 'strict' mode.
+        # Let's keep it simple for now.
+        
+        # Qwen specific fix: description length limits?
+        # Qwen handles function calling well but schema must be clean.
+        
         # Store for internal use (compatibility)
         self.skills[name] = ToolDefinition(
             name=name,

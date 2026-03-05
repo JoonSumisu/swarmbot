@@ -108,15 +108,30 @@ class OpenAICompatibleClient:
                     params["tool_choice"] = "auto"
                     
                 # litellm handles the call
+                # Note: Qwen models might be strict about tool definitions.
+                # If tools provided, ensure no None values in tool_choice or tools list
+                
                 return await litellm_acompletion(**params)
             except Exception as e:
-                print(f"[LLM] Provider {idx+1} ({config.model}) failed: {e}")
-                last_exception = e
-                # If this is a regex error (400), we might need to clean the input further
-                # But failover is the primary request here.
-                # If it's the last provider, re-raise
-                if idx == len(self.configs) - 1:
-                    raise last_exception
+                # Catch specific BadRequestError which often indicates Prompt/Tool schema issues
+                err_msg = str(e)
+                if "BadRequestError" in err_msg and "OpenAIException" in err_msg:
+                    print(f"[LLM] Critical Schema Error with {config.model}: {e}")
+                    # Attempt fallback: Try without tools if it was a tool call
+                    if tools is not None:
+                         print(f"[LLM] Retrying {config.model} WITHOUT tools due to schema error...")
+                         params.pop("tools", None)
+                         params.pop("tool_choice", None)
+                         try:
+                             return await litellm_acompletion(**params)
+                         except Exception as retry_e:
+                             print(f"[LLM] Retry failed: {retry_e}")
+                             last_exception = retry_e
+                    else:
+                        last_exception = e
+                else:
+                    print(f"[LLM] Provider {idx+1} ({config.model}) failed: {e}")
+                    last_exception = e
         
         if last_exception:
             raise last_exception
