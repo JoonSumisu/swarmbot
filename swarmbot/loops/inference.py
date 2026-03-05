@@ -106,6 +106,22 @@ class InferenceLoop:
             except: pass
         self.whiteboard.update("problem_analysis", merged)
 
+    def _safe_dumps(self, data: Any, max_len: int = 4000) -> str:
+        """Safely dump data to JSON string, truncating long strings if necessary."""
+        def truncate(obj):
+            if isinstance(obj, str):
+                return obj[:max_len] + "..." if len(obj) > max_len else obj
+            if isinstance(obj, list):
+                return [truncate(x) for x in obj]
+            if isinstance(obj, dict):
+                return {k: truncate(v) for k, v in obj.items()}
+            return obj
+        
+        try:
+            return json.dumps(truncate(data))
+        except:
+            return "{}"
+
     def _step_collection(self):
         print("[Step 3] Collection (Tools Enabled)...")
         analysis = self.whiteboard.get("problem_analysis")
@@ -115,7 +131,7 @@ class InferenceLoop:
         cold = self.cold_memory.search_text(str(analysis), limit=5)
         
         prompt = STEP_COLLECTION_PROMPT.format(
-            analysis_json=json.dumps(analysis),
+            analysis_json=self._safe_dumps(analysis),
             hot_memory=hot[:2000],
             warm_memory=warm[:2000],
             cold_memory=cold[:2000]
@@ -136,7 +152,7 @@ class InferenceLoop:
     def _step_planning(self):
         print("[Step 4] Planning (No Tools)...")
         info = self.whiteboard.get("information_gathering")
-        prompt = STEP_PLANNING_PROMPT.format(info_json=json.dumps(info))
+        prompt = STEP_PLANNING_PROMPT.format(info_json=self._safe_dumps(info, max_len=6000))
         # Optimized: enable_tools=False
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
@@ -153,8 +169,8 @@ class InferenceLoop:
         
         prompt = (
             "You are the Planner. The previous execution failed evaluation.\n"
-            f"Evaluation Report: {json.dumps(eval_report)}\n"
-            f"Current Plan: {json.dumps(current_plan)}\n\n"
+            f"Evaluation Report: {self._safe_dumps(eval_report)}\n"
+            f"Current Plan: {self._safe_dumps(current_plan)}\n\n"
             "Task: Adjust the plan to address the failure reasons.\n"
             "Output the updated JSON plan."
         )
@@ -183,7 +199,7 @@ class InferenceLoop:
             prompt = STEP_INFERENCE_PROMPT.format(
                 role=worker_role,
                 task_desc=task.get("desc"),
-                context=context
+                context=context[:8000] if context else ""  # Truncate context
             )
             res = worker.step(prompt)
             results.append({"task_id": task.get("id"), "result": res})
@@ -195,8 +211,8 @@ class InferenceLoop:
         results = self.whiteboard.get("inference_conclusions")
         
         prompt = STEP_EVALUATION_PROMPT.format(
-            plan_json=json.dumps(plan),
-            results_json=json.dumps(results)
+            plan_json=self._safe_dumps(plan),
+            results_json=self._safe_dumps(results, max_len=2000)  # Aggressively truncate individual results
         )
         # Optimized: enable_tools=False
         evals = self._run_parallel(prompt, 3, "evaluator", enable_tools=False)
