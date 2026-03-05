@@ -258,8 +258,8 @@ def main() -> None:
     health_interval = int(cfg.get("health_check_interval_seconds", 3600))
     if health_interval <= 0:
         health_interval = 60
-    manage_gateway = bool(cfg.get("manage_gateway", False))
-    manage_overthinking = bool(cfg.get("manage_overthinking", False))
+    manage_gateway = bool(cfg.get("manage_gateway", True))
+    manage_overthinking = bool(cfg.get("manage_overthinking", True))
     services: dict = {}
     last_backup = 0.0
     last_health = 0.0

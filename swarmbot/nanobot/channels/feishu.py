@@ -115,6 +115,9 @@ class FeishuChannel(BaseChannel):
             logger.error("Feishu SDK not installed. Run: pip install lark-oapi")
             return
         
+        # Subscribe to outbound messages for this channel
+        self.bus.subscribe_outbound(self.name, self.send)
+        
         if not self.config.app_id or not self.config.app_secret:
             logger.error("Feishu app_id and app_secret not configured")
             return

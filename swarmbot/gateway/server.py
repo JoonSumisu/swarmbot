@@ -57,6 +57,7 @@ class GatewayServer:
         self.overaction_loop.start()
         
         # 3. Start Message Processing Loop
+        asyncio.create_task(self.bus.dispatch_outbound())
         await self._run_message_loop()
 
     async def _init_channels(self):
