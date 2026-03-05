@@ -58,11 +58,21 @@ class MessageBus:
             try:
                 msg = await asyncio.wait_for(self.outbound.get(), timeout=1.0)
                 subscribers = self._outbound_subscribers.get(msg.channel, [])
+                retry = int((msg.metadata or {}).get("_dispatch_retry", 0))
+                if not subscribers:
+                    logger.error(f"No outbound subscriber for channel={msg.channel}")
+                    if retry < 3:
+                        msg.metadata["_dispatch_retry"] = retry + 1
+                        await self.outbound.put(msg)
+                    continue
                 for callback in subscribers:
                     try:
                         await callback(msg)
                     except Exception as e:
                         logger.error(f"Error dispatching to {msg.channel}: {e}")
+                        if retry < 3:
+                            msg.metadata["_dispatch_retry"] = retry + 1
+                            await self.outbound.put(msg)
             except asyncio.TimeoutError:
                 continue
     

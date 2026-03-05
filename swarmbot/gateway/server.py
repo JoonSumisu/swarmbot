@@ -34,28 +34,31 @@ class GatewayServer:
         self.config: SwarmbotConfig = load_config()
         self.bus = MessageBus()
         self.channels = []
-        
+
         # Loops
-        self.inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
         self.overthinking_loop = None
         self.overaction_loop = None
-        
+
         self._stop_event = threading.Event()
-        self._executor = ThreadPoolExecutor(max_workers=5) # Concurrent inference sessions
+        self._executor = ThreadPoolExecutor(max_workers=5)
+        self._inflight = asyncio.Semaphore(5)
 
     async def start(self):
         logger.info("Starting Swarmbot Gateway (v0.5.4)...")
-        
+
         # 1. Initialize Channels
         await self._init_channels()
-        
+
+        if not self.channels:
+            logger.warning("No channel initialized. Gateway will run but cannot send/receive external messages.")
+
         # 2. Start Background Loops
-        self.overthinking_loop = OverthinkingLoop(self._stop_event)
-        self.overthinking_loop.start()
-        
-        self.overaction_loop = OveractionLoop(self._stop_event)
-        self.overaction_loop.start()
-        
+        if getattr(self.config.overthinking, "enabled", True):
+            self.overthinking_loop = OverthinkingLoop(self._stop_event)
+            self.overthinking_loop.start()
+            self.overaction_loop = OveractionLoop(self._stop_event)
+            self.overaction_loop.start()
+
         # 3. Start Message Processing Loop
         asyncio.create_task(self.bus.dispatch_outbound())
         await self._run_message_loop()
@@ -74,7 +77,15 @@ class GatewayServer:
             else:
                 # It is a ChannelConfig object
                 enabled = feishu_conf.enabled
-                conf_data = feishu_conf.config
+                conf_data = dict(feishu_conf.config or {})
+                if getattr(feishu_conf, "app_id", "") and "app_id" not in conf_data:
+                    conf_data["app_id"] = feishu_conf.app_id
+                if getattr(feishu_conf, "app_secret", "") and "app_secret" not in conf_data:
+                    conf_data["app_secret"] = feishu_conf.app_secret
+                if getattr(feishu_conf, "encrypt_key", "") and "encrypt_key" not in conf_data:
+                    conf_data["encrypt_key"] = feishu_conf.encrypt_key
+                if getattr(feishu_conf, "verification_token", "") and "verification_token" not in conf_data:
+                    conf_data["verification_token"] = feishu_conf.verification_token
 
             if enabled:
                 logger.info("Initializing Feishu channel...")
@@ -130,26 +141,31 @@ class GatewayServer:
     async def _handle_message_async(self, message: InboundMessage):
         """Async wrapper for blocking inference."""
         loop = asyncio.get_running_loop()
-        try:
-            # Run blocking inference in thread pool
-            response_text = await loop.run_in_executor(
-                self._executor, 
-                self.inference_loop.run, 
-                message.content,
-                message.chat_id or "unknown"
-            )
-            
-            # Send reply (back on async loop)
-            reply = OutboundMessage(
-                channel=message.channel,
-                content=response_text,
-                chat_id=message.chat_id,
-                reply_to=message.message_id
-            )
-            await self.bus.publish_outbound(reply)
-            
-        except Exception as e:
-            logger.error(f"Inference processing failed: {e}")
+        async with self._inflight:
+            try:
+                inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
+                response_text = await loop.run_in_executor(
+                    self._executor,
+                    inference_loop.run,
+                    message.content,
+                    message.chat_id or "unknown"
+                )
+                if not isinstance(response_text, str) or not response_text.strip():
+                    response_text = "已收到消息，但本次推理结果为空。请重试一次。"
+            except Exception as e:
+                logger.error(f"Inference processing failed: {e}")
+                response_text = "系统处理消息时出现异常，请稍后重试。"
+
+            try:
+                reply = OutboundMessage(
+                    channel=message.channel,
+                    content=response_text,
+                    chat_id=message.chat_id,
+                    reply_to=message.message_id
+                )
+                await self.bus.publish_outbound(reply)
+            except Exception as e:
+                logger.error(f"Publish outbound failed: {e}")
 
     def stop(self):
         logger.info("Stopping Gateway...")

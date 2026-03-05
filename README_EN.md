@@ -133,9 +133,37 @@ You can also run:
 
 ---
 
+## Runtime Verification Checklist
+
+Use this checklist after upgrades:
+
+1. Start daemon and verify subprocesses:
+```bash
+./.venv/bin/swarmbot daemon start
+pgrep -af "swarmbot.daemon|swarmbot.cli gateway|swarmbot.cli overthinking"
+```
+
+2. Validate end-to-end flow in logs:
+- Ingress received
+- Inference loop starts
+- Outbound published/dispatched
+- Feishu send success (or text fallback path)
+
+3. Validate tool-call behavior:
+- Check CoT lines with `calls tool:` for `whiteboard_update`, `context_policy_update`, `skill_summary`, `skill_load`.
+
+4. Validate EvoMap/Whiteboard:
+- EvoMap in this project maps to `MemoryMap/Whiteboard`.
+- Confirm key updates through runtime tool calls.
+
+5. Validate background loops:
+- Overthinking cycle adds entries into Cold Memory.
+- Overaction cycle runs refinement and warm-memory cleanup.
+
+---
+
 ## License
 
 MIT License
 
 All code power by trae & tomoko
-

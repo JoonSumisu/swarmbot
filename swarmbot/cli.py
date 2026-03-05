@@ -415,9 +415,15 @@ def cmd_daemon(args: argparse.Namespace) -> None:
                 with open(pid_file, "r", encoding="utf-8") as f:
                     pid = int(f.read().strip() or "0")
                 if pid > 0:
-                    os.kill(pid, 0)
-                    print(f"Swarmbot daemon 已在运行，PID={pid}")
-                    return
+                    import signal
+                    os.kill(pid, signal.SIGTERM)
+                    print(f"检测到已有 daemon 进程，正在关闭，PID={pid}")
+                    for _ in range(20):
+                        try:
+                            os.kill(pid, 0)
+                            time.sleep(0.2)
+                        except ProcessLookupError:
+                            break
             except Exception:
                 try:
                     os.remove(pid_file)
@@ -435,6 +441,10 @@ def cmd_daemon(args: argparse.Namespace) -> None:
                 f.write(str(proc.pid))
         except Exception:
             pass
+        time.sleep(0.8)
+        if proc.poll() is not None:
+            print("Swarmbot daemon 启动失败，请检查 ~/.swarmbot/logs/daemon_gateway.log")
+            return
         print(f"Swarmbot daemon 已启动，PID={proc.pid}")
     elif args.action == "shutdown":
         if not os.path.exists(pid_file):
@@ -605,9 +615,4 @@ def main() -> None:
         cmd_daemon(args)
 
 if __name__ == "__main__":
-    from nanobot.cli.commands import app
-    # Add our commands if not present? 
-    # Actually, swarmbot cli uses argparse, nanobot uses typer.
-    # The swarmbot/cli.py uses argparse.
-    # We should just run main().
     main()

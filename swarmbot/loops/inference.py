@@ -243,7 +243,7 @@ class InferenceLoop:
         conclusions = self.whiteboard.get("inference_conclusions")
         prompt = STEP_TRANSLATION_PROMPT.format(
             user_input=self.whiteboard.get("input_prompt"),
-            conclusions_json=json.dumps(conclusions),
+            conclusions_json=self._safe_dumps(conclusions, max_len=2000),
             soul_content=self.soul
         )
         # Tools Enabled per requirement
@@ -253,7 +253,7 @@ class InferenceLoop:
         print("[Step 8] Organization (No Tools)...")
         prompt = STEP_ORGANIZATION_PROMPT.format(
             response=self.whiteboard.get("final_response"),
-            conclusions_json=json.dumps(self.whiteboard.get("inference_conclusions"))
+            conclusions_json=self._safe_dumps(self.whiteboard.get("inference_conclusions"), max_len=1500)
         )
         # Optimized: enable_tools=False
         res = self._create_worker("master", enable_tools=False).step(prompt)

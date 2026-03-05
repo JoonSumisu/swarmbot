@@ -292,7 +292,11 @@ class FeishuChannel(BaseChannel):
         if not self._client:
             logger.warning("Feishu client not initialized")
             return
-        
+
+        if not msg.chat_id:
+            logger.error("Feishu send aborted: empty chat_id")
+            return
+
         try:
             # Determine receive_id_type based on chat_id format
             # open_id starts with "ou_", chat_id starts with "oc_"
@@ -300,35 +304,52 @@ class FeishuChannel(BaseChannel):
                 receive_id_type = "chat_id"
             else:
                 receive_id_type = "open_id"
-            
+
             # Build card with markdown + table support
             elements = self._build_card_elements(msg.content)
             card = {
                 "config": {"wide_screen_mode": True},
                 "elements": elements,
             }
-            content = json.dumps(card, ensure_ascii=False)
-            
+            card_content = json.dumps(card, ensure_ascii=False)
+
             request = CreateMessageRequest.builder() \
                 .receive_id_type(receive_id_type) \
                 .request_body(
                     CreateMessageRequestBody.builder()
                     .receive_id(msg.chat_id)
                     .msg_type("interactive")
-                    .content(content)
+                    .content(card_content)
                     .build()
                 ).build()
-            
+
             response = self._client.im.v1.message.create(request)
-            
-            if not response.success():
-                logger.error(
-                    f"Failed to send Feishu message: code={response.code}, "
-                    f"msg={response.msg}, log_id={response.get_log_id()}"
-                )
-            else:
+
+            if response.success():
                 logger.debug(f"Feishu message sent to {msg.chat_id}")
-                
+                return
+
+            logger.error(
+                f"Failed to send Feishu card: code={response.code}, "
+                f"msg={response.msg}, log_id={response.get_log_id()}"
+            )
+
+            text_content = json.dumps({"text": msg.content[:3000]}, ensure_ascii=False)
+            fallback_req = CreateMessageRequest.builder() \
+                .receive_id_type(receive_id_type) \
+                .request_body(
+                    CreateMessageRequestBody.builder()
+                    .receive_id(msg.chat_id)
+                    .msg_type("text")
+                    .content(text_content)
+                    .build()
+                ).build()
+            fallback_resp = self._client.im.v1.message.create(fallback_req)
+            if not fallback_resp.success():
+                logger.error(
+                    f"Failed to send Feishu text fallback: code={fallback_resp.code}, "
+                    f"msg={fallback_resp.msg}, log_id={fallback_resp.get_log_id()}"
+                )
         except Exception as e:
             logger.error(f"Error sending Feishu message: {e}")
     

@@ -28,6 +28,11 @@ Triggered by user input (Feishu/CLI).
 7.  **Translation**: Master Agent formats final response.
 8.  **Organization**: Master Agent updates L2/L3 memories.
 
+**Runtime Guards**
+- Gateway handles each inbound request with an isolated `InferenceLoop` instance to avoid cross-session whiteboard contamination.
+- Outbound delivery is dispatched asynchronously and retried on transient dispatch failures.
+- If inference fails, gateway still emits a fallback outbound response instead of silently dropping the user request.
+
 ### 2. Overthinking Loop (The "Background" Loop)
 Runs periodically (e.g., every 30 mins).
 **Functions:**
@@ -44,6 +49,16 @@ Runs after Overthinking (e.g., every 60 mins).
     *   Updates `swarmboot.md` (System Prompts).
     *   Updates `hot_memory.md` (Context).
     *   Adds "Self-Improvement" tasks to Todo List.
+
+---
+
+## 🔎 Observability Checklist
+
+- **Ingress:** Feishu receive log exists (`[Feishu] Received message ...`).
+- **Inference:** loop enters Step 2~8 and records CoT/tool-call traces.
+- **Egress:** outbound message published and dispatched to channel subscriber.
+- **Channel Delivery:** Feishu send success log appears; if card send fails, text fallback path is attempted.
+- **MemoryMap (EvoMap):** `context_policy_update` / `whiteboard_update` can mutate whiteboard keys during runtime.
 
 ---
 

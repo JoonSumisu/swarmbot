@@ -221,12 +221,13 @@ def _validate_config() -> bool:
         cfg = load_config()
         
         # Check LLM Provider
-        if not cfg.llm or not cfg.llm.api_key:
+        primary = cfg.providers[0] if getattr(cfg, "providers", None) else None
+        if not primary or not primary.api_key or not primary.base_url or not primary.model:
             print("Error: LLM Provider not configured. Run 'swarmbot provider add ...'")
             return False
             
         # Check Channels (Warn only)
-        active_channels = [k for k,v in cfg.channels.items() if v.enabled]
+        active_channels = [k for k, v in cfg.channels.items() if v.enabled]
         if not active_channels:
             print("Warning: No channels enabled. Swarmbot will run but cannot receive messages.")
         
@@ -265,14 +266,18 @@ def _kill_existing_daemon() -> None:
     import subprocess
     try:
         # pkill -f matches command line pattern
-        subprocess.run(["pkill", "-f", "swarmbot.cli gateway"], stderr=subprocess.DEVNULL)
-        subprocess.run(["pkill", "-f", "swarmbot.cli overthinking"], stderr=subprocess.DEVNULL)
-        # Also kill any other daemon instances that might have been missed
-        # Exclude self (though we haven't started fully yet)
-        current_pid = os.getpid()
-        # This is a bit risky if multiple users use it, but for single user dev env it's safer to be clean
-        # Using a more specific pattern to avoid killing editor or other tools
-        subprocess.run(["pkill", "-f", "swarmbot.daemon"], stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["pkill", "-f", "swarmbot.cli gateway"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        subprocess.run(
+            ["pkill", "-f", "swarmbot.cli overthinking"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
     except Exception:
         pass
 

@@ -166,6 +166,42 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 
 ---
 
+## ✅ 实时链路验证（Gateway + Loops）
+
+建议每次升级后按以下清单做一次健康检查：
+
+1. **启动守护进程并确认子进程**
+```bash
+./.venv/bin/swarmbot daemon start
+pgrep -af "swarmbot.daemon|swarmbot.cli gateway|swarmbot.cli overthinking"
+```
+
+2. **检查网关日志四段链路**
+- 收到消息：`[Feishu] Received message ...`
+- 推理执行：`[InferenceLoop] Start: ...`
+- 出站发布：`publish_outbound` 后续日志
+- 飞书发送：`Feishu message sent ...` 或 fallback 文本发送日志
+
+3. **检查 Inference Tool Call**
+- 观察 `[CoT] ... calls tool: ...` 日志，确认 `whiteboard_update` / `context_policy_update` / `skill_summary` / `skill_load` 可调用。
+
+4. **检查 EvoMap / Whiteboard（MemoryMap）**
+- 本项目中的 EvoMap 对应 `MemoryMap/Whiteboard`。
+- 通过工具调用写入并验证键值（如 `evomap_status=ready`）可确认可用。
+
+5. **检查后台双环**
+- Overthinking 周期日志：`[Overthinking] Cycle ... Added N entries to Cold Memory.`
+- Overaction 周期日志：`[Overaction] Cycle ...` 与 Warm Memory 清理日志。
+
+6. **关键日志路径**
+```bash
+tail -n 200 ~/.swarmbot/logs/daemon_gateway.log
+tail -n 200 ~/.swarmbot/logs/gateway.log
+cat ~/.swarmbot/daemon_state.json
+```
+
+---
+
 ## 📖 文档
 
 *   **[架构详解 (Architecture)](docs/ARCHITECTURE.md)**: 深入了解 Swarmbot 的核心循环、三层记忆系统和多 Agent 编排机制。
