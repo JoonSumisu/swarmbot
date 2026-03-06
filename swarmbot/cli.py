@@ -403,11 +403,19 @@ def cmd_update() -> None:
 
 
 def cmd_daemon(args: argparse.Namespace) -> None:
-    from .config_manager import CONFIG_HOME
+    from .config_manager import CONFIG_HOME, load_config, save_config
     pid_file = os.path.join(CONFIG_HOME, "daemon.pid")
+    state_file = os.path.join(CONFIG_HOME, "daemon_state.json")
     if args.action == "start":
         try:
             cmd_onboard()
+        except Exception:
+            pass
+        try:
+            cfg = load_config()
+            cfg.daemon.manage_gateway = True
+            cfg.daemon.manage_overthinking = True
+            save_config(cfg)
         except Exception:
             pass
         if os.path.exists(pid_file):
@@ -436,16 +444,57 @@ def cmd_daemon(args: argparse.Namespace) -> None:
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
-        try:
-            with open(pid_file, "w", encoding="utf-8") as f:
-                f.write(str(proc.pid))
-        except Exception:
-            pass
         time.sleep(0.8)
         if proc.poll() is not None:
             print("Swarmbot daemon 启动失败，请检查 ~/.swarmbot/logs/daemon_gateway.log")
             return
-        print(f"Swarmbot daemon 已启动，PID={proc.pid}")
+        daemon_pid = None
+        for _ in range(20):
+            try:
+                if os.path.exists(pid_file):
+                    with open(pid_file, "r", encoding="utf-8") as f:
+                        pid_txt = (f.read() or "").strip()
+                    pid_val = int(pid_txt or "0")
+                    if pid_val > 0:
+                        daemon_pid = pid_val
+                        break
+            except Exception:
+                pass
+            time.sleep(0.2)
+        gateway_ready = False
+        for _ in range(30):
+            try:
+                if os.path.exists(state_file):
+                    with open(state_file, "r", encoding="utf-8") as f:
+                        state = json.load(f)
+                    gw_pid = (
+                        ((state.get("services") or {}).get("gateway") or {}).get("pid")
+                    )
+                    if gw_pid:
+                        gateway_ready = True
+                        break
+            except Exception:
+                pass
+            time.sleep(0.5)
+        if not gateway_ready:
+            try:
+                subprocess.Popen(
+                    [sys.executable, "-m", "swarmbot.cli", "gateway"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception:
+                pass
+            if daemon_pid:
+                print(f"Swarmbot daemon 已启动(PID={daemon_pid})，但未检测到 gateway 进程，已触发兜底拉起。")
+            else:
+                print("Swarmbot daemon 已启动，但未检测到 gateway 进程，已触发兜底拉起。")
+            return
+        if daemon_pid:
+            print(f"Swarmbot daemon 已启动，PID={daemon_pid}")
+        else:
+            print("Swarmbot daemon 已启动")
     elif args.action == "shutdown":
         if not os.path.exists(pid_file):
             print("Swarmbot daemon 未在运行。")

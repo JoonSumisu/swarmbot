@@ -15,14 +15,17 @@ Input Prompt:
 {user_input}
 
 Task:
-1. **Goal Identification**: What is the ultimate state change desired? (e.g., "Car becomes clean").
+1. **Goal Identification**: What is the ultimate state change desired?
 2. **Object/Location State Analysis**:
-   - Where is the subject (User)? Where is the object (Car)?
+   - Where is the subject? Where is the required object/resource?
    - Where does the action need to take place?
-   - **CRITICAL**: If the action requires the object to be at a specific location, how does it get there?
+   - **CRITICAL**: If the action requires prerequisites, verify how they are satisfied.
 3. **Modal/Physical Constraints**:
-   - Necessity (□): What *must* happen for the goal to be achieved? (e.g., "Car must move to wash").
-   - Possibility (◇): What implies a failure? (e.g., "Walking leaves car behind").
+   - Necessity (□): What *must* happen for the goal to be achieved?
+   - Possibility (◇): What would make the goal fail?
+4. **Domain Grounding**:
+   - Use only entities present in the user's input or provided context.
+   - Do not introduce unrelated templates or fixed scenarios.
 
 Output JSON:
 {{
@@ -50,9 +53,10 @@ Analysis:
 {analysis_json}
 
 Task:
-1. **Epistemic Check**: Do we know the location of the car? Do we know if "walking" transports the car?
-2. **Constraint Verification**: confirm if the proposed action (e.g., walking) violates the necessary physical constraint (moving the car).
-3. **Synthesize**: Combine facts to support or refute the user's options.
+1. **Epistemic Check**: what facts are known vs unknown in current context?
+2. **Constraint Verification**: verify whether proposed options satisfy mandatory constraints.
+3. **Synthesize**: combine facts to support or refute user options.
+4. **Domain Grounding**: avoid introducing entities not present in user input/context.
 
 Output JSON:
 {{
@@ -74,17 +78,21 @@ Whiteboard Info:
 
 Task:
 1. **Strategy Selection**: Choose the path that satisfies ALL physical constraints.
-   - If Option A (Walk) violates Constraint X (Car must move), discard it or flag it as impossible.
-   - If Option B (Drive) satisfies constraints, prioritize it despite costs.
+   - Discard options that violate hard constraints.
+   - If multiple options satisfy constraints, rank by user goals (time/cost/risk/quality).
 2. **Task Generation**: Create specific reasoning tasks to explain *why* an option is chosen.
-   - Do NOT create generic "analysis" tasks. Create specific checks like "Verify if walking transports vehicle".
+   - Do NOT create generic "analysis" tasks.
+   - Keep tasks domain-grounded to the user's real question.
+3. **Efficiency Constraint**:
+   - Keep plan within 1-3 tasks.
+   - Prefer directly answering the user request when no external action is required.
 
 Output JSON:
 {{
   "strategy_rationale": "...",
   "tasks": [
-    {{"id": 1, "desc": "Check if walking moves the car to the destination", "worker": "reasoner", "tool": "none"}},
-    {{"id": 2, "desc": "Compare total time including vehicle transport", "worker": "analyst", "tool": "none"}}
+    {{"id": 1, "desc": "Verify mandatory prerequisites for the selected option", "worker": "reasoner", "tool": "none"}},
+    {{"id": 2, "desc": "Compare feasible options under user objectives", "worker": "analyst", "tool": "none"}}
   ]
 }}
 """
@@ -100,6 +108,9 @@ Task:
 1. **Derivation**: Treat the subtask as a theorem to be proved or a goal to be derived.
 2. **Execution**: Use tools to perform the necessary steps.
 3. **Sanity Check**: Verify the result against real-world physics and logic.
+4. **Relevance Rule**:
+   - Do not switch domains or introduce unrelated scenarios.
+   - Do not generate files/tests unless the user explicitly requests file creation.
 
 Output your conclusion or result.
 """
@@ -119,6 +130,7 @@ Task:
 2. **Logical Consistency**: Check for contradictions.
 3. **Factuality**: Verify against known truths.
 4. Vote PASS only if logical and factual integrity is maintained.
+5. Keep reason concise and actionable.
 
 Output JSON ONLY:
 {{
@@ -143,6 +155,7 @@ Persona (Soul): {soul_content}
 Task:
 Synthesize the rigorous logical analysis into a clear, empathetic, and helpful response.
 Maintain the persona but ensure the underlying logic is sound.
+The final answer must stay strictly within the user's asked domain and avoid unrelated carry-over context.
 """
 
 STEP_ORGANIZATION_PROMPT = """
