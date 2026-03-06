@@ -57,6 +57,7 @@ Task:
 2. **Constraint Verification**: verify whether proposed options satisfy mandatory constraints.
 3. **Synthesize**: combine facts to support or refute user options.
 4. **Domain Grounding**: avoid introducing entities not present in user input/context.
+5. **Memory Filtering**: ignore stale memory/examples whose entities do not overlap with current user query.
 
 Output JSON:
 {{
