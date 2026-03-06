@@ -57,7 +57,11 @@ This environment is externally managed
 
 这是 Python 对“系统级 Python 环境”的保护机制（常见于 Homebrew / OS 发行版），为了避免把依赖装进系统 Python 导致环境损坏。解决方式是：**永远安装到虚拟环境（venv）**。
 
-本项目内置了跨平台的安装脚本，会在仓库目录创建 `.venv/` 并把 swarmbot 安装进去（不污染系统 Python）。
+本项目内置了跨平台安装脚本，默认会优先做“**直接安装**”（无需手动激活 venv）：
+
+- 优先使用 `pipx` 安装为全局可执行命令 `swarmbot`
+- 若无 `pipx`，尝试 `pip --user` 安装
+- 若都失败，再回退到 `.venv/` 安装
 
 **推荐（跨平台）**
 
@@ -65,6 +69,19 @@ This environment is externally managed
 git clone https://github.com/JoonSumisu/swarmbot.git
 cd swarmbot
 python3 scripts/bootstrap.py
+```
+
+你也可以明确指定安装模式：
+
+```bash
+# 直接安装（推荐，命令可直接用）
+python3 scripts/bootstrap.py --mode pipx
+
+# 用户目录安装（不进 venv）
+python3 scripts/bootstrap.py --mode user
+
+# 传统 venv 安装
+python3 scripts/bootstrap.py --mode venv
 ```
 
 **macOS / Linux（可选）**
@@ -79,10 +96,17 @@ bash scripts/bootstrap.sh
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 ```
 
-安装完成后，后续命令建议使用 venv 内的可执行文件：
+安装完成后，优先直接使用：
+
+```bash
+swarmbot --help
+```
+
+若你选择了 `venv` 模式，再使用：
 
 ```bash
 ./.venv/bin/swarmbot --help
+source ./.venv/bin/activate
 ```
 
 ### 2. 首次启动（Onboarding）

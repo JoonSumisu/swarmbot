@@ -34,12 +34,24 @@ On macOS (Homebrew Python) or distro-managed Python, pip may show:
 This environment is externally managed
 ```
 
-Always install into a virtual environment. This repo includes bootstrap scripts to create `.venv/` and install Swarmbot without touching system Python.
+This repo includes a bootstrap installer with a direct-install-first strategy:
+
+- Prefer `pipx` (global `swarmbot` command, no manual venv activation)
+- Fallback to `pip --user`
+- Final fallback to `.venv`
 
 ```bash
 git clone https://github.com/JoonSumisu/swarmbot.git
 cd swarmbot
 python3 scripts/bootstrap.py
+```
+
+You can also force a specific mode:
+
+```bash
+python3 scripts/bootstrap.py --mode pipx
+python3 scripts/bootstrap.py --mode user
+python3 scripts/bootstrap.py --mode venv
 ```
 
 Optional:
@@ -49,11 +61,15 @@ bash scripts/bootstrap.sh
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 ```
 
-After installation:
+After installation (pipx/user mode):
+```bash
+swarmbot --help
+swarmbot daemon start
+```
+
+If you use `venv` mode:
 ```bash
 ./.venv/bin/swarmbot --help
-./.venv/bin/swarmbot daemon start
-# or activate venv to run `swarmbot` directly:
 source ./.venv/bin/activate
 ```
 
