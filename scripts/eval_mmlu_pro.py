@@ -46,7 +46,7 @@ def extract_answer(text):
 
 # --- Evaluation Logic ---
 
-def run_mmlu_pro_comparison(num_samples=10):
+def run_mmlu_pro_comparison(start_idx=0, num_samples=30):
     print("Initializing...")
     cfg = load_config()
     # Ensure model is set correctly
@@ -66,11 +66,11 @@ def run_mmlu_pro_comparison(num_samples=10):
         print(f"Dataset Load Failed: {e}")
         return
 
-    print(f"Dataset size: {len(ds)}. Testing first {num_samples} samples.")
+    print(f"Dataset size: {len(ds)}. Testing samples {start_idx} to {start_idx+num_samples}.")
     
     results = []
     
-    for i in range(min(num_samples, len(ds))):
+    for i in range(start_idx, min(start_idx + num_samples, len(ds))):
         sample = ds[i]
         # Swarmbot expects prompt
         # Pure expects prompt
@@ -157,4 +157,4 @@ def run_mmlu_pro_comparison(num_samples=10):
     print("="*100)
 
 if __name__ == "__main__":
-    run_mmlu_pro_comparison()
+    run_mmlu_pro_comparison(start_idx=10, num_samples=30)
