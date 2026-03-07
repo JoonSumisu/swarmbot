@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README_EN.md)
 
-**Swarmbot (v0.5.5)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
+**Swarmbot (v0.5.7)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
 
 它集成了 **QMD 四层记忆系统**（白板、热记忆、温记忆、冷记忆）与 **三环自进化架构**（推理、反思、行动），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互。
 
@@ -14,7 +14,7 @@
 
 - 开发/实验目录说明见 [WORKSPACE_LAYOUT.md](WORKSPACE_LAYOUT.md)
 
-## 🌟 版本 v0.5.5 更新亮点
+## 🌟 版本 v0.5.7 更新亮点
 
 *   **3-Loop Architecture**: 
     *   **Inference Loop**: 8 步标准推理（分析-搜集-规划-执行-评估-转译-整理）。
@@ -233,9 +233,63 @@ cat ~/.swarmbot/daemon_state.json
 
 ---
 
+## 🧩 关键设计细节（Docs 摘要）
+
+### 1) Loop Profile 与 Worker 自动分配
+
+Inference Loop 固定 8 个 phase，但不同 profile 会自动调整 worker 数、上下文窗口和重试次数：
+
+| Profile | analysis_workers | collection_workers | evaluation_workers | max_eval_loops | context_limit |
+|:--|--:|--:|--:|--:|--:|
+| `lean` | 1 | 1 | 2 | 2 | 3500 |
+| `balanced` (默认推荐) | 2 | 2 | 3 | 3 | 6000 |
+| `swarm_max` | 3 | 3 | 3 | 3 | 9000 |
+
+在 `auto` 模式下，系统会先做分析，再通过 3 次无工具投票多数决选择 profile，避免单次抖动误判。
+
+### 2) 多 Worker 并行策略
+
+- Analysis / Collection / Evaluation 使用并行 worker。
+- Inference Step 会对 plan 中的多 task 并行执行（不是串行逐个执行）。
+- 当单次 LLM 返回多个 `tool_calls` 时，会按调用数量并发执行工具。
+- Tool Gate / Profile Gate 的多次投票请求为并行发起。
+
+这意味着：只要某个 phase 分配了 N 个 worker，就会并发发起 N 路请求（受运行时资源与服务端限流影响）。
+
+### 3) Overthinking / Overaction 自动运行机制
+
+- `swarmbot gateway` 启动时，如果 `overthinking.enabled=true`，会自动拉起：
+  - Overthinking Loop（默认 30 分钟周期）
+  - Overaction Loop（默认 60 分钟周期）
+- `swarmbot daemon start` 在默认配置下会托管并自愈：
+  - Gateway 进程
+  - Overthinking 进程
+
+建议线上采用 daemon 模式，以获得自动重启和状态托管能力。
+
+### 4) Runtime Guards（推理链路保护）
+
+- 每条入站消息使用隔离的 `InferenceLoop` 实例，避免会话间白板污染。
+- 出站消息异步分发，并对瞬时失败进行重试路径处理。
+- 推理异常时会输出 fallback 回复，避免“吞消息”。
+
+### 5) 推荐模型配置（本地 OpenAI 兼容）
+
+```bash
+./.venv/bin/swarmbot provider add \
+  --base-url "http://127.0.0.1:8000/v1" \
+  --api-key "local-key" \
+  --model "qwen3-coder-next" \
+  --max-tokens 64000
+```
+
+---
+
 ## 📖 文档
 
 *   **[架构详解 (Architecture)](docs/ARCHITECTURE.md)**: 深入了解 Swarmbot 的核心循环、三层记忆系统和多 Agent 编排机制。
+*   **[Loop 优化方案](docs/LOOP_PROFILE_PLAN.md)**: 分析优先、工具门控、Skill 门控和 profile 切换策略。
+*   **[记忆与循环机制详解](docs/memory_and_loop_architecture.md)**: 历史设计脉络、记忆读写和工具编排机制。
 
 ---
 

@@ -247,6 +247,13 @@ class CoreAgent:
                             candidate = matched.group(0)
                             if self._tool_adapter.registry.get_tool(candidate) is not None:
                                 func_name = candidate
+                    if self.ctx.skills and func_name not in self.ctx.skills:
+                        return {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "name": func_name,
+                            "content": f"Tool '{func_name}' is not allowed for this agent.",
+                        }
                     
                     func_args_str = tc.function.arguments
                     print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")

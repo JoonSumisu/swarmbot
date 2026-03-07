@@ -44,7 +44,7 @@ class GatewayServer:
         self._inflight = asyncio.Semaphore(5)
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v0.5.4)...")
+        logger.info("Starting Swarmbot Gateway (v0.5.7)...")
 
         # 1. Initialize Channels
         await self._init_channels()

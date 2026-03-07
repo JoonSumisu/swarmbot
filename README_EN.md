@@ -1,6 +1,6 @@
 # Swarmbot
 
-Swarmbot (v0.5.5) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
+Swarmbot (v0.5.7) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
 
 > Core idea: “All-in-One” — gateway, memory, toolchain, and multi-agent orchestration in one lightweight process.
 
@@ -139,6 +139,30 @@ You can also run:
   - Overthinking Loop (background read-only compression to QMD)
   - Overaction Loop (refine QMD with web, cleanup warm memory, self-optimization)
 
+### Loop Profiles and Worker Allocation
+
+Inference keeps the same 8 phases, while profile controls worker counts, retries, and context budget:
+
+| Profile | analysis_workers | collection_workers | evaluation_workers | max_eval_loops | context_limit |
+|:--|--:|--:|--:|--:|--:|
+| `lean` | 1 | 1 | 2 | 2 | 3500 |
+| `balanced` | 2 | 2 | 3 | 3 | 6000 |
+| `swarm_max` | 3 | 3 | 3 | 3 | 9000 |
+
+In `auto`, the system analyzes first, then selects profile with 3 no-tool votes (majority rule).
+
+### Parallel Execution Model
+
+- Analysis / Collection / Evaluation workers run in parallel.
+- Inference tasks from the plan run in parallel.
+- Multiple `tool_calls` returned in one LLM turn are executed concurrently.
+- Tool-gate/profile-gate voting requests are sent concurrently.
+
+### Auto-Run Behavior (Overthinking / Overaction)
+
+- `swarmbot gateway` starts both loops automatically when `overthinking.enabled=true`.
+- `swarmbot daemon start` manages gateway + overthinking process with restart/self-heal behavior by default.
+
 ---
 
 ## Troubleshooting
@@ -175,6 +199,14 @@ pgrep -af "swarmbot.daemon|swarmbot.cli gateway|swarmbot.cli overthinking"
 5. Validate background loops:
 - Overthinking cycle adds entries into Cold Memory.
 - Overaction cycle runs refinement and warm-memory cleanup.
+
+---
+
+## Docs
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Loop Optimization Plan](docs/LOOP_PROFILE_PLAN.md)
+- [Memory and Loop Architecture](docs/memory_and_loop_architecture.md)
 
 ---
 
