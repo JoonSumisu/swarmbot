@@ -182,6 +182,11 @@ class CoreAgent:
         messages.append({"role": "user", "content": user_input})
         return messages
 
+    def _should_enable_skill_tools(self, user_input: str) -> bool:
+        text = (user_input or "").lower()
+        keys = ["skill", "技能", "skill_summary", "skill_load", "加载技能", "可用技能"]
+        return any(k in text for k in keys)
+
     def step(self, user_input: str) -> str:
         messages = self._build_messages(user_input)
         
@@ -198,15 +203,9 @@ class CoreAgent:
                     if tool_name in self.ctx.skills:
                         tools.append(tool)
             else:
-                # Default behavior: if no skills defined, expose none (or all? Safer to expose none for specialized agents)
-                # But for backward compatibility, if skills is empty dict (default), maybe we expose none?
-                # Or expose base tools?
-                # Let's assume empty skills means NO tools allowed unless specified.
-                # Except maybe for 'master' role which might get all?
-                if self.ctx.role in ["planner", "master"]:
-                     tools = all_tools
-                else:
-                     tools = []
+                tools = []
+        if tools and not self._should_enable_skill_tools(user_input):
+            tools = [t for t in tools if not t["function"]["name"].startswith("skill_")]
         
         # Chain of Thought Logging
         print(f"[CoT] Agent {self.ctx.role} starting thought process...")

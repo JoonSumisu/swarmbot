@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README_EN.md)
 
-**Swarmbot (v0.5.0)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
+**Swarmbot (v0.5.5)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
 
 它集成了 **QMD 四层记忆系统**（白板、热记忆、温记忆、冷记忆）与 **三环自进化架构**（推理、反思、行动），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互。
 
@@ -10,7 +10,11 @@
 
 ---
 
-## 🌟 版本 v0.5.0 更新亮点
+## 📁 目录分层
+
+- 开发/实验目录说明见 [WORKSPACE_LAYOUT.md](WORKSPACE_LAYOUT.md)
+
+## 🌟 版本 v0.5.5 更新亮点
 
 *   **3-Loop Architecture**: 
     *   **Inference Loop**: 8 步标准推理（分析-搜集-规划-执行-评估-转译-整理）。

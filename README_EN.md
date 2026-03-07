@@ -1,6 +1,6 @@
 # Swarmbot
 
-Swarmbot (v0.5.0) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
+Swarmbot (v0.5.5) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
 
 > Core idea: “All-in-One” — gateway, memory, toolchain, and multi-agent orchestration in one lightweight process.
 

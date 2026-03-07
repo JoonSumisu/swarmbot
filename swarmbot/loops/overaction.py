@@ -30,7 +30,11 @@ class OveractionLoop:
         self.llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
         # Overaction agent needs web_search tools
         self.agent = CoreAgent(
-            AgentContext("overactor", "Overaction Agent"),
+            AgentContext(
+                "overactor",
+                "Overaction Agent",
+                skills={"web_search": True, "python_exec": True, "file_read": True, "hot_memory_update": True},
+            ),
             self.llm,
             self.cold_memory,
             hot_memory=self.hot_memory

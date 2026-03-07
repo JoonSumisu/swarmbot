@@ -28,6 +28,7 @@ class InferenceLoop:
         # Load Swarmboot
         self.swarmboot = self._load_boot_file("swarmboot.md")
         self.soul = self._load_boot_file("SOUL.md")
+        self.loop_profile_mode = (os.environ.get("SWARMBOT_LOOP_PROFILE") or "auto").strip().lower()
 
     def _load_boot_file(self, filename: str) -> str:
         paths = [
@@ -39,20 +40,143 @@ class InferenceLoop:
                 return open(p, "r", encoding="utf-8").read()
         return f"Boot file {filename} not found."
 
-    def _create_worker(self, role: str, enable_tools: bool = True) -> CoreAgent:
-        ctx = AgentContext(agent_id=f"worker-{role}-{int(time.time())}", role=role)
+    def _create_worker(self, role: str, enable_tools: bool = True, allowed_tools: List[str] | None = None) -> CoreAgent:
+        skills = {name: True for name in (allowed_tools or [])}
+        ctx = AgentContext(agent_id=f"worker-{role}-{int(time.time())}", role=role, skills=skills)
         # Workers get Cold and Hot memory access
         return CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=enable_tools)
+
+    def _profile_settings(self, profile: str | None = None) -> Dict[str, Any]:
+        active = (profile or self.whiteboard.get("loop_profile") or "balanced").strip().lower()
+        if active == "lean":
+            return {"analysis_workers": 1, "collection_workers": 1, "evaluation_workers": 2, "max_eval_loops": 2, "context_limit": 3500}
+        if active == "swarm_max":
+            return {"analysis_workers": 3, "collection_workers": 3, "evaluation_workers": 3, "max_eval_loops": 3, "context_limit": 9000}
+        return {"analysis_workers": 2, "collection_workers": 2, "evaluation_workers": 3, "max_eval_loops": 3, "context_limit": 6000}
+
+    def _sanitize_tools(self, names: List[str], fallback: List[str]) -> List[str]:
+        valid = {"web_search", "browser_open", "browser_read", "file_read", "python_exec"}
+        cleaned = []
+        for n in names or []:
+            if isinstance(n, str) and n in valid and n not in cleaned:
+                cleaned.append(n)
+        if cleaned:
+            return cleaned
+        return fallback
+
+    def _decide_tool_gate_once(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
+        prompt = (
+            "你是工具门控决策器。你的任务是判断当前阶段是否需要外部工具。\n"
+            f"阶段: {stage}\n"
+            f"用户问题: {user_input}\n"
+            f"上下文摘要: {context_json[:2000]}\n"
+            "判断原则:\n"
+            "1) 若仅靠已有上下文和常识即可高置信回答，则 need_tools=false。\n"
+            "2) 若需要实时信息、外部事实、网页证据、文件读取，need_tools=true。\n"
+            "3) 仅返回必要的最小工具集合。\n"
+            "输出JSON:\n"
+            '{"need_tools": true, "preferred_tools": ["web_search"], "confidence": 0.78, "reason": "..."}'
+        )
+        res = self._create_worker("planner", enable_tools=False).step(prompt)
+        try:
+            data = json.loads(self._extract_json(res))
+            need = bool(data.get("need_tools"))
+            tools = self._sanitize_tools(data.get("preferred_tools") or [], fallback_tools)
+            reason = str(data.get("reason") or "")
+            conf = float(data.get("confidence") or 0.5)
+            conf = 0.0 if conf < 0 else (1.0 if conf > 1 else conf)
+            return {"ok": True, "need_tools": need, "tools": tools, "reason": reason, "confidence": conf}
+        except:
+            return {"ok": False, "need_tools": False, "tools": fallback_tools, "reason": "parse_failed", "confidence": 0.0}
+
+    def _decide_tool_gate(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
+        decisions = [self._decide_tool_gate_once(stage, user_input, context_json, fallback_tools) for _ in range(3)]
+        valid = [d for d in decisions if d.get("ok")]
+        if not valid:
+            return {"need_tools": False, "tools": fallback_tools, "reason": "all_parse_failed", "confidence": 0.0, "mode": "fallback"}
+        true_votes = [d for d in valid if d.get("need_tools")]
+        false_votes = [d for d in valid if not d.get("need_tools")]
+        win_need = len(true_votes) >= len(false_votes)
+        winner = true_votes if win_need else false_votes
+        if not winner:
+            winner = valid
+        merged_tools = self._sanitize_tools(sum([(d.get("tools") or []) for d in winner], []), fallback_tools)
+        avg_conf = sum(float(d.get("confidence") or 0.5) for d in winner) / max(1, len(winner))
+        reason = "; ".join([str(d.get("reason") or "") for d in winner[:2]]).strip("; ")
+        return {
+            "need_tools": win_need,
+            "tools": merged_tools,
+            "reason": f"majority:{reason}",
+            "confidence": round(avg_conf, 3),
+            "mode": "majority_vote",
+        }
+
+    def _decide_loop_profile_once(self) -> Dict[str, Any]:
+        forced = self.loop_profile_mode
+        if forced in ["lean", "balanced", "swarm_max"]:
+            return {"ok": True, "profile": forced, "reason": "forced"}
+        analysis = self.whiteboard.get("problem_analysis")
+        user_input = self.whiteboard.get("input_prompt") or ""
+        prompt = (
+            "你是Loop调度决策器。请在 lean / balanced / swarm_max 中选择一个。\n"
+            f"用户问题: {user_input}\n"
+            f"问题分析: {self._safe_dumps(analysis, max_len=2000)}\n"
+            "选择原则:\n"
+            "- lean: 常识型、低风险、无需外部信息\n"
+            "- balanced: 默认，复杂度中等或不确定\n"
+            "- swarm_max: 高风险、高不确定、需要更强冗余评估\n"
+            '输出JSON: {"profile":"balanced","reason":"...","confidence":0.72}'
+        )
+        res = self._create_worker("planner", enable_tools=False).step(prompt)
+        try:
+            data = json.loads(self._extract_json(res))
+            profile = str(data.get("profile") or "balanced").strip().lower()
+            if profile not in ["lean", "balanced", "swarm_max"]:
+                profile = "balanced"
+            conf = float(data.get("confidence") or 0.5)
+            conf = 0.0 if conf < 0 else (1.0 if conf > 1 else conf)
+            return {"ok": True, "profile": profile, "reason": str(data.get("reason") or ""), "confidence": conf}
+        except:
+            return {"ok": False, "profile": "balanced", "reason": "parse_failed", "confidence": 0.0}
+
+    def _decide_loop_profile(self) -> str:
+        forced = self.loop_profile_mode
+        if forced in ["lean", "balanced", "swarm_max"]:
+            self.whiteboard.update("profile_decision", {"profile": forced, "reason": "forced"})
+            return forced
+        decisions = [self._decide_loop_profile_once() for _ in range(3)]
+        valid = [d for d in decisions if d.get("ok")]
+        if not valid:
+            self.whiteboard.update("profile_decision", {"profile": "balanced", "reason": "all_parse_failed", "mode": "fallback"})
+            return "balanced"
+        counts: Dict[str, int] = {"lean": 0, "balanced": 0, "swarm_max": 0}
+        for d in valid:
+            p = str(d.get("profile") or "balanced")
+            if p in counts:
+                counts[p] += 1
+        best = sorted(counts.items(), key=lambda x: (-x[1], 0 if x[0] == "balanced" else 1))[0][0]
+        winners = [d for d in valid if d.get("profile") == best] or valid
+        avg_conf = sum(float(d.get("confidence") or 0.5) for d in winners) / max(1, len(winners))
+        reason = "; ".join([str(d.get("reason") or "") for d in winners[:2]]).strip("; ")
+        self.whiteboard.update(
+            "profile_decision",
+            {"profile": best, "reason": f"majority:{reason}", "confidence": round(avg_conf, 3), "mode": "majority_vote"},
+        )
+        return best
 
     def run(self, user_input: str, session_id: str) -> str:
         self.whiteboard.clear()
         self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
         self.whiteboard.update("input_prompt", user_input)
+        self.whiteboard.update("loop_profile", self.loop_profile_mode)
         
         print(f"[InferenceLoop] Start: {user_input[:50]}...")
 
         # Step 2: Problem Analysis (No Tools)
         self._step_analysis()
+        selected_profile = self._decide_loop_profile()
+        self.whiteboard.update("loop_profile", selected_profile)
+        settings = self._profile_settings(selected_profile)
         
         # Step 3: Information Collection (Tools Enabled - User Requirement)
         self._step_collection()
@@ -61,7 +185,7 @@ class InferenceLoop:
         self._step_planning()
         
         # Step 5 & 6: Inference & Evaluation (Max 3 Loops with Re-planning)
-        max_eval_loops = 3
+        max_eval_loops = int(settings.get("max_eval_loops", 3))
         for i in range(max_eval_loops):
             self.whiteboard.update("evaluation_report", {"retry_count": i})
             
@@ -90,10 +214,10 @@ class InferenceLoop:
         
         return final_response
 
-    def _run_parallel(self, prompt: str, count: int, role: str, enable_tools: bool = True) -> List[str]:
+    def _run_parallel(self, prompt: str, count: int, role: str, enable_tools: bool = True, allowed_tools: List[str] | None = None) -> List[str]:
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
-            futures = [executor.submit(self._create_worker(role, enable_tools).step, prompt) for _ in range(count)]
+            futures = [executor.submit(self._create_worker(role, enable_tools, allowed_tools).step, prompt) for _ in range(count)]
             for f in concurrent.futures.as_completed(futures):
                 try: results.append(f.result())
                 except Exception as e: print(f"Worker {role} error: {e}")
@@ -101,12 +225,12 @@ class InferenceLoop:
 
     def _step_analysis(self):
         print("[Step 2] Analysis (No Tools)...")
+        settings = self._profile_settings()
         prompt = STEP_ANALYSIS_PROMPT.format(
             user_input=self.whiteboard.get("input_prompt"),
             swarmboot=self.swarmboot
         )
-        # Optimized: enable_tools=False
-        results = self._run_parallel(prompt, 2, "analyst", enable_tools=False)
+        results = self._run_parallel(prompt, int(settings.get("analysis_workers", 2)), "analyst", enable_tools=False)
         # Simple merge of analysis
         merged = {}
         for r in results:
@@ -131,8 +255,10 @@ class InferenceLoop:
             return "{}"
 
     def _step_collection(self):
-        print("[Step 3] Collection (Tools Enabled)...")
+        print("[Step 3] Collection (Analysis First)...")
+        settings = self._profile_settings()
         analysis = self.whiteboard.get("problem_analysis")
+        user_input = self.whiteboard.get("input_prompt") or ""
         # Gather memory snapshots
         hot = self.hot_memory.read()
         warm = self.warm_memory.read_today()
@@ -145,8 +271,7 @@ class InferenceLoop:
             warm_memory=warm[:2000],
             cold_memory=cold[:2000]
         )
-        # Tools Enabled per requirement
-        results = self._run_parallel(prompt, 3, "collector", enable_tools=True)
+        results = self._run_parallel(prompt, int(settings.get("collection_workers", 2)), "collector", enable_tools=False)
         
         merged = {"synthesized_context": "", "memory_references": [], "external_info": ""}
         for r in results:
@@ -156,16 +281,39 @@ class InferenceLoop:
                 merged["memory_references"].extend(data.get("memory_references", []))
                 merged["external_info"] += "\n" + data.get("external_info", "")
             except: pass
+        gate = self._decide_tool_gate(
+            "collection",
+            user_input,
+            self._safe_dumps({"analysis": analysis, "merged": merged}, max_len=2500),
+            ["web_search", "browser_open", "browser_read", "file_read"],
+        )
+        self.whiteboard.update("collection_tool_gate", gate)
+        if gate.get("need_tools"):
+            print("[Step 3b] Collection Tool Pass...")
+            tool_results = self._run_parallel(
+                prompt,
+                1,
+                "collector",
+                enable_tools=True,
+                allowed_tools=gate.get("tools") or ["web_search"],
+            )
+            for r in tool_results:
+                try:
+                    data = json.loads(self._extract_json(r))
+                    merged["synthesized_context"] += "\n" + data.get("synthesized_context", "")
+                    merged["external_info"] += "\n" + data.get("external_info", "")
+                except:
+                    merged["external_info"] += "\n" + str(r)
         self.whiteboard.update("information_gathering", merged)
 
     def _step_planning(self):
         print("[Step 4] Planning (No Tools)...")
+        settings = self._profile_settings()
         info = self.whiteboard.get("information_gathering")
         prompt = STEP_PLANNING_PROMPT.format(
-            info_json=self._safe_dumps(info, max_len=6000),
+            info_json=self._safe_dumps(info, max_len=int(settings.get("context_limit", 6000))),
             swarmboot=self.swarmboot
         )
-        # Optimized: enable_tools=False
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
             plan = json.loads(self._extract_json(res))
@@ -193,25 +341,24 @@ class InferenceLoop:
         except: pass
 
     def _step_inference(self):
-        print("[Step 5] Inference (Tools Enabled)...")
+        print("[Step 5] Inference (Task-Gated Tools)...")
+        settings = self._profile_settings()
         plan = self.whiteboard.get("action_plan")
         context = self.whiteboard.get("information_gathering").get("synthesized_context")
         
         results = []
         for task in plan.get("tasks", []):
             worker_role = task.get("worker", "assistant")
-            # Decide if this specific task needs tools based on description or tool field
-            # Ideally we check task['tool'] != 'none'
-            # But user said "decide... then load".
-            # For simplicity, we enable tools if the plan suggests a tool.
             task_tool = task.get("tool", "none")
             need_tools = task_tool.lower() not in ["none", "null", ""]
-            
-            worker = self._create_worker(worker_role, enable_tools=need_tools)
+            allowed_tools = []
+            if need_tools:
+                allowed_tools = [task_tool] if isinstance(task_tool, str) else []
+            worker = self._create_worker(worker_role, enable_tools=need_tools, allowed_tools=allowed_tools)
             prompt = STEP_INFERENCE_PROMPT.format(
                 role=worker_role,
                 task_desc=task.get("desc"),
-                context=context[:8000] if context else ""  # Truncate context
+                context=context[: int(settings.get("context_limit", 8000))] if context else ""
             )
             res = worker.step(prompt)
             results.append({"task_id": task.get("id"), "result": res})
@@ -219,16 +366,16 @@ class InferenceLoop:
 
     def _step_evaluation(self) -> bool:
         print("[Step 6] Evaluation (No Tools)...")
+        settings = self._profile_settings()
         plan = self.whiteboard.get("action_plan")
         results = self.whiteboard.get("inference_conclusions")
         
         prompt = STEP_EVALUATION_PROMPT.format(
             plan_json=self._safe_dumps(plan),
-            results_json=self._safe_dumps(results, max_len=2000),  # Aggressively truncate individual results
+            results_json=self._safe_dumps(results, max_len=2000),
             swarmboot=self.swarmboot
         )
-        # Optimized: enable_tools=False
-        evals = self._run_parallel(prompt, 3, "evaluator", enable_tools=False)
+        evals = self._run_parallel(prompt, int(settings.get("evaluation_workers", 3)), "evaluator", enable_tools=False)
         
         pass_count = 0
         reasons = []
@@ -244,15 +391,26 @@ class InferenceLoop:
         return passed
 
     def _step_translation(self) -> str:
-        print("[Step 7] Translation (Tools Enabled)...")
+        print("[Step 7] Translation (No Tools by Default)...")
         conclusions = self.whiteboard.get("inference_conclusions")
         prompt = STEP_TRANSLATION_PROMPT.format(
             user_input=self.whiteboard.get("input_prompt"),
             conclusions_json=self._safe_dumps(conclusions, max_len=2000),
             soul_content=self.soul
         )
-        # Tools Enabled per requirement
-        res = self._create_worker("master", enable_tools=True).step(prompt)
+        user_input = self.whiteboard.get("input_prompt") or ""
+        gate = self._decide_tool_gate(
+            "translation",
+            user_input,
+            self._safe_dumps(conclusions, max_len=1800),
+            ["web_search", "browser_open", "browser_read"],
+        )
+        self.whiteboard.update("translation_tool_gate", gate)
+        res = self._create_worker(
+            "master",
+            enable_tools=bool(gate.get("need_tools")),
+            allowed_tools=gate.get("tools") or [],
+        ).step(prompt)
         if isinstance(res, str) and res.strip():
             return res
         return "我建议先满足前置条件，再执行目标动作。"
