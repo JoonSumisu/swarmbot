@@ -44,7 +44,7 @@ class OpenAICompatibleClient:
                     base_url=p.base_url,
                     api_key=p.api_key,
                     model=p.model,
-                    timeout=120.0,
+                    timeout=300.0,  # Increased timeout from 120.0 to 300.0 for complex tasks
                     max_tokens=p.max_tokens,
                     temperature=p.temperature,
                 ))
@@ -54,7 +54,7 @@ class OpenAICompatibleClient:
                 base_url=provider.base_url,
                 api_key=provider.api_key,
                 model=provider.model,
-                timeout=120.0,
+                timeout=300.0,  # Increased timeout from 120.0 to 300.0
                 max_tokens=provider.max_tokens,
                 temperature=provider.temperature,
             ))

@@ -272,7 +272,13 @@ class CoreAgent:
 
                 if tool_calls:
                     # Use ThreadPoolExecutor for parallel execution
-                    with ThreadPoolExecutor(max_workers=min(len(tool_calls), 5)) as executor:
+                    # Max workers should scale with tool calls, capped at reasonable limit (e.g. 10)
+                    # User requested: "request as many as allocated workers".
+                    # Here we are inside one agent step executing multiple tools.
+                    # We should allow all of them to run if possible.
+                    max_workers = min(len(tool_calls), 10)
+                    
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
                         # Map tool calls to futures
                         # Maintain order if needed? Messages order usually doesn't strictly matter for different tool calls,
                         # but keeping them in order of tool_calls list is safer for deterministic history.

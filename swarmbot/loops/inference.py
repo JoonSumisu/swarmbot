@@ -90,10 +90,15 @@ class InferenceLoop:
             return {"ok": False, "need_tools": False, "tools": fallback_tools, "reason": "parse_failed", "confidence": 0.0}
 
     def _decide_tool_gate(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        # Determine number of votes/workers based on profile
+        # Default to 3 for majority voting, but can scale if needed.
+        # Currently the logic relies on 3 votes for simple majority.
+        vote_count = 3
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=vote_count) as executor:
             futures = [
                 executor.submit(self._decide_tool_gate_once, stage, user_input, context_json, fallback_tools)
-                for _ in range(3)
+                for _ in range(vote_count)
             ]
             decisions = [f.result() for f in concurrent.futures.as_completed(futures)]
         
