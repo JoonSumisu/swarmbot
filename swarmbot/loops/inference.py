@@ -42,7 +42,7 @@ class InferenceLoop:
 
     def _create_worker(self, role: str, enable_tools: bool = True, allowed_tools: List[str] | None = None) -> CoreAgent:
         skills = {name: True for name in (allowed_tools or [])}
-        ctx = AgentContext(agent_id=f"worker-{role}-{int(time.time())}", role=role, skills=skills)
+        ctx = AgentContext(agent_id=f"worker-{role}-{time.time_ns()}", role=role, skills=skills)
         # Workers get Cold and Hot memory access
         return CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=enable_tools)
 
@@ -307,7 +307,7 @@ class InferenceLoop:
             print("[Step 3b] Collection Tool Pass...")
             tool_results = self._run_parallel(
                 prompt,
-                1,
+                int(settings.get("collection_workers", 2)),
                 "collector",
                 enable_tools=True,
                 allowed_tools=gate.get("tools") or ["web_search"],
@@ -361,14 +361,18 @@ class InferenceLoop:
         plan = self.whiteboard.get("action_plan")
         context = self.whiteboard.get("information_gathering").get("synthesized_context")
         
-        results = []
-        for task in plan.get("tasks", []):
+        tasks = plan.get("tasks", []) or []
+        if not tasks:
+            self.whiteboard.update("inference_conclusions", [])
+            return
+
+        def run_task(task: Dict[str, Any]) -> Dict[str, Any]:
             worker_role = task.get("worker", "assistant")
             task_tool = task.get("tool", "none")
-            need_tools = task_tool.lower() not in ["none", "null", ""]
-            allowed_tools = []
-            if need_tools:
-                allowed_tools = [task_tool] if isinstance(task_tool, str) else []
+            need_tools = isinstance(task_tool, str) and task_tool.lower() not in ["none", "null", ""]
+            allowed_tools: List[str] = []
+            if need_tools and isinstance(task_tool, str):
+                allowed_tools = [task_tool]
             worker = self._create_worker(worker_role, enable_tools=need_tools, allowed_tools=allowed_tools)
             prompt = STEP_INFERENCE_PROMPT.format(
                 role=worker_role,
@@ -376,7 +380,17 @@ class InferenceLoop:
                 context=context[: int(settings.get("context_limit", 8000))] if context else ""
             )
             res = worker.step(prompt)
-            results.append({"task_id": task.get("id"), "result": res})
+            return {"task_id": task.get("id"), "result": res}
+
+        max_workers = len(tasks)
+        results: List[Dict[str, Any]] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(run_task, task) for task in tasks]
+            for f in concurrent.futures.as_completed(futures):
+                try:
+                    results.append(f.result())
+                except Exception as e:
+                    print(f"Worker inference error: {e}")
         self.whiteboard.update("inference_conclusions", results)
 
     def _step_evaluation(self) -> bool:

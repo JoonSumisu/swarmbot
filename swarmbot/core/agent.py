@@ -271,12 +271,7 @@ class CoreAgent:
                     }
 
                 if tool_calls:
-                    # Use ThreadPoolExecutor for parallel execution
-                    # Max workers should scale with tool calls, capped at reasonable limit (e.g. 10)
-                    # User requested: "request as many as allocated workers".
-                    # Here we are inside one agent step executing multiple tools.
-                    # We should allow all of them to run if possible.
-                    max_workers = min(len(tool_calls), 10)
+                    max_workers = len(tool_calls)
                     
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
                         # Map tool calls to futures
