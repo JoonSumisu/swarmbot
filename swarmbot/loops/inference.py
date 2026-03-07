@@ -90,7 +90,13 @@ class InferenceLoop:
             return {"ok": False, "need_tools": False, "tools": fallback_tools, "reason": "parse_failed", "confidence": 0.0}
 
     def _decide_tool_gate(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
-        decisions = [self._decide_tool_gate_once(stage, user_input, context_json, fallback_tools) for _ in range(3)]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                executor.submit(self._decide_tool_gate_once, stage, user_input, context_json, fallback_tools)
+                for _ in range(3)
+            ]
+            decisions = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
             return {"need_tools": False, "tools": fallback_tools, "reason": "all_parse_failed", "confidence": 0.0, "mode": "fallback"}
@@ -144,7 +150,11 @@ class InferenceLoop:
         if forced in ["lean", "balanced", "swarm_max"]:
             self.whiteboard.update("profile_decision", {"profile": forced, "reason": "forced"})
             return forced
-        decisions = [self._decide_loop_profile_once() for _ in range(3)]
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(self._decide_loop_profile_once) for _ in range(3)]
+            decisions = [f.result() for f in concurrent.futures.as_completed(futures)]
+            
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
             self.whiteboard.update("profile_decision", {"profile": "balanced", "reason": "all_parse_failed", "mode": "fallback"})

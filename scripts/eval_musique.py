@@ -46,10 +46,12 @@ def evaluate_answer(prediction, ground_truth, aliases=[]):
 
 # --- Evaluation Logic ---
 
-def run_musique_comparison(num_samples=30):
+def run_musique_comparison(num_samples=15):
     print("Initializing...")
     cfg = load_config()
-    cfg.providers[0].model = 'agentcpm-explore'
+    # Update to Qwen-Coder model as requested
+    cfg.providers[0].model = 'qwen3-coder-next'
+    cfg.providers[0].max_tokens = 64000
     
     try:
         llm = OpenAICompatibleClient.from_provider(providers=cfg.providers)
@@ -157,7 +159,7 @@ def run_musique_comparison(num_samples=30):
 
     # --- Report ---
     print("\n" + "="*100)
-    print(f"MuSiQue COMPARISON REPORT: Pure AgentCPM vs Swarmbot (Random 30)")
+    print(f"MuSiQue COMPARISON REPORT: Pure Qwen-Coder vs Swarmbot (Random 30)")
     print("="*100)
     print(f"{'ID':<6} | {'Truth':<20} | {'PureOK':<6} | {'SwarmOK':<6} | {'Time(P/S)':<12}")
     print("-" * 100)
@@ -179,4 +181,4 @@ def run_musique_comparison(num_samples=30):
     print("="*100)
 
 if __name__ == "__main__":
-    run_musique_comparison()
+    run_musique_comparison(num_samples=15)

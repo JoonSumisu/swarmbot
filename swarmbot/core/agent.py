@@ -233,8 +233,13 @@ class CoreAgent:
                     break
 
                 messages.append(self._message_to_dict(message))
-                for tool_call in tool_calls:
-                    func_name = tool_call.function.name
+                
+                # Execute tools in parallel
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                
+                def execute_single_tool(tc):
+                    func_name = tc.function.name
+                    # Tool name sanitization
                     if self._tool_adapter.registry.get_tool(func_name) is None:
                         import re
                         matched = re.match(r"[A-Za-z0-9_]+", func_name or "")
@@ -242,7 +247,8 @@ class CoreAgent:
                             candidate = matched.group(0)
                             if self._tool_adapter.registry.get_tool(candidate) is not None:
                                 func_name = candidate
-                    func_args_str = tool_call.function.arguments
+                    
+                    func_args_str = tc.function.arguments
                     print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")
 
                     try:
@@ -256,15 +262,37 @@ class CoreAgent:
                         
                     result = self._tool_adapter.execute(func_name, func_args, context=tool_context)
                     print(f"[CoT] Tool result: {str(result)[:100]}...")
+                    
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": func_name,
+                        "content": str(result),
+                    }
 
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": func_name,
-                            "content": str(result),
-                        }
-                    )
+                if tool_calls:
+                    # Use ThreadPoolExecutor for parallel execution
+                    with ThreadPoolExecutor(max_workers=min(len(tool_calls), 5)) as executor:
+                        # Map tool calls to futures
+                        # Maintain order if needed? Messages order usually doesn't strictly matter for different tool calls,
+                        # but keeping them in order of tool_calls list is safer for deterministic history.
+                        # So we use map or submit and collect in order.
+                        futures = [executor.submit(execute_single_tool, tc) for tc in tool_calls]
+                        
+                        # Collect results in order
+                        for future in futures:
+                            try:
+                                msg = future.result()
+                                messages.append(msg)
+                            except Exception as e:
+                                print(f"[Agent {self.ctx.role}] Tool Execution Error: {e}")
+                                # Append error message to history to avoid hanging LLM state
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": "unknown", # We might lose ID if future fails before returning it
+                                    "name": "unknown",
+                                    "content": f"Error: {str(e)}"
+                                })
 
                 completion_kwargs["messages"] = messages
             else:
