@@ -86,6 +86,9 @@ python3 scripts/bootstrap.py --mode user
 
 # 传统 venv 安装
 python3 scripts/bootstrap.py --mode venv
+
+# 开发调试（editable，代码改动即时生效）
+python3 scripts/bootstrap.py --editable
 ```
 
 **macOS / Linux（可选）**

@@ -21,7 +21,7 @@ def _run(cmd: list[str], cwd: Path) -> None:
     subprocess.check_call(cmd, cwd=str(cwd))
 
 
-def _install_venv(repo_root: Path) -> None:
+def _install_venv(repo_root: Path, editable: bool = True) -> None:
     venv_dir = repo_root / ".venv"
     print(f"[swarmbot] venv: {venv_dir}")
     if not venv_dir.exists():
@@ -32,8 +32,12 @@ def _install_venv(repo_root: Path) -> None:
         raise RuntimeError(f"venv python not found: {vpy}")
     print("[swarmbot] upgrading pip/setuptools/wheel ...")
     _run([str(vpy), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], cwd=repo_root)
-    print("[swarmbot] installing swarmbot into venv (editable) ...")
-    _run([str(vpy), "-m", "pip", "install", "-e", "."], cwd=repo_root)
+    if editable:
+        print("[swarmbot] installing swarmbot into venv (editable) ...")
+        _run([str(vpy), "-m", "pip", "install", "-e", "."], cwd=repo_root)
+    else:
+        print("[swarmbot] installing swarmbot into venv ...")
+        _run([str(vpy), "-m", "pip", "install", "."], cwd=repo_root)
     sb = _venv_bin(venv_dir, "swarmbot")
     print()
     print("[swarmbot] done (venv mode)")
@@ -49,12 +53,16 @@ def _install_venv(repo_root: Path) -> None:
         print(f"  {vpy} -m swarmbot.cli --help")
 
 
-def _install_pipx(repo_root: Path) -> bool:
+def _install_pipx(repo_root: Path, editable: bool = False) -> bool:
     pipx = shutil.which("pipx")
     if not pipx:
         return False
     print("[swarmbot] installing with pipx ...")
-    _run([pipx, "install", "--force", str(repo_root)], cwd=repo_root)
+    cmd = [pipx, "install", "--force"]
+    if editable:
+        cmd.append("--editable")
+    cmd.append(str(repo_root))
+    _run(cmd, cwd=repo_root)
     print()
     print("[swarmbot] done (pipx mode)")
     print("  swarmbot --help")
@@ -63,11 +71,15 @@ def _install_pipx(repo_root: Path) -> bool:
     return True
 
 
-def _install_user(repo_root: Path) -> bool:
+def _install_user(repo_root: Path, editable: bool = False) -> bool:
     print("[swarmbot] installing with pip --user ...")
     try:
         _run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], cwd=repo_root)
-        _run([sys.executable, "-m", "pip", "install", "--user", "."], cwd=repo_root)
+        cmd = [sys.executable, "-m", "pip", "install", "--user"]
+        if editable:
+            cmd.append("-e")
+        cmd.append(".")
+        _run(cmd, cwd=repo_root)
     except Exception:
         return False
     user_base = Path(
@@ -93,33 +105,43 @@ def main() -> int:
         default="auto",
         help="安装模式: auto 优先 pipx, 其次 user, 最后 venv",
     )
+    parser.add_argument(
+        "--editable",
+        action="store_true",
+        help="以 editable 模式安装（开发调试推荐）",
+    )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parent.parent
 
     print(f"[swarmbot] repo: {repo_root}")
 
     if args.mode == "pipx":
-        if _install_pipx(repo_root):
+        if _install_pipx(repo_root, editable=args.editable):
             return 0
         print("[swarmbot] pipx 未安装，安装失败。")
         return 1
 
     if args.mode == "user":
-        if _install_user(repo_root):
+        if _install_user(repo_root, editable=args.editable):
             return 0
         print("[swarmbot] user 模式安装失败。")
         return 1
 
     if args.mode == "venv":
-        _install_venv(repo_root)
+        _install_venv(repo_root, editable=args.editable or True)
         return 0
 
-    if _install_pipx(repo_root):
+    if args.editable:
+        print("[swarmbot] auto + editable: 使用 venv editable 安装。")
+        _install_venv(repo_root, editable=True)
         return 0
-    if _install_user(repo_root):
+
+    if _install_pipx(repo_root, editable=False):
+        return 0
+    if _install_user(repo_root, editable=False):
         return 0
     print("[swarmbot] auto 模式回退到 venv 安装。")
-    _install_venv(repo_root)
+    _install_venv(repo_root, editable=False)
     return 0
 
 
