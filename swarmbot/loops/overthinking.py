@@ -9,6 +9,7 @@ from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
 from ..config_manager import load_config
 from .definitions import OVERTHINKING_PROMPT
+from .overaction import OveractionLoop
 
 class OverthinkingLoop:
     """
@@ -32,6 +33,7 @@ class OverthinkingLoop:
             self.llm,
             self.cold_memory
         )
+        self._ext_state_path = os.path.join(workspace, "external_checks_state.json")
 
     def start(self):
         t = threading.Thread(target=self._loop, daemon=True)
@@ -98,3 +100,53 @@ class OverthinkingLoop:
                 print(f"[Overthinking] No JSON found in response: {res[:100]}...")
         except Exception as e:
             print(f"[Overthinking] Failed to parse compression result: {e}")
+        self._run_external_checks()
+
+    def _load_ext_state(self) -> dict:
+        try:
+            if os.path.exists(self._ext_state_path):
+                with open(self._ext_state_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except:
+            pass
+        return {"last_check": {}}
+
+    def _save_ext_state(self, state: dict) -> None:
+        try:
+            with open(self._ext_state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except:
+            pass
+
+    def _run_external_checks(self) -> None:
+        ext_cfg = getattr(self.config.overthinking, "external_checks", {}) or {}
+        if not bool(ext_cfg.get("enabled", False)):
+            return
+        state = self._load_ext_state()
+        now = int(time.time())
+        events = []
+        source_file = os.path.join(os.path.expanduser("~/.swarmbot/workspace"), "external_events.json")
+        if os.path.exists(source_file):
+            try:
+                with open(source_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for item in data if isinstance(data, list) else []:
+                    ts = int(item.get("ts", 0))
+                    if ts > int(state.get("last_check", {}).get("events_file", 0)):
+                        events.append(item)
+                state.setdefault("last_check", {})["events_file"] = now
+            except:
+                pass
+        urgent_keywords = [str(x).lower() for x in ext_cfg.get("urgent_keywords", [])]
+        urgent = []
+        for e in events:
+            text = (str(e.get("title", "")) + " " + str(e.get("summary", ""))).lower()
+            if any(k in text for k in urgent_keywords):
+                urgent.append(e)
+        self._save_ext_state(state)
+        if urgent:
+            try:
+                over = OveractionLoop(self.stop_event)
+                over.trigger(reason="external_event", events=urgent)
+            except Exception as e:
+                print(f"[Overthinking] Trigger overaction failed: {e}")

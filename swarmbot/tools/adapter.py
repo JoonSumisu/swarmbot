@@ -5,6 +5,10 @@ import subprocess
 import os
 import io
 import sys
+import time
+import uuid
+import shlex
+import threading
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional
 from pathlib import Path
@@ -25,25 +29,24 @@ class ToolAdapter:
         self.skills: Dict[str, ToolDefinition] = {}
         self._browser = LocalBrowserTool(BrowserConfig())
         self.registry = get_registry()
+        self._processes: Dict[str, subprocess.Popen] = {}
+        self._process_meta: Dict[str, Dict[str, Any]] = {}
+        self._proc_lock = threading.Lock()
         self._load_skills()
 
     def _register_builtin(self, name: str, desc: str, args: List[str], func: Optional[callable] = None) -> None:
         props = {}
         required = []
         for arg in args:
-             if arg in ["interval", "steps", "max_tokens"]:
-                 props[arg] = {"type": "integer"}
-                 # optional
-             elif arg in ["args"]: # Dict/Object types
-                 props[arg] = {"type": "object"}
-                 # IMPORTANT: Qwen/vLLM might reject empty object schemas if not handled
-                 # But usually 'object' type should have properties or additionalProperties
-                 # Let's add additionalProperties: True for flexibility in 'args'
-                 props[arg]["additionalProperties"] = True
-             else:
-                 props[arg] = {"type": "string"}
-                 if arg not in ["subcommand"]: # subcommand is optional for some commands
-                     required.append(arg)
+            if arg in ["interval", "steps", "max_tokens", "timeout", "lines", "pid", "interaction_timeout_hours"]:
+                props[arg] = {"type": "integer"}
+            elif arg in ["args"]:
+                props[arg] = {"type": "object"}
+                props[arg]["additionalProperties"] = True
+            else:
+                props[arg] = {"type": "string"}
+                if arg not in ["subcommand", "background", "timeout", "pid", "data", "lines", "approve", "external_checks", "scheduled_tasks", "self_diagnosis"]:
+                    required.append(arg)
                  
         parameters = {
             "type": "object",
@@ -130,7 +133,11 @@ class ToolAdapter:
             "browser_open": self._tool_browser_open,
             "browser_read": self._tool_browser_read,
             "shell_exec": self._tool_shell_exec,
+            "swarm_exec": self._tool_swarm_exec,
+            "swarm_process": self._tool_swarm_process,
+            "swarm_exec_approval": self._tool_swarm_exec_approval,
             "overthinking_control": self._tool_overthinking_control,
+            "overaction_control": self._tool_overaction_control,
             "whiteboard_update": self._tool_whiteboard_update,
             "hot_memory_update": self._tool_hot_memory_update,
             "skill_fetch": self._tool_skill_fetch,
@@ -162,11 +169,14 @@ class ToolAdapter:
         Load available skills.
         """
         # Always add core built-ins manually
-        self._register_builtin("python_exec", "Execute Python code to perform complex tasks, data analysis, or orchestrate multiple tool calls. Available tools: file_read, file_write, web_search, browser_open, browser_read, shell_exec, overthinking_control, whiteboard_update.", ["code"], self._tool_python_exec)
+        self._register_builtin("python_exec", "Execute Python code to perform complex tasks, data analysis, or orchestrate multiple tool calls. Available tools: file_read, file_write, web_search, browser_open, browser_read, shell_exec, swarm_exec, swarm_process, swarm_exec_approval, overthinking_control, overaction_control, whiteboard_update.", ["code"], self._tool_python_exec)
         self._register_builtin("file_read", "Read a file from local filesystem", ["path"], self._tool_file_read)
         self._register_builtin("file_write", "Write content to a file", ["path", "content"], self._tool_file_write)
         self._register_builtin("web_search", "Search the web for information using a search engine.", ["query"], self._tool_web_search)
         self._register_builtin("shell_exec", "Execute a shell command (Sandboxed)", ["command"], self._tool_shell_exec)
+        self._register_builtin("swarm_exec", "Execute command with foreground/background support.", ["command", "background", "timeout"], self._tool_swarm_exec)
+        self._register_builtin("swarm_process", "Manage background process: poll/read/kill/send_keys.", ["action", "pid", "data", "lines"], self._tool_swarm_process)
+        self._register_builtin("swarm_exec_approval", "Request/confirm command approval for dangerous commands.", ["command", "approve"], self._tool_swarm_exec_approval)
         self._register_builtin(
             "context_policy_update",
             "Update context selection policy for memory and history.",
@@ -195,7 +205,8 @@ class ToolAdapter:
         self._register_builtin("hot_memory_update", "Update the Hot Memory (L2) with new content. Use this for persistent Todo lists or short-term context that should survive across sessions.", ["content"], self._tool_hot_memory_update)
 
         # Add Overthinking Control Tool
-        self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps"], self._tool_overthinking_control)
+        self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps", "external_checks"], self._tool_overthinking_control)
+        self._register_builtin("overaction_control", "Control the Overaction background process.", ["action", "interval", "interaction_timeout_hours", "scheduled_tasks", "self_diagnosis"], self._tool_overaction_control)
 
         self._register_builtin("swarm_control", "Control Swarmbot configuration and lifecycle (CLI wrapper).", ["command", "subcommand", "args"], self._tool_swarm_control)
         self._register_builtin("skill_summary", "List available Swarm skills in a compact summary format.", [], self._tool_skill_summary)
@@ -294,7 +305,6 @@ class ToolAdapter:
                  return "Skill 管理请结合 skill_summary 与 skill_load 查看和加载本地技能。"
 
         elif command == "overthinking":
-             # Proxy to _tool_overthinking_control
              action = subcommand or "status"
              interval = None
              steps = None
@@ -303,8 +313,17 @@ class ToolAdapter:
                  steps = args.get("steps")
              return self._tool_overthinking_control(action, interval, steps)
 
+        elif command == "overaction":
+             action = subcommand or "status"
+             interval = None
+             interaction_timeout_hours = None
+             if args:
+                 interval = args.get("interval")
+                 interaction_timeout_hours = args.get("interaction_timeout_hours")
+             return self._tool_overaction_control(action, interval, interaction_timeout_hours)
+
         else:
-            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard, overthinking, skill"
+            return f"Unknown command: {command}. Supported: config, provider, update, status, onboard, overthinking, overaction, skill"
 
     def _tool_skill_summary(self) -> str:
         try:
@@ -427,7 +446,7 @@ class ToolAdapter:
         except Exception as e:
             return f"Skill fetch failed: {e}"
 
-    def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None) -> str:
+    def _tool_overthinking_control(self, action: str, interval: Optional[int] = None, steps: Optional[int] = None, external_checks: Optional[str] = None) -> str:
         """
         Control the overthinking loop configuration.
         action: 'start', 'stop', 'status', 'configure'
@@ -457,11 +476,70 @@ class ToolAdapter:
                 cfg.overthinking.interval_minutes = int(interval)
             if steps is not None:
                 cfg.overthinking.max_steps = int(steps)
+            if external_checks:
+                try:
+                    cfg.overthinking.external_checks = json.loads(str(external_checks))
+                except Exception as e:
+                    return f"Invalid external_checks JSON: {e}"
             save_config(cfg)
             return f"Overthinking configuration updated. Interval: {cfg.overthinking.interval_minutes}m, Steps: {cfg.overthinking.max_steps}"
             
         else:
             return f"Unknown action: {action}. Valid actions: start, stop, status, configure"
+
+    def _tool_overaction_control(self, action: str, interval: Optional[int] = None, interaction_timeout_hours: Optional[int] = None, scheduled_tasks: Optional[str] = None, self_diagnosis: Optional[str] = None) -> str:
+        from ..config_manager import load_config, save_config
+
+        cfg = load_config()
+
+        if action == "start":
+            cfg.overaction.enabled = True
+            save_config(cfg)
+            return "Overaction loop enabled. It will run in background if gateway is active."
+
+        elif action == "stop":
+            cfg.overaction.enabled = False
+            save_config(cfg)
+            return "Overaction loop disabled."
+
+        elif action == "status":
+            status = "enabled" if cfg.overaction.enabled else "disabled"
+            return (
+                f"Overaction is {status}. Interval: {cfg.overaction.interval_minutes}m, "
+                f"Interaction timeout: {cfg.overaction.interaction_timeout_hours}h"
+            )
+
+        elif action == "configure":
+            if interval is not None:
+                cfg.overaction.interval_minutes = int(interval)
+            if interaction_timeout_hours is not None:
+                cfg.overaction.interaction_timeout_hours = int(interaction_timeout_hours)
+            if scheduled_tasks:
+                try:
+                    cfg.overaction.scheduled_tasks = json.loads(str(scheduled_tasks))
+                except Exception as e:
+                    return f"Invalid scheduled_tasks JSON: {e}"
+            if self_diagnosis:
+                try:
+                    cfg.overaction.self_diagnosis = json.loads(str(self_diagnosis))
+                except Exception as e:
+                    return f"Invalid self_diagnosis JSON: {e}"
+            save_config(cfg)
+            return (
+                f"Overaction configuration updated. Interval: {cfg.overaction.interval_minutes}m, "
+                f"Interaction timeout: {cfg.overaction.interaction_timeout_hours}h"
+            )
+
+        elif action == "trigger":
+            import threading
+            from ..loops.overaction import OveractionLoop
+
+            loop = OveractionLoop(threading.Event())
+            result = loop.trigger(reason="manual_tool_trigger")
+            return f"Overaction triggered: {json.dumps(result, ensure_ascii=False)}"
+
+        else:
+            return f"Unknown action: {action}. Valid actions: start, stop, status, configure, trigger"
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """Return OpenAI-compatible tool definitions."""
@@ -495,13 +573,16 @@ class ToolAdapter:
         
         return f"Tool {tool_name} not found in registry"
 
-    def _tool_whiteboard_update(self, key: str, value: str, context: Optional[Dict[str, Any]] = None) -> str:
+    def _tool_whiteboard_update(self, key: Optional[str] = None, value: Optional[Any] = None, content: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> str:
+        if (not key or value is None) and content is not None:
+            key = "notes"
+            value = str(content)
+        if not key or value is None:
+            return "Error: key/value required"
         if not context or "memory_map" not in context:
-            # Fallback to direct access if possible (hacky)
             return "Error: MemoryMap not available in context"
         
         memory_map = context["memory_map"]
-        # Assuming memory_map is a MemoryMap object or dict
         if hasattr(memory_map, "update"):
             memory_map.update(key, value)
             return f"Whiteboard updated: {key}"
@@ -543,12 +624,17 @@ class ToolAdapter:
                 return f"Search failed: {e2}"
 
     def _tool_shell_exec(self, command: str) -> str:
-        return self._run_shell_cmd(command)
+        return self._tool_swarm_exec(command, "false", 30)
         
     def _tool_file_read(self, path: str) -> str:
         if not path: return "Error: path required"
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            return f"File not found: {path}"
+        except Exception as e:
+            return f"File read failed: {e}"
         
     def _tool_file_write(self, path: str, content: str) -> str:
         if not path: return "Error: path required"
@@ -595,3 +681,126 @@ class ToolAdapter:
             return f"Stdout: {result.stdout}\nStderr: {result.stderr}"
         except Exception as e:
             return f"Shell execution failed: {e}"
+
+    def _is_dangerous_command(self, cmd: str) -> bool:
+        try:
+            from ..config_manager import load_config
+            cfg = load_config()
+            deny_patterns = cfg.tools.exec.get("deny_patterns", [])
+        except Exception:
+            deny_patterns = ["rm -rf /", "shutdown", "reboot", ":(){:|:&};:", "mkfs", "dd if="]
+        low = (cmd or "").lower()
+        for p in deny_patterns:
+            if str(p).lower() in low:
+                return True
+        return False
+
+    def _tool_swarm_exec_approval(self, command: str, approve: Optional[str] = None) -> str:
+        if not command:
+            return "Error: command required"
+        approved = str(approve or "").strip().lower() in ["1", "true", "yes", "approve"]
+        if self._is_dangerous_command(command) and not approved:
+            return "APPROVAL_REQUIRED: command matched dangerous policy. Re-run with approve=true if user confirmed."
+        return "APPROVED"
+
+    def _tool_swarm_exec(self, command: str, background: Optional[str] = None, timeout: Optional[int] = None) -> str:
+        if not command:
+            return "Error: command required"
+        if self._is_dangerous_command(command):
+            return "APPROVAL_REQUIRED: use swarm_exec_approval first for dangerous commands."
+        bg = str(background or "false").strip().lower() in ["1", "true", "yes", "on"]
+        to = int(timeout or 30)
+        if bg:
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            pid = str(proc.pid)
+            with self._proc_lock:
+                self._processes[pid] = proc
+                self._process_meta[pid] = {"command": command, "created_at": int(time.time())}
+            return json.dumps({"pid": pid, "status": "running", "mode": "background"})
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=max(1, to))
+            return json.dumps(
+                {
+                    "status": "exited",
+                    "exit_code": int(result.returncode),
+                    "stdout": (result.stdout or "")[:4000],
+                    "stderr": (result.stderr or "")[:4000],
+                },
+                ensure_ascii=False,
+            )
+        except subprocess.TimeoutExpired as e:
+            return json.dumps(
+                {
+                    "status": "timeout",
+                    "stdout": (e.stdout or "")[:2000] if isinstance(e.stdout, str) else "",
+                    "stderr": (e.stderr or "")[:2000] if isinstance(e.stderr, str) else "",
+                },
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            return f"swarm_exec failed: {e}"
+
+    def _read_process_tail(self, proc: subprocess.Popen, lines: int) -> Dict[str, str]:
+        out = ""
+        err = ""
+        try:
+            if proc.stdout:
+                out = proc.stdout.read() or ""
+        except Exception:
+            out = ""
+        try:
+            if proc.stderr:
+                err = proc.stderr.read() or ""
+        except Exception:
+            err = ""
+        out_lines = out.splitlines()[-max(1, lines):]
+        err_lines = err.splitlines()[-max(1, lines):]
+        return {"stdout": "\n".join(out_lines), "stderr": "\n".join(err_lines)}
+
+    def _tool_swarm_process(self, action: str, pid: Optional[int] = None, data: Optional[str] = None, lines: Optional[int] = None) -> str:
+        act = (action or "").strip().lower()
+        if act == "list":
+            with self._proc_lock:
+                items = []
+                for k, p in self._processes.items():
+                    items.append({"pid": k, "running": p.poll() is None, "meta": self._process_meta.get(k, {})})
+            return json.dumps({"processes": items}, ensure_ascii=False)
+        if pid is None:
+            return "Error: pid required"
+        key = str(pid)
+        with self._proc_lock:
+            proc = self._processes.get(key)
+        if proc is None:
+            return "Error: process not found"
+        if act == "poll":
+            code = proc.poll()
+            return json.dumps({"pid": key, "running": code is None, "exit_code": code}, ensure_ascii=False)
+        if act == "read":
+            tail = self._read_process_tail(proc, int(lines or 120))
+            return json.dumps({"pid": key, "running": proc.poll() is None, **tail}, ensure_ascii=False)
+        if act == "send_keys":
+            try:
+                if proc.stdin:
+                    proc.stdin.write((data or "") + "\n")
+                    proc.stdin.flush()
+                return "OK"
+            except Exception as e:
+                return f"send_keys failed: {e}"
+        if act == "kill":
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            with self._proc_lock:
+                self._processes.pop(key, None)
+                self._process_meta.pop(key, None)
+            return "killed"
+        return "Error: unknown action, use list|poll|read|send_keys|kill"

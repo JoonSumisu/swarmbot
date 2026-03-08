@@ -54,16 +54,22 @@ class ToolRegistry:
 
         func = self._tools[name]
         try:
-            # Check if func accepts context or extra kwargs
             sig = inspect.signature(func)
-            if "context" in sig.parameters:
-                args["context"] = context
-            elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-                # If function accepts **kwargs, we can pass context if we want, but let's be careful
-                # For now, only pass if explicitly named 'context'
-                pass
-                
-            return func(**args)
+            params = sig.parameters
+            accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+            final_args: Dict[str, Any] = {}
+            if isinstance(args, dict):
+                for k, v in args.items():
+                    if not isinstance(k, str):
+                        continue
+                    key = k.strip()
+                    if not key:
+                        continue
+                    if accepts_var_kw or key in params:
+                        final_args[key] = v
+            if "context" in params:
+                final_args["context"] = context
+            return func(**final_args)
         except Exception as e:
             logger.error(f"Error executing tool {name}: {e}")
             raise

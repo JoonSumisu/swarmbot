@@ -12,6 +12,8 @@ from ..llm_client import OpenAICompatibleClient
 from ..memory.qmd import QMDMemoryStore
 from ..memory.hot_memory import HotMemory
 from ..core.agent import AgentContext, CoreAgent
+from ..loops.skill_registry import SkillRegistry
+from ..boot.context_loader import load_boot_markdown
 
 
 @dataclass
@@ -38,6 +40,7 @@ class SwarmSession:
         # Let's check config object.
         workspace = getattr(config, "workspace_path", os.path.expanduser("~/.swarmbot/workspace"))
         self.hot_memory = HotMemory(workspace)
+        self.skill_registry = SkillRegistry()
         
         self.agents: List[SwarmAgentSlot] = []
         self.architecture: Literal[
@@ -49,36 +52,8 @@ class SwarmSession:
         
         self._init_default_agents()
 
-    def _get_default_skill_map(self) -> Dict[str, List[str]]:
-        return {
-            "finance": ["web_search", "python_exec"],
-            "market": ["web_search", "python_exec"],
-            "research": ["web_search", "browser_open", "browser_read", "python_exec"],
-            "code": ["file_write", "shell_exec", "file_read", "python_exec", "hot_memory_update"],
-            "coder": ["file_write", "shell_exec", "file_read", "python_exec", "hot_memory_update"],
-            "developer": ["file_write", "shell_exec", "file_read", "python_exec", "hot_memory_update"],
-            "data": ["python_exec", "file_read", "file_write"],
-            "writer": ["web_search", "python_exec"],
-            "analyst": ["web_search", "browser_read", "python_exec"],
-            "reviewer": ["file_read", "python_exec", "hot_memory_update"],
-            "critic": ["web_search", "python_exec"],
-            "summarizer": ["file_read", "python_exec", "hot_memory_update"],
-            "planner": ["hot_memory_update", "web_search", "python_exec"],
-        }
-
     def _apply_skills(self, agent_slot: SwarmAgentSlot, role: str) -> None:
-        agent_slot.agent.ctx.skills = {}
-        # Always allow whiteboard update
-        agent_slot.agent.ctx.skills["whiteboard_update"] = True
-        # Always allow hot_memory update for everyone? Or just specific roles?
-        # User said "human simple memory", likely everyone should access it.
-        agent_slot.agent.ctx.skills["hot_memory_update"] = True
-        
-        skill_map = self._get_default_skill_map()
-        for key, tools in skill_map.items():
-            if key in role.lower():
-                for tool in tools:
-                    agent_slot.agent.ctx.skills[tool] = True
+        agent_slot.agent.ctx.skills = self.skill_registry.get_skills(role)
 
     def _init_default_agents(self) -> None:
         # Default initialization based on count
@@ -133,6 +108,7 @@ class SwarmManager:
         self._display_mode = "simple" # Global default
         self._swarmboot_cache: Optional[str] = None
         self._masterboot_cache: Optional[str] = None
+        self._soul_cache: Optional[str] = None
 
     @classmethod
     def from_swarmbot_config(cls, cfg: SwarmbotConfig) -> "SwarmManager":
@@ -260,24 +236,11 @@ class SwarmManager:
         except:
             pass
         
-        swarmboot_content = ""
-        user_boot_path = os.path.expanduser("~/.swarmbot/boot/swarmboot.md")
-        pkg_boot_path = os.path.join(os.path.dirname(__file__), "../boot/swarmboot.md")
         if self._swarmboot_cache is not None:
             swarmboot_content = self._swarmboot_cache
         else:
-            try:
-                if os.path.exists(user_boot_path):
-                    with open(user_boot_path, "r", encoding="utf-8") as f:
-                        swarmboot_content = f.read()
-                elif os.path.exists(pkg_boot_path):
-                    with open(pkg_boot_path, "r", encoding="utf-8") as f:
-                        swarmboot_content = f.read()
-            except:
-                swarmboot_content = ""
+            swarmboot_content = load_boot_markdown("swarmboot.md", "swarm_manager", max_chars=8000)
             self._swarmboot_cache = swarmboot_content
-        if swarmboot_content and len(swarmboot_content) > 8000:
-            swarmboot_content = swarmboot_content[:8000] + "\n...[swarmboot truncated]\n"
 
         # Clear events (short term volatile)
         try:
@@ -540,25 +503,21 @@ class SwarmManager:
         original_role = master_agent.ctx.role
         master_agent.ctx.role = "master"
         
-        masterboot_content = ""
-        user_boot_path = os.path.expanduser("~/.swarmbot/boot/masteragentboot.md")
-        pkg_boot_path = os.path.join(os.path.dirname(__file__), "../boot/masteragentboot.md")
         if self._masterboot_cache is not None:
             masterboot_content = self._masterboot_cache
         else:
-            try:
-                 if os.path.exists(user_boot_path):
-                     with open(user_boot_path, "r", encoding="utf-8") as f:
-                         masterboot_content = f.read()
-                 elif os.path.exists(pkg_boot_path):
-                     with open(pkg_boot_path, "r", encoding="utf-8") as f:
-                         masterboot_content = f.read()
-            except:
-                 masterboot_content = ""
+            masterboot_content = load_boot_markdown("masteragentboot.md", "swarm_manager", max_chars=12000)
             self._masterboot_cache = masterboot_content
+
+        if self._soul_cache is not None:
+            soul_content = self._soul_cache
+        else:
+            soul_content = load_boot_markdown("SOUL.md", "swarm_manager", max_chars=12000)
+            self._soul_cache = soul_content
 
         master_prompt = (
             f"System Boot Configuration:\n{masterboot_content}\n\n"
+            f"SOUL Persona:\n{soul_content}\n\n"
             f"User Input: {user_input}\n\n"
             f"Swarm Execution Result:\n{swarm_result}\n\n"
             "Task: Interpret the Swarm's result for the user. "

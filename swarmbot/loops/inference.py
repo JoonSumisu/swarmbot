@@ -11,7 +11,9 @@ from ..memory.whiteboard import Whiteboard
 from ..memory.hot_memory import HotMemory
 from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
+from ..boot.context_loader import load_boot_markdown
 from .definitions import *
+from .skill_registry import SkillRegistry
 
 class InferenceLoop:
     def __init__(self, config, workspace_path: str):
@@ -24,6 +26,7 @@ class InferenceLoop:
         self.hot_memory = HotMemory(workspace_path)
         self.warm_memory = WarmMemory(workspace_path)
         self.cold_memory = ColdMemory()
+        self.skill_registry = SkillRegistry()
         
         # Load Swarmboot
         self.swarmboot = self._load_boot_file("swarmboot.md")
@@ -31,19 +34,24 @@ class InferenceLoop:
         self.loop_profile_mode = (os.environ.get("SWARMBOT_LOOP_PROFILE") or "auto").strip().lower()
 
     def _load_boot_file(self, filename: str) -> str:
-        paths = [
-            os.path.expanduser(f"~/.swarmbot/boot/{filename}"),
-            os.path.join(os.path.dirname(__file__), f"../boot/{filename}")
-        ]
-        for p in paths:
-            if os.path.exists(p):
-                return open(p, "r", encoding="utf-8").read()
+        content = load_boot_markdown(filename, "inference_loop", max_chars=12000)
+        if content:
+            return content
         return f"Boot file {filename} not found."
 
-    def _create_worker(self, role: str, enable_tools: bool = True, allowed_tools: List[str] | None = None) -> CoreAgent:
-        skills = {name: True for name in (allowed_tools or [])}
+    def _create_worker(
+        self,
+        role: str,
+        enable_tools: bool = True,
+        allowed_tools: List[str] | None = None,
+        task_desc: str = "",
+        required_skills: List[str] | None = None,
+    ) -> CoreAgent:
+        skills = self.skill_registry.get_skills_for_task(role, task_desc=task_desc, required_skills=required_skills)
+        if allowed_tools is not None:
+            allowed = set(allowed_tools) | {"whiteboard_update", "hot_memory_update"}
+            skills = {k: v for k, v in skills.items() if k in allowed}
         ctx = AgentContext(agent_id=f"worker-{role}-{time.time_ns()}", role=role, skills=skills)
-        # Workers get Cold and Hot memory access
         return CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=enable_tools)
 
     def _profile_settings(self, profile: str | None = None) -> Dict[str, Any]:
@@ -90,18 +98,7 @@ class InferenceLoop:
             return {"ok": False, "need_tools": False, "tools": fallback_tools, "reason": "parse_failed", "confidence": 0.0}
 
     def _decide_tool_gate(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
-        # Determine number of votes/workers based on profile
-        # Default to 3 for majority voting, but can scale if needed.
-        # Currently the logic relies on 3 votes for simple majority.
-        vote_count = 3
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=vote_count) as executor:
-            futures = [
-                executor.submit(self._decide_tool_gate_once, stage, user_input, context_json, fallback_tools)
-                for _ in range(vote_count)
-            ]
-            decisions = [f.result() for f in concurrent.futures.as_completed(futures)]
-        
+        decisions = [self._decide_tool_gate_once(stage, user_input, context_json, fallback_tools) for _ in range(3)]
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
             return {"need_tools": False, "tools": fallback_tools, "reason": "all_parse_failed", "confidence": 0.0, "mode": "fallback"}
@@ -155,11 +152,7 @@ class InferenceLoop:
         if forced in ["lean", "balanced", "swarm_max"]:
             self.whiteboard.update("profile_decision", {"profile": forced, "reason": "forced"})
             return forced
-            
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            futures = [executor.submit(self._decide_loop_profile_once) for _ in range(3)]
-            decisions = [f.result() for f in concurrent.futures.as_completed(futures)]
-            
+        decisions = [self._decide_loop_profile_once() for _ in range(3)]
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
             self.whiteboard.update("profile_decision", {"profile": "balanced", "reason": "all_parse_failed", "mode": "fallback"})
@@ -241,16 +234,31 @@ class InferenceLoop:
     def _step_analysis(self):
         print("[Step 2] Analysis (No Tools)...")
         settings = self._profile_settings()
-        prompt = STEP_ANALYSIS_PROMPT.format(
+        base_prompt = STEP_ANALYSIS_PROMPT.format(
             user_input=self.whiteboard.get("input_prompt"),
             swarmboot=self.swarmboot
         )
+        prompt = (
+            base_prompt
+            + "\n\n你需要先自定义你的专业角色类型，并补充工具建议。"
+            + "\n输出JSON时增加字段：self_defined_role, required_tools, confidence。"
+            + "\n示例: {\"self_defined_role\":\"security_analyst\",\"required_tools\":[\"web_search\"],\"confidence\":0.78,...}"
+        )
         results = self._run_parallel(prompt, int(settings.get("analysis_workers", 2)), "analyst", enable_tools=False)
-        # Simple merge of analysis
         merged = {}
+        worker_roles: List[str] = []
         for r in results:
-            try: merged.update(json.loads(self._extract_json(r)))
-            except: pass
+            try:
+                data = json.loads(self._extract_json(r))
+                merged.update(data)
+                role = str(data.get("self_defined_role") or "").strip()
+                if role:
+                    worker_roles.append(role)
+            except:
+                pass
+        if not worker_roles:
+            worker_roles = ["general_analyst"]
+        self.whiteboard.update("worker_roles", worker_roles)
         self.whiteboard.update("problem_analysis", merged)
 
     def _safe_dumps(self, data: Any, max_len: int = 4000) -> str:
@@ -273,29 +281,40 @@ class InferenceLoop:
         print("[Step 3] Collection (Analysis First)...")
         settings = self._profile_settings()
         analysis = self.whiteboard.get("problem_analysis")
+        analysis_roles = self.whiteboard.get("worker_roles") or []
         user_input = self.whiteboard.get("input_prompt") or ""
         # Gather memory snapshots
         hot = self.hot_memory.read()
         warm = self.warm_memory.read_today()
         cold = self.cold_memory.search_text(str(analysis), limit=5)
         
-        prompt = STEP_COLLECTION_PROMPT.format(
+        base_prompt = STEP_COLLECTION_PROMPT.format(
             analysis_json=self._safe_dumps(analysis),
             swarmboot=self.swarmboot,
             hot_memory=hot[:2000],
             warm_memory=warm[:2000],
             cold_memory=cold[:2000]
         )
+        prompt = (
+            base_prompt
+            + f"\n\n上一阶段角色参考: {self._safe_dumps(analysis_roles)}"
+            + "\n请先定义你当前的 collector 专业角色，返回 self_defined_role。"
+        )
         results = self._run_parallel(prompt, int(settings.get("collection_workers", 2)), "collector", enable_tools=False)
         
         merged = {"synthesized_context": "", "memory_references": [], "external_info": ""}
+        collector_roles: List[str] = []
         for r in results:
             try:
                 data = json.loads(self._extract_json(r))
                 merged["synthesized_context"] += "\n" + data.get("synthesized_context", "")
                 merged["memory_references"].extend(data.get("memory_references", []))
                 merged["external_info"] += "\n" + data.get("external_info", "")
-            except: pass
+                role = str(data.get("self_defined_role") or "").strip()
+                if role:
+                    collector_roles.append(role)
+            except:
+                pass
         gate = self._decide_tool_gate(
             "collection",
             user_input,
@@ -307,7 +326,7 @@ class InferenceLoop:
             print("[Step 3b] Collection Tool Pass...")
             tool_results = self._run_parallel(
                 prompt,
-                int(settings.get("collection_workers", 2)),
+                1,
                 "collector",
                 enable_tools=True,
                 allowed_tools=gate.get("tools") or ["web_search"],
@@ -317,8 +336,14 @@ class InferenceLoop:
                     data = json.loads(self._extract_json(r))
                     merged["synthesized_context"] += "\n" + data.get("synthesized_context", "")
                     merged["external_info"] += "\n" + data.get("external_info", "")
+                    role = str(data.get("self_defined_role") or "").strip()
+                    if role:
+                        collector_roles.append(role)
                 except:
                     merged["external_info"] += "\n" + str(r)
+        if not collector_roles:
+            collector_roles = ["general_collector"]
+        self.whiteboard.update("collection_worker_roles", collector_roles)
         self.whiteboard.update("information_gathering", merged)
 
     def _step_planning(self):
@@ -328,13 +353,27 @@ class InferenceLoop:
         prompt = STEP_PLANNING_PROMPT.format(
             info_json=self._safe_dumps(info, max_len=int(settings.get("context_limit", 6000))),
             swarmboot=self.swarmboot
-        )
+        ) + "\n\n输出 tasks 时不要分配 worker 和 tool。每个任务必须包含 required_skills 数组。"
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
             plan = json.loads(self._extract_json(res))
+            tasks = []
+            for idx, task in enumerate(plan.get("tasks") or []):
+                required = task.get("required_skills")
+                if not isinstance(required, list):
+                    required = []
+                required = [x for x in required if isinstance(x, str)]
+                if not required and isinstance(task.get("tool"), str) and task.get("tool") not in ["none", "", "null"]:
+                    required = [task.get("tool")]
+                tasks.append({
+                    "id": task.get("id") or (idx + 1),
+                    "desc": str(task.get("desc") or f"Task {idx + 1}"),
+                    "required_skills": required,
+                })
+            plan["tasks"] = tasks
             self.whiteboard.update("action_plan", plan)
         except:
-            self.whiteboard.update("action_plan", {"tasks": [{"id": 1, "desc": "Fallback task", "worker": "assistant", "tool": "none"}]})
+            self.whiteboard.update("action_plan", {"tasks": [{"id": 1, "desc": "Fallback task", "required_skills": []}]})
 
     def _step_replanning(self, retry_idx: int):
         print(f"[Step 4b] Re-Planning (Attempt {retry_idx+1})...")
@@ -352,71 +391,198 @@ class InferenceLoop:
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
             new_plan = json.loads(self._extract_json(res))
+            tasks = []
+            for idx, task in enumerate(new_plan.get("tasks") or []):
+                required = task.get("required_skills")
+                if not isinstance(required, list):
+                    required = []
+                required = [x for x in required if isinstance(x, str)]
+                if not required and isinstance(task.get("tool"), str) and task.get("tool") not in ["none", "", "null"]:
+                    required = [task.get("tool")]
+                tasks.append({
+                    "id": task.get("id") or (idx + 1),
+                    "desc": str(task.get("desc") or f"Task {idx + 1}"),
+                    "required_skills": required,
+                })
+            new_plan["tasks"] = tasks
             self.whiteboard.update("action_plan", new_plan)
         except: pass
 
+    def _extract_task_claim(self, text: str) -> Dict[str, Any]:
+        try:
+            data = json.loads(self._extract_json(text))
+            task_id = data.get("task_id")
+            self_role = str(data.get("self_role") or "worker").strip() or "worker"
+            tools = data.get("tools") if isinstance(data.get("tools"), list) else []
+            confidence = float(data.get("confidence") or 0.5)
+            return {
+                "task_id": task_id,
+                "self_role": self_role,
+                "tools": self._sanitize_tools(tools, []),
+                "confidence": max(0.0, min(1.0, confidence)),
+            }
+        except:
+            return {"task_id": None, "self_role": "worker", "tools": [], "confidence": 0.0}
+
     def _step_inference(self):
-        print("[Step 5] Inference (Task-Gated Tools)...")
+        print("[Step 5] Inference (Self-Organized Task Claim)...")
         settings = self._profile_settings()
         plan = self.whiteboard.get("action_plan")
-        context = self.whiteboard.get("information_gathering").get("synthesized_context")
-        
-        tasks = plan.get("tasks", []) or []
-        if not tasks:
-            self.whiteboard.update("inference_conclusions", [])
-            return
+        info = self.whiteboard.get("information_gathering") or {}
+        context = info.get("synthesized_context") or ""
+        tasks = plan.get("tasks") or []
+        max_agents = max(1, int(getattr(self.config.swarm, "max_agents", 4)))
+        worker_ids = [f"worker_{i+1}" for i in range(max_agents)]
+        assignments: Dict[str, Dict[str, Any]] = {}
+        claim_history: List[Dict[str, Any]] = []
+        def to_task_id(v: Any) -> int | None:
+            try:
+                return int(v)
+            except:
+                return None
 
-        def run_task(task: Dict[str, Any]) -> Dict[str, Any]:
-            worker_role = task.get("worker", "assistant")
-            task_tool = task.get("tool", "none")
-            need_tools = isinstance(task_tool, str) and task_tool.lower() not in ["none", "null", ""]
-            allowed_tools: List[str] = []
-            if need_tools and isinstance(task_tool, str):
-                allowed_tools = [task_tool]
-            worker = self._create_worker(worker_role, enable_tools=need_tools, allowed_tools=allowed_tools)
+        pending = [tid for tid in (to_task_id(t.get("id")) for t in tasks) if tid is not None]
+
+        for round_idx in range(1, 4):
+            if not pending:
+                break
+
+            def run_claim(worker_id: str) -> Dict[str, Any]:
+                visible_tasks = [t for t in tasks if to_task_id(t.get("id")) in pending]
+                claim_prompt = (
+                    "你是自组织任务系统中的执行体。\n"
+                    "你先读取完整任务列表，再基于专长自主认领最匹配任务。\n"
+                    "你需要主动给出你的专业角色与所需工具，并与其他执行体形成互补分工。\n"
+                    f"轮次: {round_idx}\n"
+                    f"当前 Worker: {worker_id}\n"
+                    f"待认领任务: {self._safe_dumps(visible_tasks)}\n"
+                    f"已有认领历史: {self._safe_dumps(claim_history[-8:])}\n"
+                    "基于任务需求自主决定：是否认领、认领哪个任务、你自己的专业角色、你需要的工具。\n"
+                    "请返回 JSON: {\"task_id\":1,\"self_role\":\"finance_expert\",\"tools\":[\"web_search\"],\"confidence\":0.8}\n"
+                    "若本轮不认领则 task_id 返回 null。"
+                )
+                worker = self._create_worker("worker", enable_tools=False)
+                claim = self._extract_task_claim(worker.step(claim_prompt))
+                claim["worker_id"] = worker_id
+                return claim
+
+            claims: List[Dict[str, Any]] = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(worker_ids)) as executor:
+                futures = [executor.submit(run_claim, wid) for wid in worker_ids]
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        claims.append(future.result())
+                    except:
+                        pass
+
+            grouped: Dict[int, List[Dict[str, Any]]] = {}
+            for c in claims:
+                try:
+                    tid = int(c.get("task_id"))
+                except:
+                    continue
+                if tid in pending:
+                    grouped.setdefault(tid, []).append(c)
+
+            for tid in list(pending):
+                cs = grouped.get(tid) or []
+                if not cs:
+                    continue
+                chosen = sorted(cs, key=lambda x: float(x.get("confidence") or 0.0), reverse=True)[0]
+                task = next((t for t in tasks if to_task_id(t.get("id")) == tid), None)
+                if task is None:
+                    continue
+                tools = self._sanitize_tools(chosen.get("tools") or [], task.get("required_skills") or [])
+                assignments[str(tid)] = {
+                    "worker_id": chosen.get("worker_id"),
+                    "task_id": tid,
+                    "role": chosen.get("self_role") or "worker",
+                    "tools": tools,
+                    "required_skills": task.get("required_skills") or [],
+                    "task_desc": task.get("desc") or "",
+                }
+                pending.remove(tid)
+                claim_history.append(assignments[str(tid)])
+
+        idle_workers = [wid for wid in worker_ids if wid not in {a["worker_id"] for a in assignments.values()}]
+        for tid in list(pending):
+            task = next((t for t in tasks if to_task_id(t.get("id")) == tid), None)
+            if task is None:
+                continue
+            wid = idle_workers.pop(0) if idle_workers else worker_ids[tid % len(worker_ids)]
+            tools = self._sanitize_tools(task.get("required_skills") or [], [])
+            assignments[str(tid)] = {
+                "worker_id": wid,
+                "task_id": tid,
+                "role": "generalist_worker",
+                "tools": tools,
+                "required_skills": task.get("required_skills") or [],
+                "task_desc": task.get("desc") or "",
+            }
+
+        self.whiteboard.update("task_assignments", list(assignments.values()))
+        results = []
+
+        def run_task(assign: Dict[str, Any]) -> Dict[str, Any]:
+            worker = self._create_worker(
+                assign["role"],
+                enable_tools=bool(assign["tools"]),
+                allowed_tools=assign["tools"],
+                task_desc=assign["task_desc"],
+                required_skills=assign["required_skills"],
+            )
             prompt = STEP_INFERENCE_PROMPT.format(
-                role=worker_role,
-                task_desc=task.get("desc"),
-                context=context[: int(settings.get("context_limit", 8000))] if context else ""
+                role=assign["role"],
+                task_desc=assign["task_desc"],
+                context=context[: int(settings.get("context_limit", 8000))] if context else "",
             )
             res = worker.step(prompt)
-            return {"task_id": task.get("id"), "result": res}
+            return {
+                "task_id": assign["task_id"],
+                "worker_id": assign["worker_id"],
+                "role": assign["role"],
+                "tools": assign["tools"],
+                "result": res,
+            }
 
-        max_workers = len(tasks)
-        results: List[Dict[str, Any]] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(run_task, task) for task in tasks]
-            for f in concurrent.futures.as_completed(futures):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(len(assignments), max_agents))) as executor:
+            futures = [executor.submit(run_task, a) for a in assignments.values()]
+            for future in concurrent.futures.as_completed(futures):
                 try:
-                    results.append(f.result())
+                    results.append(future.result())
                 except Exception as e:
-                    print(f"Worker inference error: {e}")
+                    results.append({"task_id": None, "result": f"Task failed: {e}"})
         self.whiteboard.update("inference_conclusions", results)
 
     def _step_evaluation(self) -> bool:
-        print("[Step 6] Evaluation (No Tools)...")
+        print("[Step 6] Evaluation (Self-Organized Roles)...")
         settings = self._profile_settings()
         plan = self.whiteboard.get("action_plan")
         results = self.whiteboard.get("inference_conclusions")
-        
         prompt = STEP_EVALUATION_PROMPT.format(
             plan_json=self._safe_dumps(plan),
             results_json=self._safe_dumps(results, max_len=2000),
             swarmboot=self.swarmboot
-        )
+        ) + '\n请先定义你的评估角色 self_defined_role，再投票。输出JSON: {"self_defined_role":"code_reviewer","vote":"PASS","reason":"..."}'
         evals = self._run_parallel(prompt, int(settings.get("evaluation_workers", 3)), "evaluator", enable_tools=False)
-        
         pass_count = 0
         reasons = []
+        eval_roles: List[str] = []
         for e in evals:
             try:
                 data = json.loads(self._extract_json(e))
                 if data.get("vote") == "PASS": pass_count += 1
                 reasons.append(data.get("reason"))
-            except: pass
-        
+                role = str(data.get("self_defined_role") or "").strip()
+                if role:
+                    eval_roles.append(role)
+            except:
+                pass
+        if not eval_roles:
+            eval_roles = ["general_evaluator"]
         passed = pass_count >= 2
-        self.whiteboard.update("evaluation_report", {"passed": passed, "reasons": reasons})
+        self.whiteboard.update("evaluation_roles", eval_roles)
+        self.whiteboard.update("evaluation_report", {"passed": passed, "reasons": reasons, "roles": eval_roles})
         return passed
 
     def _step_translation(self) -> str:

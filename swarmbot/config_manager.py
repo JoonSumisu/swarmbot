@@ -38,12 +38,47 @@ class OverthinkingConfig:
     enabled: bool = True
     interval_minutes: int = 30
     max_steps: int = 20 # Default 0 means no autonomous exploration actions unless configured
+    external_checks: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "enabled": False,
+            "email": {"enabled": False, "interval_minutes": 30},
+            "calendar": {"enabled": False, "interval_minutes": 60},
+            "weather": {"enabled": False, "interval_minutes": 120},
+            "project": {"enabled": False, "interval_minutes": 60},
+            "urgent_keywords": ["紧急", "urgent", "asap", "ci failed", "deploy failed"],
+        }
+    )
+
+@dataclass
+class OveractionConfig:
+    enabled: bool = True
+    interval_minutes: int = 60
+    check_interaction: bool = True
+    check_tasks: bool = True
+    check_system: bool = True
+    interaction_timeout_hours: int = 4
+    scheduled_tasks: List[Dict[str, Any]] = field(default_factory=list)
+    self_diagnosis: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "enabled": True,
+            "log_retention_days": 7,
+            "perf_window": 50,
+        }
+    )
 
 
 @dataclass
 class ToolConfig:
     fs: Dict[str, Any] = field(default_factory=lambda: {"allow_read": [], "allow_write": []})
     shell: Dict[str, Any] = field(default_factory=lambda: {"allow_commands": [], "deny_commands": []}) # Unrestricted by default
+    exec: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "approval_mode": "deny_dangerous",
+            "deny_patterns": ["rm -rf /", "shutdown", "reboot", ":(){:|:&};:", "mkfs", "dd if="],
+            "default_timeout_seconds": 30,
+            "max_concurrent_processes": 8,
+        }
+    )
 
 @dataclass
 class ChannelConfig:
@@ -74,6 +109,7 @@ class SwarmbotConfig:
     # Deprecated 'provider' field removed to avoid confusion/conflicts
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
     overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
+    overaction: OveractionConfig = field(default_factory=OveractionConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     channels: Dict[str, ChannelConfig] = field(default_factory=dict)
     daemon: DaemonConfig = field(default_factory=DaemonConfig)
@@ -133,6 +169,11 @@ def load_config() -> SwarmbotConfig:
             for k, v in data["overthinking"].items():
                 if hasattr(cfg.overthinking, k):
                     setattr(cfg.overthinking, k, v)
+
+        if "overaction" in data:
+            for k, v in data["overaction"].items():
+                if hasattr(cfg.overaction, k):
+                    setattr(cfg.overaction, k, v)
 
         # 4. Load Tools
         if "tools" in data:
@@ -212,6 +253,7 @@ def save_config(cfg: SwarmbotConfig) -> None:
         "providers": providers_list,
         "swarm": asdict(cfg.swarm),
         "overthinking": asdict(cfg.overthinking),
+        "overaction": asdict(cfg.overaction),
         "tools": asdict(cfg.tools),
         "channels": channels_dict,
         "daemon": asdict(cfg.daemon),
@@ -219,4 +261,3 @@ def save_config(cfg: SwarmbotConfig) -> None:
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
