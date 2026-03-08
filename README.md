@@ -66,6 +66,7 @@ This environment is externally managed
 - 优先使用 `pipx` 安装为全局可执行命令 `swarmbot`
 - 若无 `pipx`，尝试 `pip --user` 安装
 - 若都失败，再回退到 `.venv/` 安装
+- 如需一键安装回归评测依赖，可追加 `--with-eval-deps`
 
 **推荐（跨平台）**
 
@@ -89,6 +90,9 @@ python3 scripts/bootstrap.py --mode venv
 
 # 开发调试（editable，代码改动即时生效）
 python3 scripts/bootstrap.py --editable
+
+# 安装并附带回归评测依赖（datasets）
+python3 scripts/bootstrap.py --mode venv --with-eval-deps
 ```
 
 **macOS / Linux（可选）**
@@ -230,6 +234,22 @@ tail -n 200 ~/.swarmbot/logs/daemon_gateway.log
 tail -n 200 ~/.swarmbot/logs/gateway.log
 cat ~/.swarmbot/daemon_state.json
 ```
+
+---
+
+## 🧪 回归测试（本地模型）
+
+建议在核心逻辑改动后至少执行一轮回归：
+
+```bash
+# 逻辑陷阱回归（推荐 qwen3-coder-next）
+./.venv/bin/python scripts/eval_logic_traps.py --model qwen3-coder-next --tag reg_$(date +%Y%m%d_%H%M)
+
+# 本地问答样例回归
+./.venv/bin/python scripts/eval_local_agent.py --tag reg_local_$(date +%Y%m%d_%H%M) --limit 4
+```
+
+默认输出到 `artifacts/`，可用于前后版本对比。
 
 ---
 

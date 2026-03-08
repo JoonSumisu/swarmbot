@@ -39,6 +39,7 @@ This repo includes a bootstrap installer with a direct-install-first strategy:
 - Prefer `pipx` (global `swarmbot` command, no manual venv activation)
 - Fallback to `pip --user`
 - Final fallback to `.venv`
+- Add `--with-eval-deps` to install regression-eval dependencies in one step
 
 ```bash
 git clone https://github.com/JoonSumisu/swarmbot.git
@@ -52,6 +53,7 @@ You can also force a specific mode:
 python3 scripts/bootstrap.py --mode pipx
 python3 scripts/bootstrap.py --mode user
 python3 scripts/bootstrap.py --mode venv
+python3 scripts/bootstrap.py --mode venv --with-eval-deps
 ```
 
 Optional:
@@ -170,6 +172,19 @@ In `auto`, the system analyzes first, then selects profile with 3 no-tool votes 
 - pip “externally managed”: use `python3 scripts/bootstrap.py` to install into `.venv/`.
 - LLM timeout: reduce `--max-tokens` or concurrency; adjust provider timeouts.
 - Feishu not receiving: ensure `channels feishu` is enabled and gateway is running.
+
+---
+
+## Regression Evaluation
+
+Run these after core logic changes:
+
+```bash
+./.venv/bin/python scripts/eval_logic_traps.py --model qwen3-coder-next --tag reg_$(date +%Y%m%d_%H%M)
+./.venv/bin/python scripts/eval_local_agent.py --tag reg_local_$(date +%Y%m%d_%H%M) --limit 4
+```
+
+Outputs are saved under `artifacts/` for before/after comparison.
 
 ---
 
