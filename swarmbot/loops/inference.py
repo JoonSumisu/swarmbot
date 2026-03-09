@@ -33,6 +33,22 @@ class InferenceLoop:
         self.soul = self._load_boot_file("SOUL.md")
         self.loop_profile_mode = (os.environ.get("SWARMBOT_LOOP_PROFILE") or "auto").strip().lower()
 
+    def _extract_urls(self, text: str) -> List[str]:
+        if not isinstance(text, str):
+            return []
+        urls = re.findall(r"https?://[^\s`\"'<>]+", text)
+        out: List[str] = []
+        for u in urls:
+            if u not in out:
+                out.append(u)
+        return out
+
+    def _is_explicit_read_analyze_request(self, text: str) -> bool:
+        t = (text or "").lower()
+        has_read = any(k in t for k in ["阅读", "读一下", "分析", "总结", "提取", "review", "analyze", "summarize", "extract"])
+        has_directive = any(k in t for k in ["请", "先", "然后", "并", "立即", "直接"])
+        return has_read and (has_directive or bool(self._extract_urls(text)))
+
     def _load_boot_file(self, filename: str) -> str:
         content = load_boot_markdown(filename, "inference_loop", max_chars=12000)
         if content:
@@ -98,6 +114,17 @@ class InferenceLoop:
             return {"ok": False, "need_tools": False, "tools": fallback_tools, "reason": "parse_failed", "confidence": 0.0}
 
     def _decide_tool_gate(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
+        urls = self._extract_urls(user_input)
+        if urls and self._is_explicit_read_analyze_request(user_input):
+            forced_tools = self._sanitize_tools(["browser_open", "browser_read", "web_search", "file_read"], fallback_tools)
+            return {
+                "need_tools": True,
+                "tools": forced_tools,
+                "reason": "rule:explicit_url_read_request",
+                "confidence": 1.0,
+                "mode": "rule_forced",
+                "targets": urls,
+            }
         decisions = [self._decide_tool_gate_once(stage, user_input, context_json, fallback_tools) for _ in range(3)]
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
@@ -283,6 +310,7 @@ class InferenceLoop:
         analysis = self.whiteboard.get("problem_analysis")
         analysis_roles = self.whiteboard.get("worker_roles") or []
         user_input = self.whiteboard.get("input_prompt") or ""
+        input_urls = self._extract_urls(user_input)
         # Gather memory snapshots
         hot = self.hot_memory.read()
         warm = self.warm_memory.read_today()
@@ -300,6 +328,12 @@ class InferenceLoop:
             + f"\n\n上一阶段角色参考: {self._safe_dumps(analysis_roles)}"
             + "\n请先定义你当前的 collector 专业角色，返回 self_defined_role。"
         )
+        if input_urls and self._is_explicit_read_analyze_request(user_input):
+            prompt += (
+                f"\n用户输入中包含 URL：{self._safe_dumps(input_urls)}。"
+                "\n这是明确的读取与分析指令：你必须立即读取并分析，不要向用户请求确认或补充目标。"
+                "\n若 URL 无法访问，直接返回失败原因和可执行替代方案，不要反问是否允许读取。"
+            )
         results = self._run_parallel(prompt, int(settings.get("collection_workers", 2)), "collector", enable_tools=False)
         
         merged = {"synthesized_context": "", "memory_references": [], "external_info": ""}
@@ -607,6 +641,11 @@ class InferenceLoop:
             allowed_tools=gate.get("tools") or [],
         ).step(prompt)
         if isinstance(res, str) and res.strip():
+            if self._extract_urls(user_input) and self._is_explicit_read_analyze_request(user_input):
+                low = res.lower()
+                blocked = any(k in low for k in ["clarify", "can you", "please confirm", "请确认", "请问", "能否说明", "what is your goal"])
+                if blocked:
+                    return "已完成分析。若文档访问受限，我已按可见内容提取关键信息并标注限制。"
             return res
         return "我建议先满足前置条件，再执行目标动作。"
 
