@@ -45,7 +45,7 @@ class ToolAdapter:
                 props[arg]["additionalProperties"] = True
             else:
                 props[arg] = {"type": "string"}
-                if arg not in ["subcommand", "background", "timeout", "pid", "data", "lines", "approve", "external_checks", "scheduled_tasks", "self_diagnosis"]:
+                if arg not in ["subcommand", "background", "timeout", "pid", "data", "lines", "approve", "external_checks", "scheduled_tasks", "self_diagnosis", "proactive_delivery"]:
                     required.append(arg)
                  
         parameters = {
@@ -206,7 +206,7 @@ class ToolAdapter:
 
         # Add Overthinking Control Tool
         self._register_builtin("overthinking_control", "Control the Overthinking background process.", ["action", "interval", "steps", "external_checks"], self._tool_overthinking_control)
-        self._register_builtin("overaction_control", "Control the Overaction background process.", ["action", "interval", "interaction_timeout_hours", "scheduled_tasks", "self_diagnosis"], self._tool_overaction_control)
+        self._register_builtin("overaction_control", "Control the Overaction background process.", ["action", "interval", "interaction_timeout_hours", "scheduled_tasks", "self_diagnosis", "proactive_delivery"], self._tool_overaction_control)
 
         self._register_builtin("swarm_control", "Control Swarmbot configuration and lifecycle (CLI wrapper).", ["command", "subcommand", "args"], self._tool_swarm_control)
         self._register_builtin("skill_summary", "List available Swarm skills in a compact summary format.", [], self._tool_skill_summary)
@@ -487,7 +487,7 @@ class ToolAdapter:
         else:
             return f"Unknown action: {action}. Valid actions: start, stop, status, configure"
 
-    def _tool_overaction_control(self, action: str, interval: Optional[int] = None, interaction_timeout_hours: Optional[int] = None, scheduled_tasks: Optional[str] = None, self_diagnosis: Optional[str] = None) -> str:
+    def _tool_overaction_control(self, action: str, interval: Optional[int] = None, interaction_timeout_hours: Optional[int] = None, scheduled_tasks: Optional[str] = None, self_diagnosis: Optional[str] = None, proactive_delivery: Optional[str] = None) -> str:
         from ..config_manager import load_config, save_config
 
         cfg = load_config()
@@ -524,6 +524,11 @@ class ToolAdapter:
                     cfg.overaction.self_diagnosis = json.loads(str(self_diagnosis))
                 except Exception as e:
                     return f"Invalid self_diagnosis JSON: {e}"
+            if proactive_delivery:
+                try:
+                    cfg.overaction.proactive_delivery = json.loads(str(proactive_delivery))
+                except Exception as e:
+                    return f"Invalid proactive_delivery JSON: {e}"
             save_config(cfg)
             return (
                 f"Overaction configuration updated. Interval: {cfg.overaction.interval_minutes}m, "

@@ -65,6 +65,14 @@ class OveractionConfig:
             "perf_window": 50,
         }
     )
+    proactive_delivery: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "enabled": True,
+            "quiet_hours": "23:00-08:00",
+            "min_interval_minutes": 30,
+            "max_per_cycle": 2,
+        }
+    )
 
 
 @dataclass
@@ -180,6 +188,7 @@ def load_config() -> SwarmbotConfig:
             t_data = data["tools"]
             if "fs" in t_data: cfg.tools.fs = t_data["fs"]
             if "shell" in t_data: cfg.tools.shell = t_data["shell"]
+            if "exec" in t_data: cfg.tools.exec = t_data["exec"]
             
         # 5. Load Channels
         if "channels" in data:

@@ -36,6 +36,9 @@ class OveractionLoop:
         )
         self._schedule_state_path = Path(self.workspace) / "overaction_schedule_state.json"
         self._diag_log_path = Path(self.workspace) / "logs" / "conversation_metrics.jsonl"
+        self._outbox_path = Path(self.workspace) / "proactive_outbox.jsonl"
+        self._delivery_state_path = Path(self.workspace) / "proactive_delivery_state.json"
+        self._cycle_delivery_count = 0
 
     def start(self):
         t = threading.Thread(target=self._loop, daemon=True)
@@ -76,6 +79,70 @@ class OveractionLoop:
         if note in current:
             return
         self.hot_memory.update(current + f"\n\n### Overaction Note\n- {note}")
+
+    def _load_delivery_state(self) -> Dict[str, Any]:
+        try:
+            if self._delivery_state_path.exists():
+                return json.loads(self._delivery_state_path.read_text(encoding="utf-8"))
+        except:
+            pass
+        return {"last_announce_ts": 0}
+
+    def _save_delivery_state(self, state: Dict[str, Any]) -> None:
+        try:
+            self._delivery_state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._delivery_state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        except:
+            pass
+
+    def _in_quiet_hours(self, spec: str, now_dt: datetime.datetime) -> bool:
+        try:
+            a, b = [x.strip() for x in str(spec).split("-", 1)]
+            ah, am = [int(x) for x in a.split(":")]
+            bh, bm = [int(x) for x in b.split(":")]
+            cur = now_dt.hour * 60 + now_dt.minute
+            start = ah * 60 + am
+            end = bh * 60 + bm
+            if start <= end:
+                return start <= cur < end
+            return cur >= start or cur < end
+        except:
+            return False
+
+    def _append_proactive_outbox(self, message: str, reason: str, channel: str = "default", priority: str = "normal") -> bool:
+        cfg = self.over_cfg
+        policy = getattr(cfg, "proactive_delivery", {}) if cfg is not None else {}
+        if not bool(policy.get("enabled", True)):
+            return False
+        now_dt = datetime.datetime.now()
+        if self._in_quiet_hours(str(policy.get("quiet_hours", "23:00-08:00")), now_dt):
+            return False
+        max_per_cycle = int(policy.get("max_per_cycle", 2))
+        if self._cycle_delivery_count >= max(1, max_per_cycle):
+            return False
+        state = self._load_delivery_state()
+        now_ts = int(time.time())
+        min_interval = int(policy.get("min_interval_minutes", 30)) * 60
+        last_ts = int(state.get("last_announce_ts", 0))
+        if now_ts - last_ts < max(0, min_interval):
+            return False
+        payload = {
+            "ts": now_ts,
+            "channel": channel,
+            "priority": priority,
+            "reason": reason,
+            "message": message.strip(),
+        }
+        try:
+            self._outbox_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._outbox_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            state["last_announce_ts"] = now_ts
+            self._save_delivery_state(state)
+            self._cycle_delivery_count += 1
+            return True
+        except:
+            return False
 
     def _load_schedule_state(self) -> Dict[str, Any]:
         try:
@@ -147,6 +214,13 @@ class OveractionLoop:
             channel = str(delivery.get("channel") or "default")
             self._append_hot_note(f"调度交付[{name}] -> {channel}")
             output["announce_channel"] = channel
+            announce_msg = msg or f"调度任务触发：{name}"
+            output["announced"] = self._append_proactive_outbox(
+                message=announce_msg,
+                reason=f"scheduled:{name}",
+                channel=channel,
+                priority="normal",
+            )
         elif mode == "webhook":
             output["webhook"] = str(delivery.get("url") or "")
         cycle_result.setdefault("scheduled_actions", []).append(output)
@@ -268,13 +342,20 @@ class OveractionLoop:
             idle_hours = self._last_interaction_hours()
             cycle_result["idle_hours"] = round(idle_hours, 2)
             if idle_hours >= interaction_timeout:
+                msg = f"检测到你已 {idle_hours:.1f} 小时未互动，我在这里，是否需要我帮你整理一下当前待办？"
                 self._append_hot_note(f"长时间未交互({idle_hours:.1f}h)，建议生成一条简短关心消息。")
+                self._append_proactive_outbox(msg, reason="idle_timeout", priority="normal")
         hot = self.hot_memory.read()
         if bool(getattr(cfg, "check_tasks", True)):
             todos = self._extract_todos(hot)
             cycle_result["pending_todo_count"] = len(todos)
             if len(todos) >= 3:
                 self._append_hot_note(f"待办任务较多({len(todos)}项)，建议触发温和提醒并按优先级清理。")
+                self._append_proactive_outbox(
+                    f"你目前有 {len(todos)} 项待办，我可以先帮你按优先级排一个可执行顺序。",
+                    reason="todo_backlog",
+                    priority="normal",
+                )
         if bool(getattr(cfg, "check_system", True)):
             disk_ratio = self._read_mem_available_ratio()
             mem_ratio = self._read_memory_available_ratio()
@@ -282,8 +363,18 @@ class OveractionLoop:
             cycle_result["memory_available_ratio"] = round(mem_ratio, 4)
             if disk_ratio < 0.1:
                 self._append_hot_note(f"磁盘可用率偏低({disk_ratio:.1%})，建议清理缓存或归档旧日志。")
+                self._append_proactive_outbox(
+                    f"系统提示：磁盘可用率仅 {disk_ratio:.1%}，建议尽快清理缓存或归档日志。",
+                    reason="disk_low",
+                    priority="high",
+                )
             if mem_ratio < 0.1:
                 self._append_hot_note(f"内存可用率偏低({mem_ratio:.1%})，建议降低并发并检查异常进程。")
+                self._append_proactive_outbox(
+                    f"系统提示：内存可用率仅 {mem_ratio:.1%}，建议降低并发并检查异常进程。",
+                    reason="mem_low",
+                    priority="high",
+                )
         diag = {
             "warm_files": len(self.warm_memory.list_files()),
             "hot_memory_len": len(hot),
@@ -301,11 +392,18 @@ class OveractionLoop:
 
     def _process_cycle(self, reason: str = "scheduled", events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         print(f"[Overaction] Cycle: Refining and Self-Optimizing ({reason})...")
+        self._cycle_delivery_count = 0
         cycle_result: Dict[str, Any] = {"reason": reason, "events": events or []}
         for e in events or []:
             title = str(e.get("title") or e.get("type") or "external_event")
             summary = str(e.get("summary") or "")
             self._append_hot_note(f"外部事件触发[{title}] {summary}".strip())
+            if summary:
+                self._append_proactive_outbox(
+                    f"检测到外部事件：{title}。{summary}",
+                    reason=f"external:{title}",
+                    priority="high",
+                )
         recent_qmd = self.cold_memory.search_text("recent facts", limit=10)
         refine_prompt = OVERACTION_REFINE_PROMPT.format(recent_qmd=recent_qmd)
         self.agent.step(refine_prompt)
