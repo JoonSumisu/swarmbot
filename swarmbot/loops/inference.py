@@ -3,6 +3,7 @@ import json
 import time
 import os
 import re
+from pathlib import Path
 from typing import List, Dict, Any
 
 from ..core.agent import CoreAgent, AgentContext
@@ -32,6 +33,9 @@ class InferenceLoop:
         self.swarmboot = self._load_boot_file("swarmboot.md")
         self.soul = self._load_boot_file("SOUL.md")
         self.loop_profile_mode = (os.environ.get("SWARMBOT_LOOP_PROFILE") or "auto").strip().lower()
+        self.route_mode = "engineering_complex"
+        self.route_workers = 4
+        self.legal_kb_path = Path(self.workspace_path) / "legal_kb.jsonl"
 
     def _extract_urls(self, text: str) -> List[str]:
         if not isinstance(text, str):
@@ -125,6 +129,25 @@ class InferenceLoop:
                 "mode": "rule_forced",
                 "targets": urls,
             }
+        t = (user_input or "").lower()
+        if any(k in t for k in ["法律", "法条", "条文", "劳动法", "刑法", "民法", "合同法"]):
+            forced_tools = self._sanitize_tools(["web_search", "browser_open", "browser_read", "file_read"], fallback_tools)
+            return {
+                "need_tools": True,
+                "tools": forced_tools,
+                "reason": "rule:legal_query_requires_evidence",
+                "confidence": 0.96,
+                "mode": "rule_forced",
+            }
+        if any(k in t for k in ["商业", "竞品", "市场", "商业模式", "产品设计", "可行性", "项目评估"]):
+            forced_tools = self._sanitize_tools(["web_search", "browser_open", "browser_read"], fallback_tools)
+            return {
+                "need_tools": True,
+                "tools": forced_tools,
+                "reason": "rule:business_query_requires_market_info",
+                "confidence": 0.94,
+                "mode": "rule_forced",
+            }
         decisions = [self._decide_tool_gate_once(stage, user_input, context_json, fallback_tools) for _ in range(3)]
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
@@ -199,6 +222,122 @@ class InferenceLoop:
         )
         return best
 
+    def _heuristic_route_mode(self, user_input: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        t = (user_input or "").lower()
+        if any(k in t for k in ["报错", "bug", "重构", "架构", "多文件", "生产", "上线", "pipeline", "ci", "复杂", "工程"]):
+            return {"route": "engineering_complex", "reason": "heuristic:engineering_keywords", "confidence": 0.72, "workers": 5}
+        if any(k in t for k in ["为什么", "哲学", "心理", "分析", "解释", "建议", "计划", "priority", "优先级", "沟通"]):
+            return {"route": "reasoning_swarm", "reason": "heuristic:reasoning_keywords", "confidence": 0.7, "workers": 3}
+        if any(k in t for k in ["改一下boot", "写个脚本", "调整参数", "给我一句", "润色", "草稿", "聊聊", "安抚"]):
+            return {"route": "reasoning_swarm", "reason": "heuristic:light_code_or_dialogue", "confidence": 0.68, "workers": 2}
+        if len(t) <= 80 and not any(k in t for k in ["并且", "同时", "然后", "如果", "但", "且"]):
+            return {"route": "simple_direct_master", "reason": "heuristic:short_simple_query", "confidence": 0.66, "workers": 2}
+        return {"route": "reasoning_swarm", "reason": "heuristic:default_reasoning", "confidence": 0.6, "workers": 3}
+
+    def _hard_route_override(self, user_input: str) -> Dict[str, Any] | None:
+        t = (user_input or "").lower().strip()
+        engineering_markers = [
+            "ci", "pipeline", "门禁", "sast", "lint", "单测", "发布审批", "回滚", "多租户", "审计日志",
+            "循环依赖", "重构", "网关", "并发", "熔断", "限流", "生产", "上线", "架构", "多模块", "故障",
+        ]
+        if any(k in t for k in engineering_markers):
+            return {"route": "engineering_complex", "reason": "override:engineering_dictionary", "confidence": 0.97, "workers": 4}
+        reasoning_markers = ["法律", "法条", "合同", "劳动法", "刑法", "心理", "哲学", "商业", "产品设计", "评估", "分析", "策略"]
+        if any(k in t for k in reasoning_markers):
+            return {"route": "reasoning_swarm", "reason": "override:reasoning_domain_dictionary", "confidence": 0.93, "workers": 3}
+        simple_markers = ["一句", "一句话", "润色", "更礼貌", "更自然", "改写", "安慰我一句", "写一句", "打个招呼"]
+        if any(k in t for k in simple_markers) and len(t) <= 200:
+            return {"route": "simple_direct_master", "reason": "override:single_utterance_or_rephrase", "confidence": 0.95, "workers": 2}
+        return None
+
+    def _is_legal_query(self, user_input: str) -> bool:
+        t = (user_input or "").lower()
+        return any(k in t for k in ["法律", "法条", "条文", "劳动法", "刑法", "民法", "合同法", "起诉", "违法", "责任"])
+
+    def _extract_legal_citations(self, text: str) -> List[str]:
+        if not isinstance(text, str):
+            return []
+        laws = re.findall(r"《[^》]{2,30}》", text)
+        articles = re.findall(r"第[一二三四五六七八九十百千0-9]{1,8}条", text)
+        merged: List[str] = []
+        for x in laws + articles:
+            if x not in merged:
+                merged.append(x)
+        return merged
+
+    def _update_legal_kb(self, question: str, answer: str, route: str) -> None:
+        if not self._is_legal_query(question):
+            return
+        cites = self._extract_legal_citations(answer)
+        rec = {
+            "ts": int(time.time()),
+            "route": route,
+            "question": (question or "")[:800],
+            "citations": cites[:20],
+            "answer_preview": (answer or "")[:1200],
+        }
+        try:
+            self.legal_kb_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.legal_kb_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except:
+            pass
+
+    def _decide_route_mode(self, user_input: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        override = self._hard_route_override(user_input)
+        if override:
+            return override
+        prompt = (
+            "你是路由决策器。请把请求路由到三类之一：\n"
+            "1) simple_direct_master: 简单问题，直接交给 master 用自然语言回复。\n"
+            "2) reasoning_swarm: 需要分析/哲学心理分析/简单代码与参数调整，用 2-5 worker 推理后交给 master。\n"
+            "3) engineering_complex: 工程复杂问题，进入完整 swarm+loop。\n"
+            f"用户输入: {user_input}\n"
+            f"分析摘要: {self._safe_dumps(analysis, max_len=1800)}\n"
+            "只输出JSON：{\"route\":\"reasoning_swarm\",\"confidence\":0.8,\"reason\":\"...\",\"workers\":3}"
+        )
+        votes = []
+        for _ in range(3):
+            res = self._create_worker("planner", enable_tools=False).step(prompt)
+            try:
+                d = json.loads(self._extract_json(res))
+                route = str(d.get("route") or "").strip().lower()
+                if route not in ["simple_direct_master", "reasoning_swarm", "engineering_complex"]:
+                    continue
+                conf = float(d.get("confidence") or 0.5)
+                workers = int(d.get("workers") or 3)
+                workers = max(2, min(5, workers))
+                votes.append({"route": route, "confidence": max(0.0, min(1.0, conf)), "reason": str(d.get("reason") or ""), "workers": workers})
+            except:
+                pass
+        if not votes:
+            return self._heuristic_route_mode(user_input, analysis)
+        counts = {"simple_direct_master": 0, "reasoning_swarm": 0, "engineering_complex": 0}
+        for v in votes:
+            counts[v["route"]] += 1
+        route = sorted(counts.items(), key=lambda x: (-x[1], 0 if x[0] == "reasoning_swarm" else 1))[0][0]
+        winners = [v for v in votes if v["route"] == route] or votes
+        workers = round(sum(v["workers"] for v in winners) / len(winners))
+        conf = sum(v["confidence"] for v in winners) / len(winners)
+        reason = "; ".join([v["reason"] for v in winners[:2]]).strip("; ")
+        return {"route": route, "confidence": round(conf, 3), "reason": f"majority:{reason}", "workers": max(2, min(5, workers))}
+
+    def _step_direct_master(self) -> str:
+        user_input = self.whiteboard.get("input_prompt") or ""
+        prompt = (
+            "你是 Master Agent。请直接给用户自然、友好、可执行的回答。\n"
+            "优先使用正常对话语气，不要工程化术语，不要拆成执行体视角。\n"
+            "若是复合问题，先简短共情，再给结构化答案。\n"
+            f"用户输入: {user_input}\n"
+            f"Persona (Soul): {self.soul}"
+        )
+        gate = self._decide_tool_gate("direct_master", user_input, "{}", ["web_search", "browser_open", "browser_read", "file_read"])
+        self.whiteboard.update("direct_master_tool_gate", gate)
+        res = self._create_worker("master", enable_tools=bool(gate.get("need_tools")), allowed_tools=gate.get("tools") or []).step(prompt)
+        if isinstance(res, str) and res.strip():
+            return res
+        return "我在。我们先把问题拆开，一步一步来。"
+
     def run(self, user_input: str, session_id: str) -> str:
         self.whiteboard.clear()
         self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
@@ -207,9 +346,35 @@ class InferenceLoop:
         
         print(f"[InferenceLoop] Start: {user_input[:50]}...")
 
+        pre = self._hard_route_override(user_input)
+        if pre and str(pre.get("route")) == "simple_direct_master":
+            self.route_mode = "simple_direct_master"
+            self.route_workers = int(pre.get("workers") or 2)
+            self.whiteboard.update("route_decision", pre)
+            final_response = self._step_direct_master()
+            final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+            self.whiteboard.update("final_response", final_response)
+            self._step_organization()
+            self._update_legal_kb(user_input, final_response, self.route_mode)
+            return final_response
+
         # Step 2: Problem Analysis (No Tools)
-        self._step_analysis()
+        self._step_analysis(light=True)
+        route_decision = self._decide_route_mode(user_input, self.whiteboard.get("problem_analysis") or {})
+        self.route_mode = str(route_decision.get("route") or "reasoning_swarm")
+        self.route_workers = int(route_decision.get("workers") or 3)
+        self.whiteboard.update("route_decision", route_decision)
+        if self.route_mode == "simple_direct_master":
+            final_response = self._step_direct_master()
+            final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+            self.whiteboard.update("final_response", final_response)
+            self._step_organization()
+            self._update_legal_kb(user_input, final_response, self.route_mode)
+            return final_response
+
         selected_profile = self._decide_loop_profile()
+        if self.route_mode == "reasoning_swarm":
+            selected_profile = "lean"
         self.whiteboard.update("loop_profile", selected_profile)
         settings = self._profile_settings(selected_profile)
         
@@ -220,6 +385,18 @@ class InferenceLoop:
         self._step_planning()
         
         # Step 5 & 6: Inference & Evaluation (Max 3 Loops with Re-planning)
+        if self.route_mode == "reasoning_swarm":
+            self._step_inference()
+            final_response = self._step_translation()
+            final_response = self._calibrate_final_response(
+                self.whiteboard.get("input_prompt"),
+                final_response,
+            )
+            self.whiteboard.update("final_response", final_response)
+            self._step_organization()
+            self._update_legal_kb(user_input, final_response, self.route_mode)
+            return final_response
+
         max_eval_loops = int(settings.get("max_eval_loops", 3))
         for i in range(max_eval_loops):
             self.whiteboard.update("evaluation_report", {"retry_count": i})
@@ -246,8 +423,18 @@ class InferenceLoop:
         
         # Step 8: Organization & Persistence (No Tools)
         self._step_organization()
+        self._update_legal_kb(user_input, final_response, self.route_mode)
         
         return final_response
+
+    def preview_route(self, user_input: str) -> Dict[str, Any]:
+        self.whiteboard.clear()
+        self.whiteboard.update("metadata", {"session_id": "preview", "loop_id": str(int(time.time()))})
+        self.whiteboard.update("input_prompt", user_input)
+        self._step_analysis(light=True)
+        decision = self._decide_route_mode(user_input, self.whiteboard.get("problem_analysis") or {})
+        self.whiteboard.update("route_decision", decision)
+        return decision
 
     def _run_parallel(self, prompt: str, count: int, role: str, enable_tools: bool = True, allowed_tools: List[str] | None = None) -> List[str]:
         results = []
@@ -258,7 +445,7 @@ class InferenceLoop:
                 except Exception as e: print(f"Worker {role} error: {e}")
         return results
 
-    def _step_analysis(self):
+    def _step_analysis(self, light: bool = False):
         print("[Step 2] Analysis (No Tools)...")
         settings = self._profile_settings()
         base_prompt = STEP_ANALYSIS_PROMPT.format(
@@ -271,7 +458,8 @@ class InferenceLoop:
             + "\n输出JSON时增加字段：self_defined_role, required_tools, confidence。"
             + "\n示例: {\"self_defined_role\":\"security_analyst\",\"required_tools\":[\"web_search\"],\"confidence\":0.78,...}"
         )
-        results = self._run_parallel(prompt, int(settings.get("analysis_workers", 2)), "analyst", enable_tools=False)
+        worker_count = 1 if light else int(settings.get("analysis_workers", 2))
+        results = self._run_parallel(prompt, worker_count, "analyst", enable_tools=False)
         merged = {}
         worker_roles: List[str] = []
         for r in results:
@@ -465,7 +653,11 @@ class InferenceLoop:
         info = self.whiteboard.get("information_gathering") or {}
         context = info.get("synthesized_context") or ""
         tasks = plan.get("tasks") or []
-        max_agents = max(1, int(getattr(self.config.swarm, "max_agents", 4)))
+        route_workers = int(self.route_workers or 0)
+        if self.route_mode == "reasoning_swarm":
+            max_agents = max(2, min(5, route_workers if route_workers > 0 else int(getattr(self.config.swarm, "max_agents", 4))))
+        else:
+            max_agents = max(1, int(getattr(self.config.swarm, "max_agents", 4)))
         worker_ids = [f"worker_{i+1}" for i in range(max_agents)]
         assignments: Dict[str, Dict[str, Any]] = {}
         claim_history: List[Dict[str, Any]] = []

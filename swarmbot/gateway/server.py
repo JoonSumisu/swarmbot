@@ -4,6 +4,8 @@ import logging
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import time
+import uuid
 
 # --- Path Setup ---
 CURRENT_DIR = Path(__file__).resolve().parent.parent
@@ -42,9 +44,11 @@ class GatewayServer:
         self._stop_event = threading.Event()
         self._executor = ThreadPoolExecutor(max_workers=5)
         self._inflight = asyncio.Semaphore(5)
+        self._subtasks = {}
+        self._subtask_lock = asyncio.Lock()
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v0.5.7)...")
+        logger.info("Starting Swarmbot Gateway (v0.5.4)...")
 
         # 1. Initialize Channels
         await self._init_channels()
@@ -56,6 +60,7 @@ class GatewayServer:
         if getattr(self.config.overthinking, "enabled", True):
             self.overthinking_loop = OverthinkingLoop(self._stop_event)
             self.overthinking_loop.start()
+        if getattr(getattr(self.config, "overaction", None), "enabled", True):
             self.overaction_loop = OveractionLoop(self._stop_event)
             self.overaction_loop.start()
 
@@ -142,30 +147,113 @@ class GatewayServer:
         """Async wrapper for blocking inference."""
         loop = asyncio.get_running_loop()
         async with self._inflight:
+            raw = (message.content or "").strip()
+            if raw in ["/jobs", "任务状态", "subtasks", "/subtasks"]:
+                text = await self._format_subtask_status(message.chat_id or "unknown")
+                await self._publish_reply(message, text)
+                return
             try:
                 inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
-                response_text = await loop.run_in_executor(
+                route_decision = await loop.run_in_executor(
                     self._executor,
-                    inference_loop.run,
+                    inference_loop.preview_route,
                     message.content,
-                    message.chat_id or "unknown"
                 )
+                route = str((route_decision or {}).get("route") or "reasoning_swarm")
+                if route == "simple_direct_master":
+                    response_text = await loop.run_in_executor(
+                        self._executor,
+                        inference_loop.run,
+                        message.content,
+                        message.chat_id or "unknown"
+                    )
+                else:
+                    task_id = f"sb_{uuid.uuid4().hex[:10]}"
+                    await self._register_subtask(task_id, message, route_decision)
+                    asyncio.create_task(self._run_subtask_and_announce(task_id, message))
+                    response_text = (
+                        f"已启动后台子任务 {task_id}（route={route}）。\n"
+                        "你可以继续聊天处理普通问题；完成后我会主动推送结果。\n"
+                        "发送 /jobs 可查看任务状态。"
+                    )
                 if not isinstance(response_text, str) or not response_text.strip():
                     response_text = "已收到消息，但本次推理结果为空。请重试一次。"
             except Exception as e:
                 logger.error(f"Inference processing failed: {e}")
                 response_text = "系统处理消息时出现异常，请稍后重试。"
+            await self._publish_reply(message, response_text)
 
-            try:
-                reply = OutboundMessage(
-                    channel=message.channel,
-                    content=response_text,
-                    chat_id=message.chat_id,
-                    reply_to=message.message_id
-                )
-                await self.bus.publish_outbound(reply)
-            except Exception as e:
-                logger.error(f"Publish outbound failed: {e}")
+    async def _publish_reply(self, message: InboundMessage, text: str):
+        try:
+            reply = OutboundMessage(
+                channel=message.channel,
+                content=text,
+                chat_id=message.chat_id,
+                reply_to=message.message_id
+            )
+            await self.bus.publish_outbound(reply)
+        except Exception as e:
+            logger.error(f"Publish outbound failed: {e}")
+
+    async def _register_subtask(self, task_id: str, message: InboundMessage, route_decision: dict):
+        async with self._subtask_lock:
+            self._subtasks[task_id] = {
+                "task_id": task_id,
+                "status": "running",
+                "route": str((route_decision or {}).get("route") or ""),
+                "reason": str((route_decision or {}).get("reason") or ""),
+                "workers": int((route_decision or {}).get("workers") or 0),
+                "chat_id": message.chat_id or "unknown",
+                "channel": message.channel,
+                "input_preview": (message.content or "")[:120],
+                "created_at": int(time.time()),
+                "updated_at": int(time.time()),
+            }
+
+    async def _run_subtask_and_announce(self, task_id: str, message: InboundMessage):
+        loop = asyncio.get_running_loop()
+        try:
+            inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
+            result = await loop.run_in_executor(
+                self._executor,
+                inference_loop.run,
+                message.content,
+                message.chat_id or "unknown",
+            )
+            async with self._subtask_lock:
+                rec = self._subtasks.get(task_id, {})
+                rec["status"] = "completed"
+                rec["updated_at"] = int(time.time())
+                rec["result_preview"] = (result or "")[:180]
+                self._subtasks[task_id] = rec
+            await self._publish_reply(
+                message,
+                f"[子任务 {task_id} 完成]\n{result}",
+            )
+        except Exception as e:
+            async with self._subtask_lock:
+                rec = self._subtasks.get(task_id, {})
+                rec["status"] = "failed"
+                rec["updated_at"] = int(time.time())
+                rec["error"] = str(e)
+                self._subtasks[task_id] = rec
+            await self._publish_reply(
+                message,
+                f"[子任务 {task_id} 失败]\n{e}",
+            )
+
+    async def _format_subtask_status(self, chat_id: str) -> str:
+        async with self._subtask_lock:
+            rows = [v for v in self._subtasks.values() if str(v.get("chat_id")) == str(chat_id)]
+        rows = sorted(rows, key=lambda x: int(x.get("created_at") or 0), reverse=True)[:8]
+        if not rows:
+            return "当前没有子任务记录。"
+        lines = ["最近子任务状态："]
+        for r in rows:
+            lines.append(
+                f"- {r.get('task_id')} | {r.get('status')} | {r.get('route')} | workers={r.get('workers')}"
+            )
+        return "\n".join(lines)
 
     def stop(self):
         logger.info("Stopping Gateway...")
