@@ -34,48 +34,6 @@ class SwarmSettings:
 
 
 @dataclass
-class OverthinkingConfig:
-    enabled: bool = True
-    interval_minutes: int = 30
-    max_steps: int = 20 # Default 0 means no autonomous exploration actions unless configured
-    external_checks: Dict[str, Any] = field(
-        default_factory=lambda: {
-            "enabled": False,
-            "email": {"enabled": False, "interval_minutes": 30},
-            "calendar": {"enabled": False, "interval_minutes": 60},
-            "weather": {"enabled": False, "interval_minutes": 120},
-            "project": {"enabled": False, "interval_minutes": 60},
-            "urgent_keywords": ["紧急", "urgent", "asap", "ci failed", "deploy failed"],
-        }
-    )
-
-@dataclass
-class OveractionConfig:
-    enabled: bool = True
-    interval_minutes: int = 60
-    check_interaction: bool = True
-    check_tasks: bool = True
-    check_system: bool = True
-    interaction_timeout_hours: int = 4
-    scheduled_tasks: List[Dict[str, Any]] = field(default_factory=list)
-    self_diagnosis: Dict[str, Any] = field(
-        default_factory=lambda: {
-            "enabled": True,
-            "log_retention_days": 7,
-            "perf_window": 50,
-        }
-    )
-    proactive_delivery: Dict[str, Any] = field(
-        default_factory=lambda: {
-            "enabled": True,
-            "quiet_hours": "23:00-08:00",
-            "min_interval_minutes": 30,
-            "max_per_cycle": 2,
-        }
-    )
-
-
-@dataclass
 class ToolConfig:
     fs: Dict[str, Any] = field(default_factory=lambda: {"allow_read": [], "allow_write": []})
     shell: Dict[str, Any] = field(default_factory=lambda: {"allow_commands": [], "deny_commands": []}) # Unrestricted by default
@@ -101,19 +59,20 @@ class ChannelConfig:
 
 @dataclass
 class DaemonConfig:
-    manage_gateway: bool = True  # Enable by default
-    manage_overthinking: bool = True  # Enable by default
+    manage_gateway: bool = True
+    manage_autonomous: bool = True
     backup_interval_seconds: int = 60
     health_check_interval_seconds: int = 3600
     gateway_restart_delay_seconds: int = 10
-    overthinking_restart_delay_seconds: int = 10
+    autonomous_restart_delay_seconds: int = 10
 
 @dataclass
 class AutonomousConfig:
     enabled: bool = True
     tick_seconds: int = 30
     max_concurrent_actions: int = 3
-    providers: List[Dict[str, Any]] = field(default_factory=list)
+    # Independent provider for autonomous mode
+    provider: Optional[ProviderConfig] = field(default_factory=lambda: ProviderConfig(name="autonomous", max_tokens=8192))
     model_routing: Dict[str, Any] = field(default_factory=dict)
     default_locked_bundles: List[str] = field(
         default_factory=lambda: [
@@ -163,8 +122,6 @@ class SwarmbotConfig:
     ])
     # Deprecated 'provider' field removed to avoid confusion/conflicts
     swarm: SwarmSettings = field(default_factory=SwarmSettings)
-    overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
-    overaction: OveractionConfig = field(default_factory=OveractionConfig)
     tools: ToolConfig = field(default_factory=ToolConfig)
     channels: Dict[str, ChannelConfig] = field(default_factory=dict)
     daemon: DaemonConfig = field(default_factory=DaemonConfig)
@@ -220,25 +177,14 @@ def load_config() -> SwarmbotConfig:
                 elif hasattr(cfg.swarm, k):
                     setattr(cfg.swarm, k, v)
                     
-        # 3. Load Overthinking
-        if "overthinking" in data:
-            for k, v in data["overthinking"].items():
-                if hasattr(cfg.overthinking, k):
-                    setattr(cfg.overthinking, k, v)
-
-        if "overaction" in data:
-            for k, v in data["overaction"].items():
-                if hasattr(cfg.overaction, k):
-                    setattr(cfg.overaction, k, v)
-
-        # 4. Load Tools
+        # 3. Load Tools
         if "tools" in data:
             t_data = data["tools"]
             if "fs" in t_data: cfg.tools.fs = t_data["fs"]
             if "shell" in t_data: cfg.tools.shell = t_data["shell"]
             if "exec" in t_data: cfg.tools.exec = t_data["exec"]
             
-        # 5. Load Channels
+        # 4. Load Channels
         if "channels" in data:
             cfg.channels = {}
             for ch_name, ch_data in data["channels"].items():
@@ -263,13 +209,26 @@ def load_config() -> SwarmbotConfig:
                     
                 cfg.channels[ch_name] = ch_cfg
 
-        # 6. Load Daemon
+        # 5. Load Daemon
         if "daemon" in data:
             for k, v in data["daemon"].items():
                 if hasattr(cfg.daemon, k):
                     setattr(cfg.daemon, k, v)
+
+        # 6. Load Autonomous
         if "autonomous" in data:
-            for k, v in data["autonomous"].items():
+            auto_data = data["autonomous"]
+            # Handle provider specifically to ensure it's a ProviderConfig object
+            if "provider" in auto_data and isinstance(auto_data["provider"], dict):
+                p_data = auto_data["provider"]
+                p = ProviderConfig()
+                for k, v in p_data.items():
+                    if hasattr(p, k):
+                        setattr(p, k, v)
+                cfg.autonomous.provider = p
+            
+            for k, v in auto_data.items():
+                if k == "provider": continue
                 if hasattr(cfg.autonomous, k):
                     setattr(cfg.autonomous, k, v)
 
@@ -313,8 +272,6 @@ def save_config(cfg: SwarmbotConfig) -> None:
     data = {
         "providers": providers_list,
         "swarm": asdict(cfg.swarm),
-        "overthinking": asdict(cfg.overthinking),
-        "overaction": asdict(cfg.overaction),
         "tools": asdict(cfg.tools),
         "channels": channels_dict,
         "daemon": asdict(cfg.daemon),
