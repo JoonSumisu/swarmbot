@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README_EN.md)
 
-**Swarmbot (v0.5.7)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
+**Swarmbot (v1.0.0)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
 
 它集成了 **QMD 四层记忆系统**（白板、热记忆、温记忆、冷记忆）与 **三环自进化架构**（推理、反思、行动），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互。
 
@@ -14,7 +14,7 @@
 
 - 开发/实验目录说明见 [WORKSPACE_LAYOUT.md](WORKSPACE_LAYOUT.md)
 
-## 🌟 版本 v0.5.7 更新亮点
+## 🌟 版本 v1.0.0 更新亮点
 
 *   **3-Loop Architecture**: 
     *   **Inference Loop**: 8 步标准推理（分析-搜集-规划-执行-评估-转译-整理）。
@@ -61,7 +61,11 @@ This environment is externally managed
 
 这是 Python 对“系统级 Python 环境”的保护机制（常见于 Homebrew / OS 发行版），为了避免把依赖装进系统 Python 导致环境损坏。解决方式是：**永远安装到虚拟环境（venv）**。
 
-本项目内置了跨平台安装脚本，默认会优先做“**直接安装**”（无需手动激活 venv）：
+本项目内置了跨平台安装脚本，默认会优先做“**直接安装**”（无需手动激活 venv），并在安装后自动检查：
+
+- `swarmbot` 核心模块可导入
+- `gateway` 依赖可导入
+- `Feishu(Lark)` 依赖 `lark-oapi` 可导入
 
 - 优先使用 `pipx` 安装为全局可执行命令 `swarmbot`
 - 若无 `pipx`，尝试 `pip --user` 安装
@@ -93,6 +97,9 @@ python3 scripts/bootstrap.py --editable
 
 # 安装并附带回归评测依赖（datasets）
 python3 scripts/bootstrap.py --mode venv --with-eval-deps
+
+# 跳过安装后检查（不推荐）
+python3 scripts/bootstrap.py --skip-check
 ```
 
 **macOS / Linux（可选）**
@@ -149,7 +156,7 @@ source ./.venv/bin/activate
 ./.venv/bin/swarmbot provider add \
   --base-url "http://127.0.0.1:8000/v1" \
   --api-key "sk-xxxx" \
-  --model "qwen3-coder-30b-instruct" \
+  --model "qwen3-coder-next" \
   --max-tokens 8192
 ```
 
@@ -172,6 +179,13 @@ source ./.venv/bin/activate
 ```bash
 # 前台启动
 ./.venv/bin/swarmbot gateway
+```
+
+快速可用性检查（推荐）：
+
+```bash
+# 仅验证网关可启动（20秒烟测）
+timeout 20 ./.venv/bin/swarmbot gateway
 ```
 
 ### 6. 本地调试对话（不走 IM）

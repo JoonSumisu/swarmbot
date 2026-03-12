@@ -71,7 +71,7 @@ def main() -> int:
         got = str(d.get("route") or "")
         rows.append({"type": "routing", "expect": exp, "got": got, "ok": got == exp, "reason": d.get("reason", "")})
 
-    legal_kb = Path(WORKSPACE_PATH) / "legal_kb.jsonl"
+    legal_kb = Path.home() / ".swarmbot" / "evidence" / "legal" / "incremental.jsonl"
     before_kb_lines = len(legal_kb.read_text(encoding="utf-8").splitlines()) if legal_kb.exists() else 0
 
     for q in legal_cases:
@@ -128,7 +128,7 @@ def main() -> int:
         "legal_pass": legal_pass,
         "business_pass": business_pass,
         "think_pass": think_pass,
-        "legal_kb_growth": kb_growth,
+        "evidence_growth": kb_growth,
         "rows": rows,
         "ts": int(time.time()),
     }
@@ -136,7 +136,7 @@ def main() -> int:
     out_dir.mkdir(exist_ok=True)
     out_file = out_dir / f"inference_benchmark_{args.tag}.json"
     out_file.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"file": str(out_file), "routing_acc": routing_acc, "engineering_acc": engineering_acc, "legal_kb_growth": kb_growth}, ensure_ascii=False))
+    print(json.dumps({"file": str(out_file), "routing_acc": routing_acc, "engineering_acc": engineering_acc, "evidence_growth": kb_growth}, ensure_ascii=False))
     return 0
 
 

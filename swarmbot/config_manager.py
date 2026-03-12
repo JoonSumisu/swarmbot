@@ -109,6 +109,53 @@ class DaemonConfig:
     overthinking_restart_delay_seconds: int = 10
 
 @dataclass
+class AutonomousConfig:
+    enabled: bool = True
+    tick_seconds: int = 30
+    max_concurrent_actions: int = 3
+    providers: List[Dict[str, Any]] = field(default_factory=list)
+    model_routing: Dict[str, Any] = field(default_factory=dict)
+    default_locked_bundles: List[str] = field(
+        default_factory=lambda: [
+            "core.memory_foundation",
+            "core.boot_optimizer",
+            "core.system_hygiene",
+            "core.bundle_governor",
+        ]
+    )
+    queues: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "monitor_queue_size": 1000,
+            "action_queue_size": 500,
+            "decision_batch_window_ms": 800,
+        }
+    )
+    swarm_execution: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "worker_min": 1,
+            "worker_max": 10,
+            "architectures": ["auto", "tree", "mesh", "pipeline"],
+            "require_tasklist_before_dispatch": True,
+            "role_selection_mode": "self_select_by_tasklist",
+        }
+    )
+    bundle_registry: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "root_dir": "~/.swarmbot/bundles",
+            "index_file": "~/.swarmbot/bundles/_registry/bundles_index.jsonl",
+            "catalog_file": "~/.swarmbot/bundles/_registry/bundles_catalog.md",
+            "require_registry_write_on_create": True,
+        }
+    )
+    monitor: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "memory_organizer": {"enabled": True, "interval_minutes": 30},
+            "system_health": {"enabled": True, "interval_minutes": 10, "disk_free_ratio_threshold": 0.1, "mem_free_ratio_threshold": 0.1},
+            "long_task_reporter": {"enabled": True, "interval_minutes": 5},
+        }
+    )
+
+@dataclass
 class SwarmbotConfig:
     providers: List[ProviderConfig] = field(default_factory=lambda: [
         ProviderConfig(name="primary"),
@@ -121,6 +168,7 @@ class SwarmbotConfig:
     tools: ToolConfig = field(default_factory=ToolConfig)
     channels: Dict[str, ChannelConfig] = field(default_factory=dict)
     daemon: DaemonConfig = field(default_factory=DaemonConfig)
+    autonomous: AutonomousConfig = field(default_factory=AutonomousConfig)
     # No more hardcoded paths here, rely on constants
 
 def ensure_dirs() -> None:
@@ -220,6 +268,10 @@ def load_config() -> SwarmbotConfig:
             for k, v in data["daemon"].items():
                 if hasattr(cfg.daemon, k):
                     setattr(cfg.daemon, k, v)
+        if "autonomous" in data:
+            for k, v in data["autonomous"].items():
+                if hasattr(cfg.autonomous, k):
+                    setattr(cfg.autonomous, k, v)
 
         # Sync environment variables from primary provider
         if cfg.providers:
@@ -266,6 +318,7 @@ def save_config(cfg: SwarmbotConfig) -> None:
         "tools": asdict(cfg.tools),
         "channels": channels_dict,
         "daemon": asdict(cfg.daemon),
+        "autonomous": asdict(cfg.autonomous),
     }
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:

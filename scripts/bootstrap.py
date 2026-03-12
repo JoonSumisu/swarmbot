@@ -21,12 +21,29 @@ def _run(cmd: list[str], cwd: Path) -> None:
     subprocess.check_call(cmd, cwd=str(cwd))
 
 
+def _ensure_python_version() -> None:
+    if sys.version_info < (3, 10):
+        raise RuntimeError(f"Python >=3.10 required, current: {sys.version}")
+
+
 def _install_eval_deps(python_bin: str, repo_root: Path) -> None:
     print("[swarmbot] installing eval dependencies ...")
-    _run([python_bin, "-m", "pip", "install", "-U", "datasets"], cwd=repo_root)
+    _run([python_bin, "-m", "pip", "install", "-U", "datasets", "pytest"], cwd=repo_root)
 
 
-def _install_venv(repo_root: Path, editable: bool = True) -> None:
+def _post_install_check(python_bin: str, repo_root: Path) -> None:
+    print("[swarmbot] running post-install checks ...")
+    script = (
+        "import importlib\n"
+        "mods=['swarmbot','swarmbot.gateway.server','swarmbot.loops.inference','lark_oapi','swarms']\n"
+        "for m in mods:\n"
+        "  importlib.import_module(m)\n"
+        "print('post_install_check=ok')\n"
+    )
+    _run([python_bin, "-c", script], cwd=repo_root)
+
+
+def _install_venv(repo_root: Path, editable: bool = True, run_checks: bool = True) -> None:
     venv_dir = repo_root / ".venv"
     print(f"[swarmbot] venv: {venv_dir}")
     if not venv_dir.exists():
@@ -43,6 +60,8 @@ def _install_venv(repo_root: Path, editable: bool = True) -> None:
     else:
         print("[swarmbot] installing swarmbot into venv ...")
         _run([str(vpy), "-m", "pip", "install", "."], cwd=repo_root)
+    if run_checks:
+        _post_install_check(str(vpy), repo_root)
     sb = _venv_bin(venv_dir, "swarmbot")
     print()
     print("[swarmbot] done (venv mode)")
@@ -58,7 +77,7 @@ def _install_venv(repo_root: Path, editable: bool = True) -> None:
         print(f"  {vpy} -m swarmbot.cli --help")
 
 
-def _install_pipx(repo_root: Path, editable: bool = False, with_eval_deps: bool = False) -> bool:
+def _install_pipx(repo_root: Path, editable: bool = False, with_eval_deps: bool = False, run_checks: bool = True) -> bool:
     pipx = shutil.which("pipx")
     if not pipx:
         return False
@@ -76,10 +95,13 @@ def _install_pipx(repo_root: Path, editable: bool = False, with_eval_deps: bool 
     if with_eval_deps:
         py = shutil.which("python3") or shutil.which("python") or sys.executable
         _install_eval_deps(py, repo_root)
+    if run_checks:
+        py = shutil.which("python3") or shutil.which("python") or sys.executable
+        _post_install_check(py, repo_root)
     return True
 
 
-def _install_user(repo_root: Path, editable: bool = False, with_eval_deps: bool = False) -> bool:
+def _install_user(repo_root: Path, editable: bool = False, with_eval_deps: bool = False, run_checks: bool = True) -> bool:
     print("[swarmbot] installing with pip --user ...")
     try:
         _run([sys.executable, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], cwd=repo_root)
@@ -104,6 +126,8 @@ def _install_user(repo_root: Path, editable: bool = False, with_eval_deps: bool 
         print(f"  如命令未找到，请将 {bin_dir} 加入 PATH")
     if with_eval_deps:
         _install_eval_deps(sys.executable, repo_root)
+    if run_checks:
+        _post_install_check(sys.executable, repo_root)
     return True
 
 
@@ -125,42 +149,48 @@ def main() -> int:
         action="store_true",
         help="安装回归评测依赖（如 datasets）",
     )
+    parser.add_argument(
+        "--skip-check",
+        action="store_true",
+        help="跳过安装后依赖与模块可用性检查",
+    )
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parent.parent
+    _ensure_python_version()
 
     print(f"[swarmbot] repo: {repo_root}")
 
     if args.mode == "pipx":
-        if _install_pipx(repo_root, editable=args.editable, with_eval_deps=args.with_eval_deps):
+        if _install_pipx(repo_root, editable=args.editable, with_eval_deps=args.with_eval_deps, run_checks=not args.skip_check):
             return 0
         print("[swarmbot] pipx 未安装，安装失败。")
         return 1
 
     if args.mode == "user":
-        if _install_user(repo_root, editable=args.editable, with_eval_deps=args.with_eval_deps):
+        if _install_user(repo_root, editable=args.editable, with_eval_deps=args.with_eval_deps, run_checks=not args.skip_check):
             return 0
         print("[swarmbot] user 模式安装失败。")
         return 1
 
     if args.mode == "venv":
-        _install_venv(repo_root, editable=args.editable)
+        _install_venv(repo_root, editable=args.editable, run_checks=not args.skip_check)
         if args.with_eval_deps:
             _install_eval_deps(str(_venv_python(repo_root / ".venv")), repo_root)
         return 0
 
     if args.editable:
         print("[swarmbot] auto + editable: 使用 venv editable 安装。")
-        _install_venv(repo_root, editable=True)
+        _install_venv(repo_root, editable=True, run_checks=not args.skip_check)
         if args.with_eval_deps:
             _install_eval_deps(str(_venv_python(repo_root / ".venv")), repo_root)
         return 0
 
-    if _install_pipx(repo_root, editable=False, with_eval_deps=args.with_eval_deps):
+    if _install_pipx(repo_root, editable=False, with_eval_deps=args.with_eval_deps, run_checks=not args.skip_check):
         return 0
-    if _install_user(repo_root, editable=False, with_eval_deps=args.with_eval_deps):
+    if _install_user(repo_root, editable=False, with_eval_deps=args.with_eval_deps, run_checks=not args.skip_check):
         return 0
     print("[swarmbot] auto 模式回退到 venv 安装。")
-    _install_venv(repo_root, editable=False)
+    _install_venv(repo_root, editable=False, run_checks=not args.skip_check)
     if args.with_eval_deps:
         _install_eval_deps(str(_venv_python(repo_root / ".venv")), repo_root)
     return 0

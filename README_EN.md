@@ -1,6 +1,6 @@
 # Swarmbot
 
-Swarmbot (v0.5.7) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
+Swarmbot (v1.0.0) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
 
 > Core idea: “All-in-One” — gateway, memory, toolchain, and multi-agent orchestration in one lightweight process.
 
@@ -34,12 +34,13 @@ On macOS (Homebrew Python) or distro-managed Python, pip may show:
 This environment is externally managed
 ```
 
-This repo includes a bootstrap installer with a direct-install-first strategy:
+This repo includes a bootstrap installer with a direct-install-first strategy and post-install checks:
 
 - Prefer `pipx` (global `swarmbot` command, no manual venv activation)
 - Fallback to `pip --user`
 - Final fallback to `.venv`
 - Add `--with-eval-deps` to install regression-eval dependencies in one step
+- Validate core imports (`swarmbot`, `gateway`, `lark-oapi`, `swarms`) after install
 
 ```bash
 git clone https://github.com/JoonSumisu/swarmbot.git
@@ -54,6 +55,7 @@ python3 scripts/bootstrap.py --mode pipx
 python3 scripts/bootstrap.py --mode user
 python3 scripts/bootstrap.py --mode venv
 python3 scripts/bootstrap.py --mode venv --with-eval-deps
+python3 scripts/bootstrap.py --skip-check
 ```
 
 Optional:
@@ -93,7 +95,7 @@ You can also run:
 ./.venv/bin/swarmbot provider add \
   --base-url "http://127.0.0.1:8000/v1" \
   --api-key "sk-xxxx" \
-  --model "qwen3-coder-30b-instruct" \
+  --model "qwen3-coder-next" \
   --max-tokens 8192
 ```
 

@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import logging
+import json
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -30,6 +31,7 @@ from nanobot.config.schema import FeishuConfig
 from swarmbot.loops.inference import InferenceLoop
 from swarmbot.loops.overthinking import OverthinkingLoop
 from swarmbot.loops.overaction import OveractionLoop
+from swarmbot.autonomous import AutonomousEngine
 
 class GatewayServer:
     def __init__(self):
@@ -40,15 +42,19 @@ class GatewayServer:
         # Loops
         self.overthinking_loop = None
         self.overaction_loop = None
+        self.autonomous_engine = None
 
         self._stop_event = threading.Event()
         self._executor = ThreadPoolExecutor(max_workers=5)
         self._inflight = asyncio.Semaphore(5)
         self._subtasks = {}
         self._subtask_lock = asyncio.Lock()
+        self._latest_inbound = {"channel": "", "chat_id": "", "message_id": ""}
+        self._autonomous_report_pos = 0
+        self._autonomous_report_path = Path(WORKSPACE_PATH) / "autonomous_gateway_reports.jsonl"
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v0.5.4)...")
+        logger.info("Starting Swarmbot Gateway (v1.0.0)...")
 
         # 1. Initialize Channels
         await self._init_channels()
@@ -57,15 +63,20 @@ class GatewayServer:
             logger.warning("No channel initialized. Gateway will run but cannot send/receive external messages.")
 
         # 2. Start Background Loops
-        if getattr(self.config.overthinking, "enabled", True):
-            self.overthinking_loop = OverthinkingLoop(self._stop_event)
-            self.overthinking_loop.start()
-        if getattr(getattr(self.config, "overaction", None), "enabled", True):
-            self.overaction_loop = OveractionLoop(self._stop_event)
-            self.overaction_loop.start()
+        if bool(getattr(getattr(self.config, "autonomous", None), "enabled", True)):
+            self.autonomous_engine = AutonomousEngine(self._stop_event)
+            self.autonomous_engine.start()
+        else:
+            if getattr(self.config.overthinking, "enabled", True):
+                self.overthinking_loop = OverthinkingLoop(self._stop_event)
+                self.overthinking_loop.start()
+            if getattr(getattr(self.config, "overaction", None), "enabled", True):
+                self.overaction_loop = OveractionLoop(self._stop_event)
+                self.overaction_loop.start()
 
         # 3. Start Message Processing Loop
         asyncio.create_task(self.bus.dispatch_outbound())
+        asyncio.create_task(self._autonomous_report_poller())
         await self._run_message_loop()
 
     async def _init_channels(self):
@@ -147,9 +158,19 @@ class GatewayServer:
         """Async wrapper for blocking inference."""
         loop = asyncio.get_running_loop()
         async with self._inflight:
+            self._latest_inbound = {
+                "channel": message.channel or "",
+                "chat_id": message.chat_id or "",
+                "message_id": message.message_id or "",
+            }
             raw = (message.content or "").strip()
             if raw in ["/jobs", "任务状态", "subtasks", "/subtasks"]:
                 text = await self._format_subtask_status(message.chat_id or "unknown")
+                await self._publish_reply(message, text)
+                return
+            if raw.startswith("/job "):
+                task_id = raw.replace("/job", "", 1).strip()
+                text = await self._format_subtask_detail(message.chat_id or "unknown", task_id)
                 await self._publish_reply(message, text)
                 return
             try:
@@ -183,6 +204,40 @@ class GatewayServer:
                 response_text = "系统处理消息时出现异常，请稍后重试。"
             await self._publish_reply(message, response_text)
 
+    async def _autonomous_report_poller(self):
+        while not self._stop_event.is_set():
+            try:
+                if self._autonomous_report_path.exists():
+                    with open(self._autonomous_report_path, "r", encoding="utf-8") as f:
+                        f.seek(self._autonomous_report_pos)
+                        lines = f.readlines()
+                        self._autonomous_report_pos = f.tell()
+                    for ln in lines:
+                        ln = (ln or "").strip()
+                        if not ln:
+                            continue
+                        try:
+                            row = json.loads(ln)
+                        except Exception:
+                            continue
+                        content = str(row.get("content") or "").strip()
+                        if not content:
+                            continue
+                        channel = str(self._latest_inbound.get("channel") or "")
+                        chat_id = str(self._latest_inbound.get("chat_id") or "")
+                        if not channel or not chat_id:
+                            continue
+                        outbound = OutboundMessage(
+                            channel=channel,
+                            chat_id=chat_id,
+                            content=content,
+                            reply_to=None,
+                        )
+                        await self.bus.publish_outbound(outbound)
+            except Exception as e:
+                logger.error(f"Autonomous report poller failed: {e}")
+            await asyncio.sleep(3)
+
     async def _publish_reply(self, message: InboundMessage, text: str):
         try:
             reply = OutboundMessage(
@@ -208,10 +263,69 @@ class GatewayServer:
                 "input_preview": (message.content or "")[:120],
                 "created_at": int(time.time()),
                 "updated_at": int(time.time()),
+                "progress_tick": 0,
+                "progress_percent": 0,
+                "result_full": "",
             }
+
+    def _estimate_progress(self, elapsed_s: int, route: str) -> int:
+        if route == "reasoning_swarm":
+            x = min(0.92, elapsed_s / 420.0)
+            return int(12 + 80 * x)
+        if route == "engineering_complex":
+            x = min(0.9, elapsed_s / 900.0)
+            return int(8 + 82 * x)
+        x = min(0.95, elapsed_s / 180.0)
+        return int(20 + 70 * x)
+
+    def _compress_subtask_result(self, result: str, max_len: int = 700) -> str:
+        text = (result or "").strip()
+        if not text:
+            return "无可用结果。"
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        bullets = [ln for ln in lines if ln.startswith(("-", "•", "1.", "2.", "3.", "4.", "5."))]
+        picked = bullets[:5] if bullets else lines[:6]
+        merged = "\n".join(picked).strip()
+        if len(merged) > max_len:
+            merged = merged[:max_len] + "..."
+        return merged
+
+    def _split_message(self, text: str, part_len: int = 1200) -> list[str]:
+        raw = (text or "").strip()
+        if not raw:
+            return []
+        chunks = []
+        i = 0
+        while i < len(raw):
+            chunks.append(raw[i:i + part_len])
+            i += part_len
+        return chunks
+
+    async def _progress_publisher(self, task_id: str, message: InboundMessage):
+        started = int(time.time())
+        while True:
+            await asyncio.sleep(45)
+            async with self._subtask_lock:
+                rec = self._subtasks.get(task_id, {})
+                if not rec or rec.get("status") != "running":
+                    return
+                elapsed = int(time.time()) - started
+                p = self._estimate_progress(elapsed, str(rec.get("route") or "reasoning_swarm"))
+                if p <= int(rec.get("progress_percent") or 0):
+                    p = int(rec.get("progress_percent") or 0)
+                rec["progress_percent"] = p
+                rec["progress_tick"] = int(rec.get("progress_tick") or 0) + 1
+                rec["updated_at"] = int(time.time())
+                self._subtasks[task_id] = rec
+                tick = rec["progress_tick"]
+            await self._publish_reply(
+                message,
+                f"[子任务 {task_id} 进度] {p}%（第{tick}次进度回传）\n发送 /job {task_id} 查看详情。",
+            )
 
     async def _run_subtask_and_announce(self, task_id: str, message: InboundMessage):
         loop = asyncio.get_running_loop()
+        progress_task = asyncio.create_task(self._progress_publisher(task_id, message))
         try:
             inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
             result = await loop.run_in_executor(
@@ -225,11 +339,16 @@ class GatewayServer:
                 rec["status"] = "completed"
                 rec["updated_at"] = int(time.time())
                 rec["result_preview"] = (result or "")[:180]
+                rec["result_full"] = result or ""
+                rec["progress_percent"] = 100
                 self._subtasks[task_id] = rec
-            await self._publish_reply(
-                message,
-                f"[子任务 {task_id} 完成]\n{result}",
-            )
+            summary = self._compress_subtask_result(result)
+            chunks = self._split_message(result, part_len=1200)
+            await self._publish_reply(message, f"[子任务 {task_id} 完成] 摘要如下：\n{summary}")
+            for idx, c in enumerate(chunks[:4], start=1):
+                await self._publish_reply(message, f"[子任务 {task_id} 结果分段 {idx}/{min(len(chunks),4)}]\n{c}")
+            if len(chunks) > 4:
+                await self._publish_reply(message, f"[子任务 {task_id}] 结果较长，剩余内容请发送 /job {task_id} 查看。")
         except Exception as e:
             async with self._subtask_lock:
                 rec = self._subtasks.get(task_id, {})
@@ -241,6 +360,9 @@ class GatewayServer:
                 message,
                 f"[子任务 {task_id} 失败]\n{e}",
             )
+        finally:
+            if progress_task and not progress_task.done():
+                progress_task.cancel()
 
     async def _format_subtask_status(self, chat_id: str) -> str:
         async with self._subtask_lock:
@@ -251,13 +373,34 @@ class GatewayServer:
         lines = ["最近子任务状态："]
         for r in rows:
             lines.append(
-                f"- {r.get('task_id')} | {r.get('status')} | {r.get('route')} | workers={r.get('workers')}"
+                f"- {r.get('task_id')} | {r.get('status')} | {r.get('route')} | workers={r.get('workers')} | progress={r.get('progress_percent',0)}%"
             )
         return "\n".join(lines)
+
+    async def _format_subtask_detail(self, chat_id: str, task_id: str) -> str:
+        async with self._subtask_lock:
+            rec = self._subtasks.get(task_id)
+        if not rec or str(rec.get("chat_id")) != str(chat_id):
+            return f"未找到任务 {task_id}。"
+        head = (
+            f"任务 {task_id}\n"
+            f"- 状态: {rec.get('status')}\n"
+            f"- 路由: {rec.get('route')}\n"
+            f"- workers: {rec.get('workers')}\n"
+            f"- 进度: {rec.get('progress_percent',0)}%\n"
+            f"- 输入: {rec.get('input_preview','')}"
+        )
+        if rec.get("status") == "completed":
+            full = str(rec.get("result_full") or "")
+            return head + "\n\n" + (full[:3000] + ("..." if len(full) > 3000 else ""))
+        if rec.get("status") == "failed":
+            return head + f"\n\n错误: {rec.get('error','')}"
+        return head
 
     def stop(self):
         logger.info("Stopping Gateway...")
         self._stop_event.set()
+        if self.autonomous_engine: self.autonomous_engine.stop()
         if self.overthinking_loop: self.overthinking_loop.stop()
         if self.overaction_loop: self.overaction_loop.stop()
         for ch in self.channels:

@@ -12,6 +12,7 @@ from ..memory.whiteboard import Whiteboard
 from ..memory.hot_memory import HotMemory
 from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
+from ..memory.evidence_store import EvidenceStore
 from ..boot.context_loader import load_boot_markdown
 from .definitions import *
 from .skill_registry import SkillRegistry
@@ -35,7 +36,7 @@ class InferenceLoop:
         self.loop_profile_mode = (os.environ.get("SWARMBOT_LOOP_PROFILE") or "auto").strip().lower()
         self.route_mode = "engineering_complex"
         self.route_workers = 4
-        self.legal_kb_path = Path(self.workspace_path) / "legal_kb.jsonl"
+        self.evidence_store = EvidenceStore()
 
     def _extract_urls(self, text: str) -> List[str]:
         if not isinstance(text, str):
@@ -148,6 +149,15 @@ class InferenceLoop:
                 "confidence": 0.94,
                 "mode": "rule_forced",
             }
+        if any(k in t for k in ["经济", "通胀", "利率", "gdp", "财政", "就业", "政策", "监管", "合规"]):
+            forced_tools = self._sanitize_tools(["web_search", "browser_open", "browser_read"], fallback_tools)
+            return {
+                "need_tools": True,
+                "tools": forced_tools,
+                "reason": "rule:economy_policy_query_requires_evidence",
+                "confidence": 0.94,
+                "mode": "rule_forced",
+            }
         decisions = [self._decide_tool_gate_once(stage, user_input, context_json, fallback_tools) for _ in range(3)]
         valid = [d for d in decisions if d.get("ok")]
         if not valid:
@@ -250,38 +260,73 @@ class InferenceLoop:
             return {"route": "simple_direct_master", "reason": "override:single_utterance_or_rephrase", "confidence": 0.95, "workers": 2}
         return None
 
-    def _is_legal_query(self, user_input: str) -> bool:
-        t = (user_input or "").lower()
-        return any(k in t for k in ["法律", "法条", "条文", "劳动法", "刑法", "民法", "合同法", "起诉", "违法", "责任"])
+    def _need_evidence_increment(self, question: str) -> bool:
+        t = (question or "").lower()
+        return any(
+            k in t
+            for k in [
+                "法律", "法条", "劳动法", "刑法", "民法", "合同法",
+                "经济", "通胀", "利率", "gdp", "财政", "就业",
+                "商业", "竞品", "市场", "商业模式", "产品设计", "评估",
+                "政策", "监管", "合规",
+            ]
+        )
 
-    def _extract_legal_citations(self, text: str) -> List[str]:
-        if not isinstance(text, str):
-            return []
-        laws = re.findall(r"《[^》]{2,30}》", text)
-        articles = re.findall(r"第[一二三四五六七八九十百千0-9]{1,8}条", text)
-        merged: List[str] = []
-        for x in laws + articles:
-            if x not in merged:
-                merged.append(x)
-        return merged
-
-    def _update_legal_kb(self, question: str, answer: str, route: str) -> None:
-        if not self._is_legal_query(question):
+    def _update_evidence_increment(self, question: str, answer: str, route: str) -> None:
+        if not self._need_evidence_increment(question):
             return
-        cites = self._extract_legal_citations(answer)
-        rec = {
-            "ts": int(time.time()),
-            "route": route,
-            "question": (question or "")[:800],
-            "citations": cites[:20],
-            "answer_preview": (answer or "")[:1200],
-        }
         try:
-            self.legal_kb_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.legal_kb_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            rec = self.evidence_store.append_incremental(question=question, answer=answer, route=route)
+            self.cold_memory.add(
+                content=f"evidence_increment domain={rec.get('domain')} question={question[:120]} citations={json.dumps(self.evidence_store.extract_citations(answer)[:8], ensure_ascii=False)}",
+                meta={"source": "inference_evidence_increment", "collection": "evidence"},
+            )
         except:
             pass
+
+    def _is_business_query(self, question: str) -> bool:
+        t = (question or "").lower()
+        return any(k in t for k in ["商业", "市场", "竞品", "商业模式", "产品设计", "可行性", "项目评估", "mvp"])
+
+    def _postprocess_domain_response(self, question: str, response: str) -> str:
+        if not self._is_business_query(question):
+            return response
+        text = response or ""
+        need = []
+        if "市场" not in text:
+            need.append("市场")
+        if ("成本" not in text) and ("预算" not in text):
+            need.append("成本")
+        if "风险" not in text:
+            need.append("风险")
+        if not need:
+            return response
+        prompt = (
+            "你是业务分析润色器。请在不改变原结论方向的前提下，重写为结构化商业评估答复。\n"
+            f"用户问题: {question}\n"
+            f"当前回答: {response}\n"
+            f"必须补齐维度: {json.dumps(need, ensure_ascii=False)}\n"
+            "输出要求：包含“市场、成本、风险、MVP建议”四个小节，每节1-3条，保持简洁。"
+        )
+        rewrote = self._create_worker("master", enable_tools=False).step(prompt)
+        if isinstance(rewrote, str) and rewrote.strip():
+            return rewrote
+        return response
+
+    def _is_evidence_query(self, user_input: str) -> bool:
+        t = (user_input or "").lower()
+        return any(k in t for k in ["法律", "法条", "劳动法", "刑法", "民法", "合同法", "商业", "竞品", "市场", "商业模式", "产品设计", "可行性", "项目评估", "经济", "通胀", "利率", "gdp", "财政", "就业", "政策", "监管", "合规"])
+
+    def _mandatory_evidence_prefetch(self, user_input: str):
+        if not self._is_evidence_query(user_input):
+            return
+        prompt = (
+            "你必须先进行在线证据预取：至少调用一次 web_search，并尽量补充2个来源链接。"
+            "输出 JSON：{\"source_urls\":[...],\"notes\":\"...\"}。"
+            f"用户问题: {user_input}"
+        )
+        out = self._create_worker("collector", enable_tools=True, allowed_tools=["web_search", "browser_open", "browser_read"]).step(prompt)
+        self.whiteboard.update("evidence_prefetch", {"raw": out})
 
     def _decide_route_mode(self, user_input: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
         override = self._hard_route_override(user_input)
@@ -353,9 +398,10 @@ class InferenceLoop:
             self.whiteboard.update("route_decision", pre)
             final_response = self._step_direct_master()
             final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+            final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
             self._step_organization()
-            self._update_legal_kb(user_input, final_response, self.route_mode)
+            self._update_evidence_increment(user_input, final_response, self.route_mode)
             return final_response
 
         # Step 2: Problem Analysis (No Tools)
@@ -367,9 +413,10 @@ class InferenceLoop:
         if self.route_mode == "simple_direct_master":
             final_response = self._step_direct_master()
             final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+            final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
             self._step_organization()
-            self._update_legal_kb(user_input, final_response, self.route_mode)
+            self._update_evidence_increment(user_input, final_response, self.route_mode)
             return final_response
 
         selected_profile = self._decide_loop_profile()
@@ -392,9 +439,10 @@ class InferenceLoop:
                 self.whiteboard.get("input_prompt"),
                 final_response,
             )
+            final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
             self._step_organization()
-            self._update_legal_kb(user_input, final_response, self.route_mode)
+            self._update_evidence_increment(user_input, final_response, self.route_mode)
             return final_response
 
         max_eval_loops = int(settings.get("max_eval_loops", 3))
@@ -419,11 +467,12 @@ class InferenceLoop:
             self.whiteboard.get("input_prompt"),
             final_response,
         )
+        final_response = self._postprocess_domain_response(user_input, final_response)
         self.whiteboard.update("final_response", final_response)
         
         # Step 8: Organization & Persistence (No Tools)
         self._step_organization()
-        self._update_legal_kb(user_input, final_response, self.route_mode)
+        self._update_evidence_increment(user_input, final_response, self.route_mode)
         
         return final_response
 
@@ -498,6 +547,7 @@ class InferenceLoop:
         analysis = self.whiteboard.get("problem_analysis")
         analysis_roles = self.whiteboard.get("worker_roles") or []
         user_input = self.whiteboard.get("input_prompt") or ""
+        self._mandatory_evidence_prefetch(user_input)
         input_urls = self._extract_urls(user_input)
         # Gather memory snapshots
         hot = self.hot_memory.read()
@@ -521,6 +571,12 @@ class InferenceLoop:
                 f"\n用户输入中包含 URL：{self._safe_dumps(input_urls)}。"
                 "\n这是明确的读取与分析指令：你必须立即读取并分析，不要向用户请求确认或补充目标。"
                 "\n若 URL 无法访问，直接返回失败原因和可执行替代方案，不要反问是否允许读取。"
+            )
+        low_q = user_input.lower()
+        if any(k in low_q for k in ["法律", "法条", "劳动法", "刑法", "民法", "合同法", "商业", "竞品", "市场", "商业模式", "产品设计", "可行性", "项目评估", "经济", "通胀", "利率", "gdp", "财政", "就业", "政策", "监管", "合规"]):
+            prompt += (
+                "\n这是证据型任务：你在工具阶段必须至少调用一次 web_search。"
+                "\n输出 JSON 时请在 external_info 中包含来源链接（source_urls）。"
             )
         results = self._run_parallel(prompt, int(settings.get("collection_workers", 2)), "collector", enable_tools=False)
         
