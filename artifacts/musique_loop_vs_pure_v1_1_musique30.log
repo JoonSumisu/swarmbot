@@ -1,0 +1,81 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[1/30] id=912 pure=False on=False off=False timeout=(False/True/True)
+Traceback (most recent call last):
+  File "<stdin>", line 132, in <module>
+  File "<stdin>", line 110, in run_loop
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/process.py", line 149, in join
+    res = self._popen.wait(timeout)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/popen_fork.py", line 40, in wait
+    if not wait([self.sentinel], timeout):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/connection.py", line 1136, in wait
+    ready = selector.select(timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/selectors.py", line 415, in select
+    fd_event_list = self._selector.poll(timeout)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Exception ignored in atexit callback: <function _exit_function at 0x7cfd51585940>
+Traceback (most recent call last):
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/util.py", line 360, in _exit_function
+Process Process-3:
+    p.join()
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/process.py", line 149, in join
+    res = self._popen.wait(timeout)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/popen_fork.py", line 43, in wait
+    return self.poll(os.WNOHANG if timeout == 0.0 else 0)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/popen_fork.py", line 27, in poll
+    pid, sts = os.waitpid(self.pid, flag)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt: 
+Traceback (most recent call last):
+  File "/root/swarmbot_git/swarmbot/loops/inference.py", line 751, in _run_parallel
+    for f in concurrent.futures.as_completed(futures):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/concurrent/futures/_base.py", line 243, in as_completed
+    waiter.event.wait(wait_timeout)
+  File "/root/anaconda3/envs/vllm/lib/python3.12/threading.py", line 655, in wait
+    signaled = self._cond.wait(timeout)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/threading.py", line 355, in wait
+    waiter.acquire()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/process.py", line 314, in _bootstrap
+    self.run()
+  File "/root/anaconda3/envs/vllm/lib/python3.12/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+  File "<stdin>", line 91, in loop_worker
+  File "/root/swarmbot_git/swarmbot/loops/inference.py", line 667, in run
+    self._step_collection()
+  File "/root/swarmbot_git/swarmbot/loops/inference.py", line 840, in _step_collection
+    results = self._run_parallel(prompt, int(settings.get("collection_workers", 2)), "collector", enable_tools=False)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/swarmbot_git/swarmbot/loops/inference.py", line 749, in _run_parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=count) as executor:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/anaconda3/envs/vllm/lib/python3.12/concurrent/futures/_base.py", line 647, in __exit__
+    self.shutdown(wait=True)
+  File "/root/anaconda3/envs/vllm/lib/python3.12/concurrent/futures/thread.py", line 239, in shutdown
+    t.join()
+  File "/root/anaconda3/envs/vllm/lib/python3.12/threading.py", line 1149, in join
+    self._wait_for_tstate_lock()
+  File "/root/anaconda3/envs/vllm/lib/python3.12/threading.py", line 1169, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+[InferenceLoop] Start: Background Information:\nDocument 1 (Title: Lynbro...
+[Step 2] Analysis (No Tools)...
+[CoT] Agent analyst starting thought process...
+[CoT] analyst thought: {
+  "type": "fact_extraction",
+  "domain": "sports_history",
+  "intent": "identify the league in which Jose Miranda's team competed (specifically referencing the 1989–90 Southwest Independent Soccer L...
+[Step 3] Collection (Analysis First)...
+[CoT] Agent collector starting thought process...

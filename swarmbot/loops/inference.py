@@ -3,6 +3,8 @@ import json
 import time
 import os
 import re
+import uuid
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -37,6 +39,7 @@ class InferenceLoop:
         self.route_mode = "engineering_complex"
         self.route_workers = 4
         self.evidence_store = EvidenceStore()
+        self._supervisor_seen_actions: set[str] = set()
 
     def _extract_urls(self, text: str) -> List[str]:
         if not isinstance(text, str):
@@ -84,7 +87,17 @@ class InferenceLoop:
         return {"analysis_workers": 2, "collection_workers": 2, "evaluation_workers": 3, "max_eval_loops": 3, "context_limit": 6000}
 
     def _sanitize_tools(self, names: List[str], fallback: List[str]) -> List[str]:
-        valid = {"web_search", "browser_open", "browser_read", "file_read", "python_exec"}
+        valid = {
+            "web_search",
+            "browser_open",
+            "browser_read",
+            "file_read",
+            "file_write",
+            "python_exec",
+            "shell_exec",
+            "swarm_exec",
+            "swarm_process",
+        }
         cleaned = []
         for n in names or []:
             if isinstance(n, str) and n in valid and n not in cleaned:
@@ -92,6 +105,215 @@ class InferenceLoop:
         if cleaned:
             return cleaned
         return fallback
+
+    def _supervisor_control_action(self, action: str, stage: str, reason: str, control_action_id: str | None = None) -> Dict[str, Any]:
+        aid = control_action_id or f"{action}:{stage}:{uuid.uuid4().hex[:10]}"
+        session_id = str((self.whiteboard.get("metadata") or {}).get("session_id") or "unknown")
+        idem_key = f"{session_id}:{stage}:{aid}"
+        wb_control = self.whiteboard.get("wb_control") or {}
+        if idem_key in self._supervisor_seen_actions:
+            row = {"action": action, "stage": stage, "reason": reason, "control_action_id": aid, "deduped": True, "ts": int(time.time())}
+            self.whiteboard.update("supervisor_decision_log", [row])
+            return {"accepted": False, "deduped": True}
+        stage_lock = str(wb_control.get("stage_lock") or "")
+        if stage_lock and stage_lock != stage and action in ["interrupt", "rerun", "terminate"]:
+            row = {"action": action, "stage": stage, "reason": f"blocked_by_stage_lock:{stage_lock}", "control_action_id": aid, "deduped": False, "ts": int(time.time())}
+            self.whiteboard.update("supervisor_decision_log", [row])
+            return {"accepted": False, "deduped": False}
+        self._supervisor_seen_actions.add(idem_key)
+        wb_control["stage"] = stage
+        wb_control["stage_lock"] = stage
+        actions = list(wb_control.get("control_actions") or [])
+        actions.append({"action": action, "stage": stage, "reason": reason, "control_action_id": aid, "ts": int(time.time())})
+        wb_control["control_actions"] = actions[-50:]
+        self.whiteboard.update("wb_control", wb_control)
+        self.whiteboard.update("supervisor_decision_log", [actions[-1]])
+        return {"accepted": True, "deduped": False}
+
+    def _set_stage(self, stage: str):
+        self._supervisor_control_action("enter_stage", stage, "stage_transition")
+
+    def _framework_required_fields(self) -> Dict[str, Any]:
+        return {
+            "root": [
+                "schema_version",
+                "objective",
+                "scope",
+                "hard_constraints",
+                "task_breakdown",
+                "acceptance_criteria",
+                "checkpoint_plan",
+                "rollback_strategy",
+                "early_finish_rules",
+            ],
+            "scope": ["in_scope", "out_scope"],
+            "task": [
+                "task_id",
+                "title",
+                "description",
+                "priority",
+                "dependencies",
+                "definition_of_done",
+                "worker_assignment",
+                "recommended_skills",
+                "recommended_tools",
+                "skill_selection_policy",
+                "tool_selection_policy",
+            ],
+            "worker_assignment": ["owner_worker_id", "candidate_worker_ids"],
+            "checkpoint": ["checkpoint_id", "checkpoint_name", "enter_condition", "exit_condition"],
+            "rollback": ["trigger", "rollback_to", "action"],
+            "early_finish_rules": [
+                "key_task_completion_rate_threshold",
+                "final_confidence_threshold",
+                "must_no_hard_constraint_violation",
+            ],
+        }
+
+    def _fallback_framework_doc(self) -> Dict[str, Any]:
+        return {
+            "schema_version": "1.1",
+            "objective": "完成用户请求并确保可验证输出",
+            "scope": {"in_scope": ["answer_generation"], "out_scope": ["unrelated_tasks"]},
+            "hard_constraints": [],
+            "task_breakdown": [
+                {
+                    "task_id": "t1",
+                    "title": "主任务执行",
+                    "description": "基于当前信息完成任务",
+                    "priority": "high",
+                    "dependencies": [],
+                    "definition_of_done": ["输出可执行结果"],
+                    "worker_assignment": {"owner_worker_id": "worker_1", "candidate_worker_ids": ["worker_1"]},
+                    "recommended_skills": [],
+                    "recommended_tools": ["web_search"],
+                    "skill_selection_policy": "local_first",
+                    "tool_selection_policy": "minimal_set_first",
+                }
+            ],
+            "acceptance_criteria": ["回答完整且不违背硬约束"],
+            "checkpoint_plan": [{"checkpoint_id": "cp1", "checkpoint_name": "planning_done", "enter_condition": "计划已生成", "exit_condition": "执行开始"}],
+            "rollback_strategy": [{"trigger": "evaluation_fail", "rollback_to": "cp1", "action": "replan"}],
+            "early_finish_rules": {
+                "key_task_completion_rate_threshold": 0.8,
+                "final_confidence_threshold": 0.78,
+                "must_no_hard_constraint_violation": True,
+            },
+        }
+
+    def _normalize_framework_doc(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+        doc = dict(raw or {})
+        base = self._fallback_framework_doc()
+        for k, v in base.items():
+            if k not in doc:
+                doc[k] = v
+        if not isinstance(doc.get("scope"), dict):
+            doc["scope"] = base["scope"]
+        for k, v in base["scope"].items():
+            if k not in doc["scope"] or not isinstance(doc["scope"][k], list):
+                doc["scope"][k] = v
+        tb = doc.get("task_breakdown")
+        if not isinstance(tb, list) or not tb:
+            tb = base["task_breakdown"]
+        normalized_tasks = []
+        for idx, t in enumerate(tb, start=1):
+            if not isinstance(t, dict):
+                continue
+            item = dict(base["task_breakdown"][0])
+            item.update(t)
+            wa = item.get("worker_assignment")
+            if not isinstance(wa, dict):
+                wa = {}
+            item["worker_assignment"] = {
+                "owner_worker_id": str(wa.get("owner_worker_id") or f"worker_{idx}"),
+                "candidate_worker_ids": [str(x) for x in (wa.get("candidate_worker_ids") or [f"worker_{idx}"]) if str(x).strip()],
+            }
+            item["task_id"] = str(item.get("task_id") or f"t{idx}")
+            item["title"] = str(item.get("title") or f"任务{idx}")
+            item["description"] = str(item.get("description") or item["title"])
+            item["priority"] = str(item.get("priority") or "medium")
+            item["dependencies"] = [str(x) for x in (item.get("dependencies") or [])]
+            item["definition_of_done"] = [str(x) for x in (item.get("definition_of_done") or ["完成"]) if str(x).strip()]
+            item["recommended_skills"] = [str(x) for x in (item.get("recommended_skills") or []) if str(x).strip()]
+            item["recommended_tools"] = self._sanitize_tools([str(x) for x in (item.get("recommended_tools") or [])], ["web_search"])
+            item["skill_selection_policy"] = str(item.get("skill_selection_policy") or "local_first")
+            item["tool_selection_policy"] = str(item.get("tool_selection_policy") or "minimal_set_first")
+            normalized_tasks.append(item)
+        doc["task_breakdown"] = normalized_tasks or base["task_breakdown"]
+        if not isinstance(doc.get("acceptance_criteria"), list) or not doc["acceptance_criteria"]:
+            doc["acceptance_criteria"] = base["acceptance_criteria"]
+        if not isinstance(doc.get("checkpoint_plan"), list) or not doc["checkpoint_plan"]:
+            doc["checkpoint_plan"] = base["checkpoint_plan"]
+        if not isinstance(doc.get("rollback_strategy"), list) or not doc["rollback_strategy"]:
+            doc["rollback_strategy"] = base["rollback_strategy"]
+        if not isinstance(doc.get("early_finish_rules"), dict):
+            doc["early_finish_rules"] = base["early_finish_rules"]
+        for k, v in base["early_finish_rules"].items():
+            if k not in doc["early_finish_rules"]:
+                doc["early_finish_rules"][k] = v
+        doc["hard_constraints"] = [str(x) for x in (doc.get("hard_constraints") or [])]
+        doc["schema_version"] = str(doc.get("schema_version") or "1.1")
+        doc["objective"] = str(doc.get("objective") or "完成用户请求")
+        return doc
+
+    def _validate_framework_doc(self, doc: Dict[str, Any]) -> List[str]:
+        errs: List[str] = []
+        req = self._framework_required_fields()
+        for f in req["root"]:
+            if f not in doc:
+                errs.append(f"missing:{f}")
+        scope = doc.get("scope")
+        if not isinstance(scope, dict):
+            errs.append("type:scope")
+        else:
+            for f in req["scope"]:
+                if f not in scope or not isinstance(scope.get(f), list):
+                    errs.append(f"missing_or_type:scope.{f}")
+        tb = doc.get("task_breakdown")
+        if not isinstance(tb, list) or not tb:
+            errs.append("missing_or_type:task_breakdown")
+        else:
+            for i, t in enumerate(tb):
+                if not isinstance(t, dict):
+                    errs.append(f"type:task_breakdown[{i}]")
+                    continue
+                for f in req["task"]:
+                    if f not in t:
+                        errs.append(f"missing:task_breakdown[{i}].{f}")
+                wa = t.get("worker_assignment")
+                if not isinstance(wa, dict):
+                    errs.append(f"type:task_breakdown[{i}].worker_assignment")
+                else:
+                    for wf in req["worker_assignment"]:
+                        if wf not in wa:
+                            errs.append(f"missing:task_breakdown[{i}].worker_assignment.{wf}")
+        ef = doc.get("early_finish_rules")
+        if not isinstance(ef, dict):
+            errs.append("type:early_finish_rules")
+        else:
+            for f in req["early_finish_rules"]:
+                if f not in ef:
+                    errs.append(f"missing:early_finish_rules.{f}")
+        return errs
+
+    def _framework_to_action_plan(self, framework_doc: Dict[str, Any]) -> Dict[str, Any]:
+        tasks = []
+        for idx, t in enumerate(framework_doc.get("task_breakdown") or [], start=1):
+            tasks.append(
+                {
+                    "id": idx,
+                    "task_id": str(t.get("task_id") or f"t{idx}"),
+                    "desc": str(t.get("description") or t.get("title") or f"Task {idx}"),
+                    "required_skills": [str(x) for x in (t.get("recommended_skills") or []) if str(x).strip()],
+                    "recommended_tools": [str(x) for x in (t.get("recommended_tools") or []) if str(x).strip()],
+                    "worker_assignment": dict(t.get("worker_assignment") or {}),
+                    "priority": str(t.get("priority") or "medium"),
+                    "definition_of_done": [str(x) for x in (t.get("definition_of_done") or [])],
+                    "skill_selection_policy": str(t.get("skill_selection_policy") or "local_first"),
+                    "tool_selection_policy": str(t.get("tool_selection_policy") or "minimal_set_first"),
+                }
+            )
+        return {"tasks": tasks}
 
     def _decide_tool_gate_once(self, stage: str, user_input: str, context_json: str, fallback_tools: List[str]) -> Dict[str, Any]:
         prompt = (
@@ -258,6 +480,13 @@ class InferenceLoop:
         simple_markers = ["一句", "一句话", "润色", "更礼貌", "更自然", "改写", "安慰我一句", "写一句", "打个招呼"]
         if any(k in t for k in simple_markers) and len(t) <= 200:
             return {"route": "simple_direct_master", "reason": "override:single_utterance_or_rephrase", "confidence": 0.95, "workers": 2}
+        lifestyle_simple_markers = ["晚餐", "晚饭", "早餐", "午餐", "食谱", "推荐吃", "做什么菜", "穿什么", "去哪里玩"]
+        if (
+            any(k in t for k in lifestyle_simple_markers)
+            and len(t) <= 80
+            and not any(k in t for k in ["为什么", "分析", "策略", "计划", "评估"])
+        ):
+            return {"route": "simple_direct_master", "reason": "override:lifestyle_simple_query", "confidence": 0.9, "workers": 2}
         return None
 
     def _need_evidence_increment(self, question: str) -> bool:
@@ -388,6 +617,7 @@ class InferenceLoop:
         self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
         self.whiteboard.update("input_prompt", user_input)
         self.whiteboard.update("loop_profile", self.loop_profile_mode)
+        self._set_stage("INIT")
         
         print(f"[InferenceLoop] Start: {user_input[:50]}...")
 
@@ -396,27 +626,34 @@ class InferenceLoop:
             self.route_mode = "simple_direct_master"
             self.route_workers = int(pre.get("workers") or 2)
             self.whiteboard.update("route_decision", pre)
+            self._set_stage("MASTER_OUTPUT")
             final_response = self._step_direct_master()
             final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
             final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
+            self._set_stage("ORGANIZATION")
             self._step_organization()
             self._update_evidence_increment(user_input, final_response, self.route_mode)
+            self._set_stage("DONE")
             return final_response
 
         # Step 2: Problem Analysis (No Tools)
+        self._set_stage("ANALYSIS")
         self._step_analysis(light=True)
         route_decision = self._decide_route_mode(user_input, self.whiteboard.get("problem_analysis") or {})
         self.route_mode = str(route_decision.get("route") or "reasoning_swarm")
         self.route_workers = int(route_decision.get("workers") or 3)
         self.whiteboard.update("route_decision", route_decision)
         if self.route_mode == "simple_direct_master":
+            self._set_stage("MASTER_OUTPUT")
             final_response = self._step_direct_master()
             final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
             final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
+            self._set_stage("ORGANIZATION")
             self._step_organization()
             self._update_evidence_increment(user_input, final_response, self.route_mode)
+            self._set_stage("DONE")
             return final_response
 
         selected_profile = self._decide_loop_profile()
@@ -426,14 +663,20 @@ class InferenceLoop:
         settings = self._profile_settings(selected_profile)
         
         # Step 3: Information Collection (Tools Enabled - User Requirement)
+        self._set_stage("COLLECTION")
         self._step_collection()
         
         # Step 4: Action Planning (No Tools - JSON Gen)
+        self._set_stage("PLANNING")
         self._step_planning()
+        self._step_skill_discovery()
         
         # Step 5 & 6: Inference & Evaluation (Max 3 Loops with Re-planning)
         if self.route_mode == "reasoning_swarm":
+            self._set_stage("EXECUTION")
             self._step_inference()
+            self._calc_supervisor_metrics()
+            self._set_stage("MASTER_OUTPUT")
             final_response = self._step_translation()
             final_response = self._calibrate_final_response(
                 self.whiteboard.get("input_prompt"),
@@ -441,27 +684,41 @@ class InferenceLoop:
             )
             final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
+            self._set_stage("ORGANIZATION")
             self._step_organization()
             self._update_evidence_increment(user_input, final_response, self.route_mode)
+            self._set_stage("DONE")
             return final_response
 
         max_eval_loops = int(settings.get("max_eval_loops", 3))
+        promoted = False
         for i in range(max_eval_loops):
             self.whiteboard.update("evaluation_report", {"retry_count": i})
             
             # Step 5: Inference (Tools Enabled)
+            self._set_stage("EXECUTION")
             self._step_inference()
+            metrics = self._calc_supervisor_metrics()
+            if float(metrics.get("promote_to_master", 0.0)) >= 1.0:
+                promoted = True
+                self._supervisor_control_action("promote_to_master", "MASTER_OUTPUT", "threshold_met")
+                self.whiteboard.update("evaluation_report", {"passed": True, "reasons": ["promote_to_master"], "roles": ["supervisor"]})
+                break
             
             # Step 6: Evaluation (No Tools - Logic Check)
+            self._set_stage("EVALUATION")
             if self._step_evaluation():
                 break
             
             print(f"[InferenceLoop] Evaluation failed, retrying {i+1}/{max_eval_loops}")
             # Re-planning Logic: If failed, adjust plan before next inference
             if i < max_eval_loops - 1:
+                self._set_stage("PLANNING")
                 self._step_replanning(retry_idx=i)
+                self._step_skill_discovery()
 
         # Step 7: Output Translation (Tools Enabled - User Requirement)
+        self._set_stage("MASTER_OUTPUT")
         final_response = self._step_translation()
         final_response = self._calibrate_final_response(
             self.whiteboard.get("input_prompt"),
@@ -471,8 +728,10 @@ class InferenceLoop:
         self.whiteboard.update("final_response", final_response)
         
         # Step 8: Organization & Persistence (No Tools)
+        self._set_stage("ORGANIZATION")
         self._step_organization()
         self._update_evidence_increment(user_input, final_response, self.route_mode)
+        self._set_stage("DONE")
         
         return final_response
 
@@ -631,27 +890,28 @@ class InferenceLoop:
         prompt = STEP_PLANNING_PROMPT.format(
             info_json=self._safe_dumps(info, max_len=int(settings.get("context_limit", 6000))),
             swarmboot=self.swarmboot
-        ) + "\n\n输出 tasks 时不要分配 worker 和 tool。每个任务必须包含 required_skills 数组。"
+        ) + (
+            "\n\n你必须输出 required-only 的 framework_doc JSON，字段必须完整："
+            "schema_version, objective, scope, hard_constraints, task_breakdown, acceptance_criteria, checkpoint_plan, rollback_strategy, early_finish_rules。"
+            "\n其中 task_breakdown 每项必须包含：task_id,title,description,priority,dependencies,definition_of_done,worker_assignment,recommended_skills,recommended_tools,skill_selection_policy,tool_selection_policy。"
+            "\n注意：PLANNING 只分配任务 owner/candidates，不指定执行角色。"
+        )
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
-            plan = json.loads(self._extract_json(res))
-            tasks = []
-            for idx, task in enumerate(plan.get("tasks") or []):
-                required = task.get("required_skills")
-                if not isinstance(required, list):
-                    required = []
-                required = [x for x in required if isinstance(x, str)]
-                if not required and isinstance(task.get("tool"), str) and task.get("tool") not in ["none", "", "null"]:
-                    required = [task.get("tool")]
-                tasks.append({
-                    "id": task.get("id") or (idx + 1),
-                    "desc": str(task.get("desc") or f"Task {idx + 1}"),
-                    "required_skills": required,
-                })
-            plan["tasks"] = tasks
-            self.whiteboard.update("action_plan", plan)
+            raw = json.loads(self._extract_json(res))
+            framework_doc = self._normalize_framework_doc(raw)
+            errs = self._validate_framework_doc(framework_doc)
+            if errs:
+                framework_doc = self._normalize_framework_doc(self._fallback_framework_doc())
+                errs = self._validate_framework_doc(framework_doc)
+            self.whiteboard.update("framework_doc_validation", {"errors": errs, "ok": len(errs) == 0})
+            self.whiteboard.update("wb_plan", {"framework_doc": framework_doc, "checkpoints": framework_doc.get("checkpoint_plan", [])})
+            self.whiteboard.update("action_plan", self._framework_to_action_plan(framework_doc))
         except:
-            self.whiteboard.update("action_plan", {"tasks": [{"id": 1, "desc": "Fallback task", "required_skills": []}]})
+            framework_doc = self._fallback_framework_doc()
+            self.whiteboard.update("framework_doc_validation", {"errors": ["parse_failed"], "ok": False})
+            self.whiteboard.update("wb_plan", {"framework_doc": framework_doc, "checkpoints": framework_doc.get("checkpoint_plan", [])})
+            self.whiteboard.update("action_plan", self._framework_to_action_plan(framework_doc))
 
     def _step_replanning(self, retry_idx: int):
         print(f"[Step 4b] Re-Planning (Attempt {retry_idx+1})...")
@@ -668,23 +928,108 @@ class InferenceLoop:
         )
         res = self._create_worker("planner", enable_tools=False).step(prompt)
         try:
-            new_plan = json.loads(self._extract_json(res))
-            tasks = []
-            for idx, task in enumerate(new_plan.get("tasks") or []):
-                required = task.get("required_skills")
-                if not isinstance(required, list):
-                    required = []
-                required = [x for x in required if isinstance(x, str)]
-                if not required and isinstance(task.get("tool"), str) and task.get("tool") not in ["none", "", "null"]:
-                    required = [task.get("tool")]
-                tasks.append({
-                    "id": task.get("id") or (idx + 1),
-                    "desc": str(task.get("desc") or f"Task {idx + 1}"),
-                    "required_skills": required,
-                })
-            new_plan["tasks"] = tasks
-            self.whiteboard.update("action_plan", new_plan)
+            raw = json.loads(self._extract_json(res))
+            framework_doc = self._normalize_framework_doc(raw)
+            errs = self._validate_framework_doc(framework_doc)
+            if errs:
+                framework_doc = self._normalize_framework_doc(self._fallback_framework_doc())
+                errs = self._validate_framework_doc(framework_doc)
+            self.whiteboard.update("framework_doc_validation", {"errors": errs, "ok": len(errs) == 0, "replan_retry_idx": retry_idx})
+            self.whiteboard.update("wb_plan", {"framework_doc": framework_doc, "checkpoints": framework_doc.get("checkpoint_plan", [])})
+            self.whiteboard.update("action_plan", self._framework_to_action_plan(framework_doc))
         except: pass
+
+    def _step_skill_discovery(self):
+        print("[Step 4.5] Skill Discovery...")
+        plan = self.whiteboard.get("action_plan") or {}
+        tasks = plan.get("tasks") or []
+        rows = []
+        for t in tasks:
+            requested = [str(x) for x in (t.get("required_skills") or []) if str(x).strip()]
+            policy = str(t.get("skill_selection_policy") or "local_first")
+            prompt = (
+                "你是技能检索器。任务将由执行体完成，你只负责确定技能说明书（skill），不是工具（tool）。\n"
+                f"任务描述: {t.get('desc','')}\n"
+                f"候选 skills: {json.dumps(requested, ensure_ascii=False)}\n"
+                f"策略: {policy}\n"
+                "请优先尝试 skill_summary 和 skill_load；若策略是 remote_allowed 且本地没有，再使用 web_search + skill_fetch 拉取。\n"
+                '返回 JSON: {"selected_skills":["..."],"loaded_skills":["..."],"fetched":[{"name":"...","url":"..."}],"notes":"..."}'
+            )
+            worker = self._create_worker(
+                "planner",
+                enable_tools=True,
+                allowed_tools=["skill_summary", "skill_load", "skill_fetch", "web_search", "browser_read"],
+                required_skills=["skill_summary", "skill_load", "skill_fetch", "web_search", "browser_read"],
+            )
+            out = worker.step(prompt)
+            row = {"task_id": t.get("task_id"), "raw": out, "selected_skills": requested, "loaded_skills": [], "fetched": []}
+            try:
+                data = json.loads(self._extract_json(out))
+                row["selected_skills"] = [str(x) for x in (data.get("selected_skills") or requested) if str(x).strip()]
+                row["loaded_skills"] = [str(x) for x in (data.get("loaded_skills") or []) if str(x).strip()]
+                fetched = []
+                for it in data.get("fetched") or []:
+                    if isinstance(it, dict):
+                        fetched.append({"name": str(it.get("name") or ""), "url": str(it.get("url") or "")})
+                row["fetched"] = fetched
+            except:
+                pass
+            rows.append(row)
+        self.whiteboard.update("skill_discovery", rows)
+
+    def _decide_tools_for_task(self, task: Dict[str, Any], function_priority: str, role: str) -> Dict[str, Any]:
+        fallback = self._sanitize_tools(task.get("recommended_tools") or [], ["web_search"])
+        gate = self._decide_tool_gate(
+            "task_tool_decision",
+            str(self.whiteboard.get("input_prompt") or ""),
+            self._safe_dumps({"task": task, "function_priority": function_priority, "role": role}, max_len=1800),
+            fallback,
+        )
+        tools = self._sanitize_tools(gate.get("tools") or [], fallback)
+        return {"tools": tools, "need_tools": bool(gate.get("need_tools")), "reason": gate.get("reason"), "confidence": float(gate.get("confidence") or 0.0)}
+
+    def _calc_supervisor_metrics(self) -> Dict[str, float]:
+        plan = self.whiteboard.get("action_plan") or {}
+        framework_doc = (self.whiteboard.get("wb_plan") or {}).get("framework_doc") or {}
+        tasks = plan.get("tasks") or []
+        results = self.whiteboard.get("inference_conclusions") or []
+        total_key = 0
+        done_key = 0
+        success = 0
+        task_by_id = {str(t.get("task_id")): t for t in tasks}
+        for t in tasks:
+            if str(t.get("priority") or "medium") == "high":
+                total_key += 1
+        for r in results:
+            ok = "Task failed" not in str(r.get("result") or "")
+            if ok:
+                success += 1
+            tid = str(r.get("task_ref") or r.get("task_id") or "")
+            t = task_by_id.get(tid)
+            if t and str(t.get("priority") or "medium") == "high" and ok:
+                done_key += 1
+        key_rate = float(done_key / max(1, total_key))
+        confidence_score = float(success / max(1, len(tasks)))
+        consistency_score = confidence_score
+        wb_evidence = self.whiteboard.get("wb_evidence") or {}
+        coverage = 1.0 if len(wb_evidence.get("critical_facts") or []) > 0 else 0.6
+        final_conf = 0.5 * confidence_score + 0.2 * consistency_score + 0.2 * coverage + 0.1 * key_rate
+        metrics = {
+            "key_task_completion_rate": round(key_rate, 3),
+            "confidence_score": round(confidence_score, 3),
+            "consistency_score": round(consistency_score, 3),
+            "evidence_coverage": round(coverage, 3),
+            "final_confidence": round(final_conf, 3),
+        }
+        rules = framework_doc.get("early_finish_rules") or {}
+        promote = (
+            metrics["key_task_completion_rate"] >= float(rules.get("key_task_completion_rate_threshold", 0.8))
+            and metrics["final_confidence"] >= float(rules.get("final_confidence_threshold", 0.78))
+            and bool(rules.get("must_no_hard_constraint_violation", True))
+        )
+        metrics["promote_to_master"] = 1.0 if promote else 0.0
+        self.whiteboard.update("supervisor_metrics", metrics)
+        return metrics
 
     def _extract_task_claim(self, text: str) -> Dict[str, Any]:
         try:
@@ -703,9 +1048,9 @@ class InferenceLoop:
             return {"task_id": None, "self_role": "worker", "tools": [], "confidence": 0.0}
 
     def _step_inference(self):
-        print("[Step 5] Inference (Self-Organized Task Claim)...")
+        print("[Step 5] Inference (Assigned First + Local Autonomy)...")
         settings = self._profile_settings()
-        plan = self.whiteboard.get("action_plan")
+        plan = self.whiteboard.get("action_plan") or {}
         info = self.whiteboard.get("information_gathering") or {}
         context = info.get("synthesized_context") or ""
         tasks = plan.get("tasks") or []
@@ -715,146 +1060,121 @@ class InferenceLoop:
         else:
             max_agents = max(1, int(getattr(self.config.swarm, "max_agents", 4)))
         worker_ids = [f"worker_{i+1}" for i in range(max_agents)]
-        assignments: Dict[str, Dict[str, Any]] = {}
-        claim_history: List[Dict[str, Any]] = []
-        def to_task_id(v: Any) -> int | None:
-            try:
-                return int(v)
-            except:
-                return None
-
-        pending = [tid for tid in (to_task_id(t.get("id")) for t in tasks) if tid is not None]
-
-        for round_idx in range(1, 4):
-            if not pending:
-                break
-
-            def run_claim(worker_id: str) -> Dict[str, Any]:
-                visible_tasks = [t for t in tasks if to_task_id(t.get("id")) in pending]
-                claim_prompt = (
-                    "你是自组织任务系统中的执行体。\n"
-                    "你先读取完整任务列表，再基于专长自主认领最匹配任务。\n"
-                    "你需要主动给出你的专业角色与所需工具，并与其他执行体形成互补分工。\n"
-                    f"轮次: {round_idx}\n"
-                    f"当前 Worker: {worker_id}\n"
-                    f"待认领任务: {self._safe_dumps(visible_tasks)}\n"
-                    f"已有认领历史: {self._safe_dumps(claim_history[-8:])}\n"
-                    "基于任务需求自主决定：是否认领、认领哪个任务、你自己的专业角色、你需要的工具。\n"
-                    "请返回 JSON: {\"task_id\":1,\"self_role\":\"finance_expert\",\"tools\":[\"web_search\"],\"confidence\":0.8}\n"
-                    "若本轮不认领则 task_id 返回 null。"
-                )
-                worker = self._create_worker("worker", enable_tools=False)
-                claim = self._extract_task_claim(worker.step(claim_prompt))
-                claim["worker_id"] = worker_id
-                return claim
-
-            claims: List[Dict[str, Any]] = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(worker_ids)) as executor:
-                futures = [executor.submit(run_claim, wid) for wid in worker_ids]
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        claims.append(future.result())
-                    except:
-                        pass
-
-            grouped: Dict[int, List[Dict[str, Any]]] = {}
-            for c in claims:
-                try:
-                    tid = int(c.get("task_id"))
-                except:
-                    continue
-                if tid in pending:
-                    grouped.setdefault(tid, []).append(c)
-
-            for tid in list(pending):
-                cs = grouped.get(tid) or []
-                if not cs:
-                    continue
-                chosen = sorted(cs, key=lambda x: float(x.get("confidence") or 0.0), reverse=True)[0]
-                task = next((t for t in tasks if to_task_id(t.get("id")) == tid), None)
-                if task is None:
-                    continue
-                tools = self._sanitize_tools(chosen.get("tools") or [], task.get("required_skills") or [])
-                assignments[str(tid)] = {
-                    "worker_id": chosen.get("worker_id"),
-                    "task_id": tid,
-                    "role": chosen.get("self_role") or "worker",
-                    "tools": tools,
-                    "required_skills": task.get("required_skills") or [],
-                    "task_desc": task.get("desc") or "",
+        assignments: List[Dict[str, Any]] = []
+        for idx, task in enumerate(tasks, start=1):
+            wa = task.get("worker_assignment") or {}
+            owner = str(wa.get("owner_worker_id") or worker_ids[(idx - 1) % len(worker_ids)])
+            cands = [str(x) for x in (wa.get("candidate_worker_ids") or [owner]) if str(x).strip()]
+            if owner not in worker_ids:
+                owner = cands[0] if cands else worker_ids[(idx - 1) % len(worker_ids)]
+            if owner not in worker_ids:
+                owner = worker_ids[(idx - 1) % len(worker_ids)]
+            assignments.append(
+                {
+                    "worker_id": owner,
+                    "task_ref": str(task.get("task_id") or f"t{idx}"),
+                    "task_id": idx,
+                    "task_desc": str(task.get("desc") or ""),
+                    "required_skills": [str(x) for x in (task.get("required_skills") or []) if str(x).strip()],
+                    "recommended_tools": [str(x) for x in (task.get("recommended_tools") or []) if str(x).strip()],
+                    "priority": str(task.get("priority") or "medium"),
+                    "definition_of_done": [str(x) for x in (task.get("definition_of_done") or []) if str(x).strip()],
                 }
-                pending.remove(tid)
-                claim_history.append(assignments[str(tid)])
-
-        idle_workers = [wid for wid in worker_ids if wid not in {a["worker_id"] for a in assignments.values()}]
-        for tid in list(pending):
-            task = next((t for t in tasks if to_task_id(t.get("id")) == tid), None)
-            if task is None:
-                continue
-            wid = idle_workers.pop(0) if idle_workers else worker_ids[tid % len(worker_ids)]
-            tools = self._sanitize_tools(task.get("required_skills") or [], [])
-            assignments[str(tid)] = {
-                "worker_id": wid,
-                "task_id": tid,
-                "role": "generalist_worker",
-                "tools": tools,
-                "required_skills": task.get("required_skills") or [],
-                "task_desc": task.get("desc") or "",
-            }
-
-        self.whiteboard.update("task_assignments", list(assignments.values()))
+            )
+        self.whiteboard.update("task_assignments", assignments)
         results = []
 
         def run_task(assign: Dict[str, Any]) -> Dict[str, Any]:
+            role_prompt = (
+                "你是执行阶段调度器。请根据任务决定你的功能优先级与执行角色。\n"
+                f"任务: {assign.get('task_desc','')}\n"
+                f"完成定义: {json.dumps(assign.get('definition_of_done') or [], ensure_ascii=False)}\n"
+                '输出 JSON: {"function_priority":"检索优先|推理优先|校验优先","self_role":"...","reason":"..."}'
+            )
+            role_res = self._create_worker("worker", enable_tools=False).step(role_prompt)
+            function_priority = "推理优先"
+            self_role = "generalist_worker"
+            try:
+                role_json = json.loads(self._extract_json(role_res))
+                function_priority = str(role_json.get("function_priority") or function_priority)
+                self_role = str(role_json.get("self_role") or self_role)
+            except:
+                pass
+            tool_decision = self._decide_tools_for_task(assign, function_priority, self_role)
+            tools = tool_decision.get("tools") or []
             worker = self._create_worker(
-                assign["role"],
-                enable_tools=bool(assign["tools"]),
-                allowed_tools=assign["tools"],
+                self_role,
+                enable_tools=bool(tool_decision.get("need_tools")),
+                allowed_tools=tools,
                 task_desc=assign["task_desc"],
                 required_skills=assign["required_skills"],
             )
             prompt = STEP_INFERENCE_PROMPT.format(
-                role=assign["role"],
+                role=self_role,
                 task_desc=assign["task_desc"],
                 context=context[: int(settings.get("context_limit", 8000))] if context else "",
+            ) + (
+                f"\n\n功能优先级: {function_priority}"
+                f"\n工具决策: {self._safe_dumps(tool_decision, max_len=1000)}"
+                f"\n技能说明书: {self._safe_dumps(self.whiteboard.get('skill_discovery') or [], max_len=1200)}"
             )
             res = worker.step(prompt)
             return {
                 "task_id": assign["task_id"],
+                "task_ref": assign["task_ref"],
                 "worker_id": assign["worker_id"],
-                "role": assign["role"],
-                "tools": assign["tools"],
+                "role": self_role,
+                "function_priority": function_priority,
+                "tools": tools,
+                "tool_decision": tool_decision,
                 "result": res,
             }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(len(assignments), max_agents))) as executor:
-            futures = [executor.submit(run_task, a) for a in assignments.values()]
+            futures = [executor.submit(run_task, a) for a in assignments]
             for future in concurrent.futures.as_completed(futures):
                 try:
                     results.append(future.result())
                 except Exception as e:
-                    results.append({"task_id": None, "result": f"Task failed: {e}"})
+                    results.append({"task_id": None, "task_ref": "", "result": f"Task failed: {e}"})
         self.whiteboard.update("inference_conclusions", results)
+        critical_facts = []
+        for r in results:
+            txt = str(r.get("result") or "").strip()
+            if txt:
+                critical_facts.append(txt[:220])
+        refs = []
+        ext = str((self.whiteboard.get("information_gathering") or {}).get("external_info") or "")
+        for u in self._extract_urls(ext)[:12]:
+            refs.append({"evidence_id": hashlib.md5(u.encode("utf-8")).hexdigest()[:12], "version": "v1", "checksum": hashlib.sha1(u.encode("utf-8")).hexdigest()[:16], "ref": u})
+        self.whiteboard.update("wb_evidence", {"critical_facts": critical_facts[:12], "critical_quotes": [], "external_refs": refs})
 
     def _step_evaluation(self) -> bool:
         print("[Step 6] Evaluation (Self-Organized Roles)...")
         settings = self._profile_settings()
         plan = self.whiteboard.get("action_plan")
+        framework_doc = (self.whiteboard.get("wb_plan") or {}).get("framework_doc") or {}
         results = self.whiteboard.get("inference_conclusions")
         prompt = STEP_EVALUATION_PROMPT.format(
             plan_json=self._safe_dumps(plan),
             results_json=self._safe_dumps(results, max_len=2000),
             swarmboot=self.swarmboot
-        ) + '\n请先定义你的评估角色 self_defined_role，再投票。输出JSON: {"self_defined_role":"code_reviewer","vote":"PASS","reason":"..."}'
+        ) + (
+            f"\n验收标准(acceptance_criteria): {self._safe_dumps(framework_doc.get('acceptance_criteria') or [])}"
+            '\n请先定义你的评估角色 self_defined_role，再投票。输出JSON: {"self_defined_role":"code_reviewer","vote":"PASS","reason":"...","criteria_hit_rate":0.8}'
+        )
         evals = self._run_parallel(prompt, int(settings.get("evaluation_workers", 3)), "evaluator", enable_tools=False)
         pass_count = 0
         reasons = []
         eval_roles: List[str] = []
+        hit_rates: List[float] = []
         for e in evals:
             try:
                 data = json.loads(self._extract_json(e))
                 if data.get("vote") == "PASS": pass_count += 1
                 reasons.append(data.get("reason"))
+                hr = float(data.get("criteria_hit_rate") or 0.0)
+                hit_rates.append(max(0.0, min(1.0, hr)))
                 role = str(data.get("self_defined_role") or "").strip()
                 if role:
                     eval_roles.append(role)
@@ -862,9 +1182,10 @@ class InferenceLoop:
                 pass
         if not eval_roles:
             eval_roles = ["general_evaluator"]
-        passed = pass_count >= 2
+        avg_hit = sum(hit_rates) / max(1, len(hit_rates))
+        passed = pass_count >= 2 and avg_hit >= 0.66
         self.whiteboard.update("evaluation_roles", eval_roles)
-        self.whiteboard.update("evaluation_report", {"passed": passed, "reasons": reasons, "roles": eval_roles})
+        self.whiteboard.update("evaluation_report", {"passed": passed, "reasons": reasons, "roles": eval_roles, "criteria_hit_rate": round(avg_hit, 3)})
         return passed
 
     def _step_translation(self) -> str:
@@ -997,10 +1318,11 @@ class InferenceLoop:
 
     def _step_organization(self):
         print("[Step 8] Organization (No Tools)...")
+        wb_evidence = self.whiteboard.get("wb_evidence") or {}
         prompt = STEP_ORGANIZATION_PROMPT.format(
             response=self.whiteboard.get("final_response"),
             conclusions_json=self._safe_dumps(self.whiteboard.get("inference_conclusions"), max_len=1500)
-        )
+        ) + f"\n关键证据摘要: {self._safe_dumps(wb_evidence, max_len=1200)}"
         # Optimized: enable_tools=False
         res = self._create_worker("master", enable_tools=False).step(prompt)
         try:

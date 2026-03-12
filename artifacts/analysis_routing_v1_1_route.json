@@ -1,0 +1,163 @@
+{
+  "tag": "v1_1_route",
+  "model": "unsloth/qwen3-coder-next",
+  "acc": 0.8,
+  "acc_by_kind": {
+    "simple_direct_master": 0.8,
+    "reasoning_swarm": 0.6,
+    "engineering_complex": 1.0
+  },
+  "rows": [
+    {
+      "id": "s1",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 6243
+    },
+    {
+      "id": "s2",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 5623
+    },
+    {
+      "id": "s3",
+      "expect": "simple_direct_master",
+      "got": "reasoning_swarm",
+      "ok": false,
+      "workers": 3,
+      "confidence": 0.867,
+      "reason": "majority:用户请求涉及营养建议与轻食推荐，需结合饮食知识、时令食材与烹饪方式分析。虽无复杂工程任务，但需多角度推理：1) 营养均衡性（蛋白+蔬果+低淀粉碳水）；2) 清淡标准界定（少油/少腻/非辛辣）；3) 实操可行性（厨房工具、时间窗口）。建议启用3名worker分别负责：nutrition_analysis / meal_planning / cooking_method_optimization。; 用户需求明确（清淡晚餐推荐），但需结合营养学知识、时令食材与轻量烹饪方式综合推理；虽无硬性工程约束，但涉及多维信息融合（饮食偏好+营养均衡+实操简易性），适合用小规模推理 swarm 分析后由 master 统一输出。",
+      "latency_ms": 16631
+    },
+    {
+      "id": "s4",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 3386
+    },
+    {
+      "id": "s5",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 4922
+    },
+    {
+      "id": "r1",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.873,
+      "reason": "majority:用户处于焦虑状态，需要先情绪安抚（非工具性干预），再进行任务优先级建模——涉及心理学层面的共情表达 + 多准则决策分析（ urg+effort），需多worker协同：1) 情绪安抚框架构建；2) 三任务筛选逻辑与边界约束推演；3) 可执行JSON生成与自然语言转译。符合reasoning_swarm典型场景。; 用户处于焦虑状态，需要情感安抚 + 行动导向的优先级方案设计。这涉及心理层面的共情（非纯逻辑）、任务优先级建模（需轻量推理），以及输出结构化但可执行的三件事清单——适合由2-3名worker协同完成：1) 情绪安抚专家（empathy_coordinator）→ 建立安全感；2) 任务拆解员（task_architect）→ 定义‘今晚可行’的最小高杠杆任务集；3) 输出格式化器（format_shepherd）→ 确保JSON与自然语言双通道可用性。纯master回复无法保证结构严谨性与情绪适配性的双重达标。",
+      "latency_ms": 18149
+    },
+    {
+      "id": "r2",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "override:reasoning_domain_dictionary",
+      "latency_ms": 4282
+    },
+    {
+      "id": "r3",
+      "expect": "reasoning_swarm",
+      "got": "simple_direct_master",
+      "ok": false,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 5615
+    },
+    {
+      "id": "r4",
+      "expect": "reasoning_swarm",
+      "got": "engineering_complex",
+      "ok": false,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "majority:任务涉及文件存在性校验、动态日期匹配（2026-03-12）、输出路径可写性检查，需组合 shell_exec/file_read/python_exec 多工具协同；约束明确（无 ERROR 行则不建文件），且要求工程级健壮性——需完整 Swarm Loop 支持错误处理与重试逻辑。; 任务涉及文件存在性验证、日期匹配（日志命名规则）、输出目录可写校验，以及健壮的错误处理逻辑——需多步骤工程化实现。虽意图明确，但约束条件较多（如必须存在 ERROR 行才创建输出），不适合 simple_direct_master 的自然语言单次回复；同时不属于纯推理/哲学分析场景，而是典型的工程自动化任务。",
+      "latency_ms": 16619
+    },
+    {
+      "id": "r5",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "override:reasoning_domain_dictionary",
+      "latency_ms": 6781
+    },
+    {
+      "id": "e1",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 5172
+    },
+    {
+      "id": "e2",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 6613
+    },
+    {
+      "id": "e3",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 7561
+    },
+    {
+      "id": "e4",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 6203
+    },
+    {
+      "id": "e5",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 6682
+    }
+  ],
+  "ts": 1773287114
+}

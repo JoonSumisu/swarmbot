@@ -1,0 +1,11 @@
+{
+  "tag": "v1_1_async",
+  "model": "unsloth/qwen3-coder-next",
+  "route_for_complex": "engineering_complex",
+  "simple_ms": 28694,
+  "complex_ms": 128498,
+  "simple_finished_before_complex_done": true,
+  "simple_len": 157,
+  "complex_len": 923,
+  "ts": 1773287274
+}

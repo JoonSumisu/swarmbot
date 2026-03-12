@@ -1,0 +1,163 @@
+{
+  "tag": "v1_1_route_tuned2",
+  "model": "unsloth/qwen3-coder-next",
+  "acc": 0.867,
+  "acc_by_kind": {
+    "simple_direct_master": 1.0,
+    "reasoning_swarm": 0.6,
+    "engineering_complex": 1.0
+  },
+  "rows": [
+    {
+      "id": "s1",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 3172
+    },
+    {
+      "id": "s2",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 9369
+    },
+    {
+      "id": "s3",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.9,
+      "reason": "override:lifestyle_simple_query",
+      "latency_ms": 9817
+    },
+    {
+      "id": "s4",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 5195
+    },
+    {
+      "id": "s5",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 4479
+    },
+    {
+      "id": "r1",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.913,
+      "reason": "majority:用户表达焦虑情绪，需先进行情感验证与安抚（非临床建议），再引导完成具体、可操作的晚间三件事优先级设定。这涉及认知重构（如ABC模型）、任务拆解（GTD微步骤）与决策赋能（自主选择权），属于轻量级心理支持+行为设计交叉任务，需2-3名worker分别负责：1) 情绪验证与 normalize；2) 任务优先级 triage (Urgent/Important/Feasible)；3) 行动脚本构建 + empowerment phrasing。无需外部工具或长期 loop。; 任务涉及情绪安抚（需共情建模）+优先级决策（需认知框架映射），属于轻度心理干预与任务结构化交叉场景。虽无需工程资源，但需多角度推理：1) 情绪验证策略；2) GTD微步骤适配；3) Urgent/Important/Feasible 三维 triage。需 3 workers 分别处理 anxiety_deconstruction、task_sizing、empowerment_scripting 后由 master 综合输出。",
+      "latency_ms": 15029
+    },
+    {
+      "id": "r2",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "override:reasoning_domain_dictionary",
+      "latency_ms": 5297
+    },
+    {
+      "id": "r3",
+      "expect": "reasoning_swarm",
+      "got": "simple_direct_master",
+      "ok": false,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 4836
+    },
+    {
+      "id": "r4",
+      "expect": "reasoning_swarm",
+      "got": "engineering_complex",
+      "ok": false,
+      "workers": 3,
+      "confidence": 0.92,
+      "reason": "majority:任务虽逻辑清晰（提取ERROR行），但涉及文件系统操作（读源日志、写目标路径）、需校验路径存在性与权限（约束条件明确提及），且要求无副作用——此类I/O密集型操作更适合通过python_exec编排file_read/file_write/shell_exec工具完成，而非纯自然语言生成；需进入完整swarm+loop流程确保鲁棒性。; 任务虽逻辑清晰，但涉及文件系统操作（读取、写入、路径校验），需确保安全性和容错性；同时需验证 source file 是否存在、output dir 是否可写——属于典型工程复杂问题，应启用完整 swarm+loop 流程以保障鲁棒性。",
+      "latency_ms": 13435
+    },
+    {
+      "id": "r5",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "override:reasoning_domain_dictionary",
+      "latency_ms": 5750
+    },
+    {
+      "id": "e1",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 3512
+    },
+    {
+      "id": "e2",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 5590
+    },
+    {
+      "id": "e3",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 5531
+    },
+    {
+      "id": "e4",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 4786
+    },
+    {
+      "id": "e5",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 7914
+    }
+  ],
+  "ts": 1773288349
+}

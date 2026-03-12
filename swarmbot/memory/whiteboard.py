@@ -28,6 +28,22 @@ class Whiteboard:
                 "start_time": time.time()
             },
             "input_prompt": "",
+            "wb_control": {
+                "stage": "init",
+                "stage_lock": "",
+                "retry_count": 0,
+                "control_actions": [],
+            },
+            "wb_plan": {
+                "framework_doc": {},
+                "task_status": {},
+                "checkpoints": [],
+            },
+            "wb_evidence": {
+                "critical_facts": [],
+                "critical_quotes": [],
+                "external_refs": [],
+            },
             "problem_analysis": {},
             "information_gathering": {},
             "action_plan": {},

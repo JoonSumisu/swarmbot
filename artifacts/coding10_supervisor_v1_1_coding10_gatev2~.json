@@ -1,0 +1,365 @@
+{
+  "tag": "v1_1_coding10_gatev2~",
+  "model": "unsloth/qwen3-coder-next",
+  "summary": {
+    "samples": 10,
+    "pure_acc": 1.0,
+    "loop_off_acc": 1.0,
+    "loop_on_acc": 1.0,
+    "gain_loop_on_vs_pure": 0,
+    "gain_loop_on_vs_off": 0,
+    "regress_loop_on_vs_pure": 0,
+    "rewrite_allowed_count": 0,
+    "pure_avg_t": 0.865,
+    "loop_off_avg_t": 2.274,
+    "loop_on_avg_t": 15.976
+  },
+  "diagnosis": {
+    "on_wrong_off_right": [],
+    "on_better_than_pure": [],
+    "on_worse_than_pure": []
+  },
+  "rows": [
+    {
+      "id": "t1",
+      "prompt": "Write Python function add(a,b) returning sum.",
+      "fn": "add",
+      "tests": [
+        "add(2,3)==5",
+        "add(-1,1)==0"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 1.045,
+      "loop_off_t": 1.307,
+      "loop_on_t": 11.635,
+      "loop_off_obs": {
+        "plan": "1. **Define the function** with parameters `a` and `b`.  \n2. **Return** the result of adding `a + b`.  \n\n```python\ndef add(a, b):\n    return a + b\n```"
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"add\",\n  \"description\": \"A simple function that returns the sum of two numbers.\",\n  \"critical_tasks\": [\n    {\n      \"task\": \"Define function signature with two parameters (a, b)\",\n      \"priority\": \"high\"\n    },\n    {\n      \"task\": \"Implement addition logic: return a + b\",\n      \"priority\": \"high\"\n    },\n    {\n      \"task\": \"Ensure type compatibility handling for numeric types (int, float, etc.)\",\n      \"priority\": \"medium\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk\": \"Input validation missing – non-numeric inputs may raise TypeError\",\n      \"mitigation\": \"Consider adding optional type hints and docstring; avoid over-engineering for simple spec unless required.\"\n    },\n    {\n      \"risk\": \"Floating-point precision issues (e.g., 0.1 + 0.2 ≠ 0.3)\",\n      \"mitigation\": \"Document expected behavior; recommend decimal.Decimal for high-precision use cases if needed.\"\n    },\n    {\n      \"risk\": \"String concatenation misinterpreted as addition (e.g., '2'+'3'='23')\",\n      \"mitigation\": \"Use type hints and explicit checks in tests to clarify intended usage.\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_name\": \"basic_integers\",\n      \"description\": \"Add two positive integers (e.g., add(2, 3) == 5)\",\n      \"critical\": true\n    },\n    {\n      \"test_name\": \"negative_numbers\",\n      \"description\": \"Add negative and/or mixed-sign numbers (e.g., add(-1, 5), add(-2, -3))\",\n      \"critical\": true\n    },\n    {\n      \"test_name\": \"zero_identity\",\n      \"description\": \"Verify identity property: add(a, 0) == a\",\n      \"critical\": true\n    },\n    {\n      \"test_name\": \"float_precision\",\n      \"description\": \"Test floating-point addition (e.g., add(1.5, 2.3)) with tolerance check\",\n      \"critical\": false\n    },\n    {\n      \"test_name\": \"type_errors\",\n      \"description\": \"Verify TypeError raised for incompatible types (e.g., add('a', 'b'))\",\n      \"critical\": false\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def add(a, b):\n    \"\"\"\n    Add two numbers and return their sum.\n    \n    Args:\n        a (int | float): First number to add\n        b (int | float): Second number to add\n    \n    Returns:\n        int | float: Sum of a and b\n    \n    Examples:\n        >>> add(2, 3)\n        5\n        >>> add(-1.5, 2.5)\n        1.0\n        >>> add(0, 42)\n        42\n    \"\"\"\n    return a + b"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def add(a, b):\n    return a + b",
+      "loop_off_code": "def add(a, b):\n    return a + b",
+      "loop_on_code": "def add(a, b):\n    \"\"\"\n    Add two numbers and return their sum.\n    \n    Args:\n        a (int | float): First number to add\n        b (int | float): Second number to add\n    \n    Returns:\n        int | float: Sum of a and b\n    \n    Raises:\n        TypeError: If inputs are not numeric types\n    \n    Examples:\n        >>> add(2, 3)\n        5\n        >>> add(-1.5, 2.5)\n        1.0\n        >>> add(0, 42)\n        42\n    \n    Note:\n        For high-precision decimal arithmetic, consider using the decimal module.\n    \"\"\"\n    return a + b"
+    },
+    {
+      "id": "t2",
+      "prompt": "Write Python function is_even(n) returning True if n is even.",
+      "fn": "is_even",
+      "tests": [
+        "is_even(4) is True",
+        "is_even(5) is False"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.39,
+      "loop_off_t": 1.835,
+      "loop_on_t": 19.0,
+      "loop_off_obs": {
+        "plan": "1. Define the function `is_even(n)`  \n2. Use modulo operator to check remainder when divided by 2  \n3. Return `True` if `n % 2 == 0`, else `False`  \n4. (Optional) Add type hint and docstring for clarity  \n\n```python\ndef is_even(n: int) -> bool:\n    \"\"\"Return True if n is even, False otherwise.\"\"\"\n    return n % 2 == 0\n```"
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"description\": \"Implement a Python function to check if an integer is even\",\n  \"function_name\": \"is_even\",\n  \"arguments\": [\n    {\n      \"name\": \"n\",\n      \"type\": \"int\",\n      \"description\": \"The integer to test\"\n    }\n  ],\n  \"return_type\": \"bool\",\n  \"critical_tasks\": [\n    {\n      \"task\": \"Validate input type is integer (handle edge cases like floats, strings, None)\",\n      \"priority\": \"high\",\n      \"notes\": \"Function should raise TypeError for non-integer inputs unless explicitly designed to coerce\"\n    },\n    {\n      \"task\": \"Implement core evenness logic using modulo (%) or bitwise (&) operation\",\n      \"priority\": \"critical\",\n      \"notes\": \"Prefer n % 2 == 0 (clearer) or n & 1 == 0 (more efficient for large ints)\"\n    },\n    {\n      \"task\": \"Handle negative numbers correctly (evenness applies to negatives too)\",\n      \"priority\": \"high\",\n      \"notes\": \"-4, -2, 0, 2, 4 are all even; ensure logic is symmetric around zero\"\n    },\n    {\n      \"task\": \"Ensure correct behavior for edge cases: 0, very large integers, and negative numbers\",\n      \"priority\": \"critical\",\n      \"notes\": \"0 must return True (even by definition); test with sys.maxsize and -sys.maxsize\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk\": \"Type coercion without explicit handling may cause unexpected behavior\",\n      \"mitigation\": \"Explicit type check or document expected input; raise TypeError for non-int types\"\n    },\n    {\n      \"risk\": \"Floating-point precision issues if n is a float (e.g., 2.0 vs 2)\",\n      \"mitigation\": \"Reject floats unless documented to accept them; convert only if explicitly allowed\"\n    },\n    {\n      \"risk\": \"Integer overflow not possible in Python, but developers may assume C-like behavior\",\n      \"mitigation\": \"Clarify that Python integers have arbitrary precision; no overflow risk\"\n    },\n    {\n      \"risk\": \"Documentation mismatch (e.g., expecting boolean return for all inputs)\",\n      \"mitigation\": \"Include comprehensive docstring with examples and edge case notes\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_name\": \"test_positive_even\",\n      \"input\": 4,\n      \"expected_output\": True,\n      \"description\": \"Basic positive even number\"\n    },\n    {\n      \"test_name\": \"test_positive_odd\",\n      \"input\": 5,\n      \"expected_output\": False,\n      \"description\": \"Basic positive odd number\"\n    },\n    {\n      \"test_name\": \"test_zero\",\n      \"input\": 0,\n      \"expected_output\": True,\n      \"description\": \"Zero is even by mathematical definition\"\n    },\n    {\n      \"test_name\": \"test_negative_even\",\n      \"input\": -10,\n      \"expected_output\": True,\n      \"description\": \"Negative even numbers\"\n    },\n    {\n      \"test_name\": \"test_negative_odd\",\n      \"input\": -3,\n      \"expected_output\": False,\n      \"description\": \"Negative odd numbers\"\n    },\n    {\n      \"test_name\": \"test_large_even\",\n      \"input\": 10**18,\n      \"expected_output\": True,\n      \"description\": \"Very large even number\"\n    },\n    {\n      \"test_name\": \"test_type_error_string\",\n      \"input\": \"2\",\n      \"raises\": \"TypeError\",\n      \"description\": \"String input must raise TypeError (or be handled per spec)\"\n    },\n    {\n      \"test_name\": \"test_type_error_float\",\n      \"input\": 3.5,\n      \"raises\": \"TypeError\",\n      \"description\": \"Float input must raise TypeError unless specified otherwise\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 1.0,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def is_even(n):\n    \"\"\"\n    Check if an integer is even.\n    \n    Args:\n        n (int): The integer to test.\n        \n    Returns:\n        bool: True if n is even, False otherwise.\n        \n    Raises:\n        TypeError: If n is not an integer (e.g., float, string, None).\n        \n    Examples:\n        >>> is_even(4)\n        True\n        >>> is_even(-2)\n        True\n        >>> is_even(0)\n        True\n        >>> is_even(5)\n        False\n        >>> is_even(\"2\")\n        TypeError: Input must be an integer\n        \n    Note:\n        - Zero (0) is considered even by mathematical definition.\n        - Negative numbers follow the same evenness rules as positive numbers.\n        - Python integers have arbitrary precision, so no overflow issues occur.\n    \"\"\"\n    # Validate input type is exactly int (not subclass or other numeric types)\n    if not isinstance(n, int) or isinstance(n, bool):  # bool is subclass of int, but we want to exclude it\n        raise TypeError(\"Input must be an integer\")\n    \n    # Core evenness logic: n % 2 == 0\n    return n % 2 == 0"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def is_even(n):\n    return n % 2 == 0",
+      "loop_off_code": "def is_even(n):\n    return n % 2 == 0",
+      "loop_on_code": "def is_even(n):\n    \"\"\"\n    Check if an integer is even.\n    \n    Args:\n        n (int): The integer to test.\n        \n    Returns:\n        bool: True if n is even, False otherwise.\n        \n    Raises:\n        TypeError: If n is not an integer (e.g., float, string, None).\n        \n    Examples:\n        >>> is_even(4)\n        True\n        >>> is_even(-2)\n        True\n        >>> is_even(0)\n        True\n        >>> is_even(5)\n        False\n        >>> is_even(\"2\")\n        TypeError: Input must be an integer\n        \n    Note:\n        - Zero (0) is considered even by mathematical definition.\n        - Negative numbers follow the same evenness rules as positive numbers.\n        - Python integers have arbitrary precision, so no overflow issues occur.\n    \"\"\"\n    # Validate input type is exactly int (not subclass or other numeric types)\n    if not isinstance(n, int) or isinstance(n, bool):  # bool is subclass of int, but we want to exclude it\n        raise TypeError(\"Input must be an integer\")\n    \n    # Core evenness logic: n % 2 == 0\n    return n % 2 == 0"
+    },
+    {
+      "id": "t3",
+      "prompt": "Write Python function factorial(n) for n>=0.",
+      "fn": "factorial",
+      "tests": [
+        "factorial(0)==1",
+        "factorial(5)==120"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.852,
+      "loop_off_t": 2.529,
+      "loop_on_t": 19.802,
+      "loop_off_obs": {
+        "plan": "1. **Define the function** `factorial(n)` with input validation (e.g., raise `ValueError` if `n < 0`).  \n2. **Handle base case**: return `1` when `n == 0`.  \n3. **Implement iterative multiplication**: loop from `1` to `n`, accumulating the product.  \n4. **Return the result** (or use recursion—iterative is preferred for efficiency in Python)."
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"factorial\",\n  \"description\": \"Compute the factorial of a non-negative integer n (n >= 0).\",\n  \"signature\": \"def factorial(n: int) -> int:\",\n  \"critical_tasks\": [\n    {\n      \"task_id\": 1,\n      \"description\": \"Validate input type and range\",\n      \"details\": \"Ensure n is an integer and n >= 0. Raise TypeError for non-integer types, ValueError for negative integers.\"\n    },\n    {\n      \"task_id\": 2,\n      \"description\": \"Implement iterative or recursive computation\",\n      \"details\": \"Use an efficient iterative approach to avoid stack overflow for large n (e.g., up to n=1000). Avoid recursion due to Python's default recursion limit (~1000).\"\n    },\n    {\n      \"task_id\": 3,\n      \"description\": \"Handle edge cases\",\n      \"details\": \"Correctly return 1 for n=0 and n=1 (by definition, 0! = 1).\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": 1,\n      \"severity\": \"high\",\n      \"description\": \"Integer overflow or performance degradation for large n\",\n      \"mitigation\": \"Python's built-in integers support arbitrary precision, so overflow is not an issue. However, computation time grows linearly with n; test with moderate values (e.g., n=1000) to ensure acceptable performance.\"\n    },\n    {\n      \"risk_id\": 2,\n      \"severity\": \"medium\",\n      \"description\": \"Input validation failures\",\n      \"mitigation\": \"Explicit type and value checking before computation. Document expected behavior for edge cases (e.g., float inputs like 5.0 should raise TypeError).\"\n    },\n    {\n      \"risk_id\": 3,\n      \"severity\": \"low\",\n      \"description\": \"Misunderstanding of factorial definition\",\n      \"mitigation\": \"Verify against mathematical definition: n! = n × (n-1) × ... × 1 for n > 0, and 0! = 1.\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": 1,\n      \"name\": \"edge_case_zero\",\n      \"input\": 0,\n      \"expected_output\": 1,\n      \"description\": \"Verify 0! = 1\"\n    },\n    {\n      \"test_id\": 2,\n      \"name\": \"edge_case_one\",\n      \"input\": 1,\n      \"expected_output\": 1,\n      \"description\": \"Verify 1! = 1\"\n    },\n    {\n      \"test_id\": 3,\n      \"name\": \"positive_integer_small\",\n      \"input\": 5,\n      \"expected_output\": 120,\n      \"description\": \"Basic correctness test (5! = 120)\"\n    },\n    {\n      \"test_id\": 4,\n      \"name\": \"negative_input\",\n      \"input\": -1,\n      \"should_raise\": \"ValueError\",\n      \"description\": \"Ensure negative integers raise ValueError\"\n    },\n    {\n      \"test_id\": 5,\n      \"name\": \"non_integer_type\",\n      \"input\": \"3\",\n      \"should_raise\": \"TypeError\",\n      \"description\": \"Ensure string inputs raise TypeError\"\n    },\n    {\n      \"test_id\": 6,\n      \"name\": \"float_input\",\n      \"input\": 4.0,\n      \"should_raise\": \"TypeError\",\n      \"description\": \"Ensure float inputs (even if whole number) raise TypeError\"\n    },\n    {\n      \"test_id\": 7,\n      \"name\": \"large_n_performance\",\n      \"input\": 1000,\n      \"expected_behavior\": \"returns correct result within reasonable time (<1s)\",\n      \"description\": \"Verify performance and correctness for large n (optional: compare with known value)\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 1.0,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def factorial(n: int) -> int:\n    \"\"\"\n    Compute the factorial of a non-negative integer n (n >= 0).\n    \n    Args:\n        n (int): A non-negative integer\n        \n    Returns:\n        int: The factorial of n\n        \n    Raises:\n        TypeError: If n is not an integer (e.g., float, string, etc.)\n        ValueError: If n is negative\n    \n    Examples:\n        >>> factorial(0)\n        1\n        >>> factorial(5)\n        120\n        >>> factorial(10)\n        3628800\n    \"\"\"\n    # Validate input type (exclude bool explicitly as bool is subclass of int in Python)\n    if not isinstance(n, int) or isinstance(n, bool):\n        raise TypeError(f\"n must be an integer, got {type(n).__name__}\")\n    \n    # Validate input range\n    if n < 0:\n        raise ValueError(\"n must be non-negative (n >= 0)\")\n    \n    # Iterative computation for efficiency and to avoid stack overflow\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    return result"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def factorial(n):\n    if n < 0:\n        raise ValueError(\"factorial is not defined for negative numbers\")\n    \n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    \n    return result",
+      "loop_off_code": "def factorial(n):\n    if not isinstance(n, int):\n        raise TypeError(\"n must be an integer\")\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    \n    result = 1\n    for i in range(1, n + 1):\n        result *= i\n    return result",
+      "loop_on_code": "def factorial(n: int) -> int:\n    \"\"\"\n    Compute the factorial of a non-negative integer n (n >= 0).\n    \n    Args:\n        n (int): A non-negative integer\n        \n    Returns:\n        int: The factorial of n\n        \n    Raises:\n        TypeError: If n is not an integer (e.g., float, string, etc.)\n        ValueError: If n is negative\n    \n    Examples:\n        >>> factorial(0)\n        1\n        >>> factorial(5)\n        120\n        >>> factorial(10)\n        3628800\n    \"\"\"\n    # Validate input type\n    if not isinstance(n, int) or isinstance(n, bool):\n        raise TypeError(f\"n must be an integer, got {type(n).__name__}\")\n    \n    # Validate input range\n    if n < 0:\n        raise ValueError(\"n must be non-negative (n >= 0)\")\n    \n    # Handle edge cases: 0! = 1 and 1! = 1\n    if n <= 1:\n        return 1\n    \n    # Iterative computation for efficiency and to avoid stack overflow\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    \n    return result"
+    },
+    {
+      "id": "t4",
+      "prompt": "Write Python function reverse_string(s).",
+      "fn": "reverse_string",
+      "tests": [
+        "reverse_string('abc')=='cba'",
+        "reverse_string('')==''"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.323,
+      "loop_off_t": 1.978,
+      "loop_on_t": 13.719,
+      "loop_off_obs": {
+        "plan": "1. **Define the function**: `def reverse_string(s):`  \n2. **Return reversed string**: Use slicing `s[::-1]` (most Pythonic) or `\"\".join(reversed(s))`.  \n3. **(Optional) Add docstring**: Briefly explain purpose and behavior.  \n4. **Test briefly** (implied): Verify with examples like `reverse_string(\"abc\") → \"cba\"`.\n\n*(Implementation: just steps 1–2 are needed; 3–4 are best practices.)*"
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"reverse_string\",\n  \"description\": \"A Python function that takes a string input and returns its reversed version.\",\n  \"critical_tasks\": [\n    {\n      \"id\": 1,\n      \"task\": \"Implement basic string reversal using slicing (e.g., s[::-1]) or built-in functions like reversed()\",\n      \"priority\": \"high\"\n    },\n    {\n      \"id\": 2,\n      \"task\": \"Handle edge cases: empty string, single character, Unicode characters (including emojis and multibyte chars)\",\n      \"priority\": \"critical\"\n    },\n    {\n      \"id\": 3,\n      \"task\": \"Ensure function is pure (no side effects) and has O(n) time complexity\",\n      \"priority\": \"high\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": 1,\n      \"description\": \"Incorrect handling of Unicode combining characters or grapheme clusters (e.g., '👨‍👩‍👧' may reverse into invalid sequences)\",\n      \"mitigation\": \"Document limitations; consider using libraries like `regex` for advanced grapheme handling if needed\"\n    },\n    {\n      \"risk_id\": 2,\n      \"description\": \"Performance degradation on very long strings (e.g., >100MB) due to memory allocation\",\n      \"mitigation\": \"Avoid unnecessary conversions; use efficient built-ins; add input length validation if critical for production\"\n    },\n    {\n      \"risk_id\": 3,\n      \"description\": \"Assuming ASCII-only input leads to bugs with non-ASCII characters\",\n      \"mitigation\": \"Test explicitly with UTF-8 inputs like accented letters, Chinese, Arabic, and emoji\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": 1,\n      \"name\": \"basic_reverse\",\n      \"input\": \"'hello'\",\n      \"expected_output\": \"'olleh'\"\n    },\n    {\n      \"test_id\": 2,\n      \"name\": \"empty_string\",\n      \"input\": \"''\",\n      \"expected_output\": \"''\"\n    },\n    {\n      \"test_id\": 3,\n      \"name\": \"single_char\",\n      \"input\": \"'a'\",\n      \"expected_output\": \"'a'\"\n    },\n    {\n      \"test_id\": 4,\n      \"name\": \"unicode_emoji\",\n      \"input\": \"'😀😃😄😁'\",\n      \"expected_output\": \"'😁😄😃😀'\"\n    },\n    {\n      \"test_id\": 5,\n      \"name\": \"mixed_unicode\",\n      \"input\": \"'Café 🇫🇷 résumé'\",\n      \"expected_output\": \"'émusér 🇷🇫 éfaC'\"\n    },\n    {\n      \"test_id\": 6,\n      \"name\": \"special_characters\",\n      \"input\": \"'\\\\n\\\\t\\\\r'\",\n      \"expected_output\": \"'\\\\r\\\\t\\\\n'\"\n    },\n    {\n      \"test_id\": 7,\n      \"name\": \"type_error_on_non_string\",\n      \"description\": \"Ensure function raises TypeError for non-string input (e.g., None, list)\",\n      \"input\": \"None\",\n      \"expected_exception\": \"TypeError\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 1.0,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def reverse_string(s):\n    \"\"\"\n    Reverse the input string and return the reversed version.\n    \n    Args:\n        s (str): The string to be reversed.\n        \n    Returns:\n        str: The reversed string.\n        \n    Raises:\n        TypeError: If the input is not a string.\n    \"\"\"\n    if not isinstance(s, str):\n        raise TypeError(f\"Input must be a string, got {type(s).__name__}\")\n    return s[::-1]"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def reverse_string(s):\n    return s[::-1]",
+      "loop_off_code": "def reverse_string(s):\n    return s[::-1]",
+      "loop_on_code": "def reverse_string(s):\n    \"\"\"\n    Reverse the input string and return the reversed version.\n    \n    Args:\n        s (str): The string to be reversed.\n        \n    Returns:\n        str: The reversed string.\n        \n    Raises:\n        TypeError: If the input is not a string.\n        \n    Note:\n        This function handles Unicode characters correctly at the codepoint level.\n        For grapheme clusters (e.g., emoji with skin tones or ZWJ sequences),\n        advanced handling may require external libraries like `regex`.\n    \"\"\"\n    if not isinstance(s, str):\n        raise TypeError(f\"Input must be a string, got {type(s).__name__}\")\n    \n    # Using slicing for O(n) time complexity and pure function behavior\n    return s[::-1]"
+    },
+    {
+      "id": "t5",
+      "prompt": "Write Python function fibonacci(n) returning nth Fibonacci with fibonacci(0)=0,fibonacci(1)=1.",
+      "fn": "fibonacci",
+      "tests": [
+        "fibonacci(0)==0",
+        "fibonacci(7)==13"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.887,
+      "loop_off_t": 3.174,
+      "loop_on_t": 14.579,
+      "loop_off_obs": {
+        "plan": "Here's a concise 4-step plan:\n\n1. **Handle base cases**: Return `n` directly for `n = 0` or `n = 1` (since `fib(0)=0`, `fib(1)=1`).  \n2. **Initialize variables**: Set `a, b = 0, 1` to represent `F₀` and `F₁`.  \n3. **Iterate efficiently**: Loop from `2` to `n`, updating: `a, b = b, a + b`.  \n4. **Return result**: After the loop, return `b` (which holds `Fₙ`).  \n\n*(Implementation uses O(n) time and O(1) space)*"
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"fibonacci\",\n  \"description\": \"Calculate the nth Fibonacci number where fibonacci(0) = 0 and fibonacci(1) = 1\",\n  \"critical_tasks\": [\n    {\n      \"task_id\": 1,\n      \"description\": \"Implement iterative solution to avoid recursion depth issues and optimize performance\",\n      \"priority\": \"high\"\n    },\n    {\n      \"task_id\": 2,\n      \"description\": \"Handle edge cases: n < 0 (raise ValueError), n = 0, n = 1\",\n      \"priority\": \"high\"\n    },\n    {\n      \"task_id\": 3,\n      \"description\": \"Validate input type: ensure n is an integer\",\n      \"priority\": \"medium\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": 1,\n      \"description\": \"Recursive implementation could cause RecursionError for large n\",\n      \"mitigation\": \"Use iterative approach instead of recursion\"\n    },\n    {\n      \"risk_id\": 2,\n      \"description\": \"Integer overflow is not a concern in Python, but performance degradation for very large n\",\n      \"mitigation\": \"Use efficient O(n) iterative algorithm; avoid exponential-time naive recursion\"\n    },\n    {\n      \"risk_id\": 3,\n      \"description\": \"Input validation errors could cause unexpected behavior or misleading error messages\",\n      \"mitigation\": \"Explicitly check type and raise clear ValueError for invalid inputs\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": 1,\n      \"name\": \"test_base_case_0\",\n      \"input\": 0,\n      \"expected_output\": 0\n    },\n    {\n      \"test_id\": 2,\n      \"name\": \"test_base_case_1\",\n      \"input\": 1,\n      \"expected_output\": 1\n    },\n    {\n      \"test_id\": 3,\n      \"name\": \"test_small_positive\",\n      \"input\": 5,\n      \"expected_output\": 5\n    },\n    {\n      \"test_id\": 4,\n      \"name\": \"test_medium_positive\",\n      \"input\": 20,\n      \"expected_output\": 6765\n    },\n    {\n      \"test_id\": 5,\n      \"name\": \"test_large_n_performance\",\n      \"input\": 1000,\n      \"expected_output\": \"valid_fibonacci_1000\"\n    },\n    {\n      \"test_id\": 6,\n      \"name\": \"test_negative_input\",\n      \"input\": -1,\n      \"expected_exception\": \"ValueError\"\n    },\n    {\n      \"test_id\": 7,\n      \"name\": \"test_non_integer_input\",\n      \"input\": \"5\",\n      \"expected_exception\": \"TypeError\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def fibonacci(n):\n    \"\"\"\n    Calculate the nth Fibonacci number where fibonacci(0) = 0 and fibonacci(1) = 1.\n    \n    Args:\n        n (int): The index of the Fibonacci sequence to calculate (must be non-negative integer)\n        \n    Returns:\n        int: The nth Fibonacci number\n        \n    Raises:\n        TypeError: If n is not an integer\n        ValueError: If n is negative\n    \"\"\"\n    if not isinstance(n, int):\n        raise TypeError(f\"n must be an integer, got {type(n).__name__}\")\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    prev, curr = 0, 1\n    for _ in range(2, n + 1):\n        prev, curr = curr, prev + curr\n    return curr"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def fibonacci(n):\n    if n <= 1:\n        return n\n    \n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    \n    return b",
+      "loop_off_code": "def fibonacci(n):\n    if n == 0 or n == 1:\n        return n\n    \n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    \n    return b",
+      "loop_on_code": "def fibonacci(n):\n    \"\"\"\n    Calculate the nth Fibonacci number where fibonacci(0) = 0 and fibonacci(1) = 1.\n    \n    Args:\n        n (int): The index of the Fibonacci sequence to calculate (must be non-negative integer)\n        \n    Returns:\n        int: The nth Fibonacci number\n        \n    Raises:\n        TypeError: If n is not an integer\n        ValueError: If n is negative\n    \"\"\"\n    # Input validation - check type first\n    if not isinstance(n, int):\n        raise TypeError(f\"n must be an integer, got {type(n).__name__}\")\n    \n    # Handle edge cases\n    if n < 0:\n        raise ValueError(\"n must be a non-negative integer\")\n    \n    if n == 0:\n        return 0\n    if n == 1:\n        return 1\n    \n    # Iterative approach for efficiency and to avoid recursion depth issues\n    prev, curr = 0, 1\n    for _ in range(2, n + 1):\n        prev, curr = curr, prev + curr\n    \n    return curr"
+    },
+    {
+      "id": "t6",
+      "prompt": "Write Python function count_vowels(s) counting a,e,i,o,u case-insensitive.",
+      "fn": "count_vowels",
+      "tests": [
+        "count_vowels('Hello')==2",
+        "count_vowels('xyz')==0"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.658,
+      "loop_off_t": 2.0,
+      "loop_on_t": 11.923,
+      "loop_off_obs": {
+        "plan": "1. **Define function** `count_vowels(s)` accepting string `s`.  \n2. **Normalize case**: convert `s` to lowercase (e.g., `s.lower()`).  \n3. **Iterate & count**: loop through characters, increment counter if char is in `\"aeiou\"`.  \n4. **Return count** of vowels found."
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"critical_tasks\": [\n    {\n      \"id\": 1,\n      \"description\": \"Define function signature for count_vowels(s)\",\n      \"details\": \"Ensure parameter 's' is accepted as input string\"\n    },\n    {\n      \"id\": 2,\n      \"description\": \"Implement case-insensitive vowel detection\",\n      \"details\": \"Convert input to lowercase or use case-insensitive matching for vowels a,e,i,o,u\"\n    },\n    {\n      \"id\": 3,\n      \"description\": \"Count all occurrences of vowels in the string\",\n      \"details\": \"Iterate through characters and increment counter for each vowel found\"\n    },\n    {\n      \"id\": 4,\n      \"description\": \"Return integer count\",\n      \"details\": \"Ensure function returns a non-negative integer representing total vowel count\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": \"R1\",\n      \"description\": \"Input type issues\",\n      \"severity\": \"high\",\n      \"mitigation\": \"Add input validation or handle TypeError gracefully (e.g., via try/except); consider documenting expected input type\"\n    },\n    {\n      \"risk_id\": \"R2\",\n      \"description\": \"Unicode/special characters\",\n      \"severity\": \"medium\",\n      \"mitigation\": \"Test with accented vowels (e.g., 'á', 'é') if needed; clarify whether only ASCII vowels are required\"\n    },\n    {\n      \"risk_id\": \"R3\",\n      \"description\": \"Empty string edge case\",\n      \"severity\": \"low\",\n      \"mitigation\": \"Verify function returns 0 for empty strings\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": \"T1\",\n      \"name\": \"Basic lowercase vowels\",\n      \"input\": \"hello\",\n      \"expected_output\": 2,\n      \"description\": \"Check simple case with 'e' and 'o'\"\n    },\n    {\n      \"test_id\": \"T2\",\n      \"name\": \"Mixed case vowels\",\n      \"input\": \"ApPlE\",\n      \"expected_output\": 2,\n      \"description\": \"Verify case-insensitivity with uppercase and lowercase\"\n    },\n    {\n      \"test_id\": \"T3\",\n      \"name\": \"No vowels\",\n      \"input\": \"bcdfg\",\n      \"expected_output\": 0,\n      \"description\": \"Ensure non-vowel strings return zero\"\n    },\n    {\n      \"test_id\": \"T4\",\n      \"name\": \"Empty string\",\n      \"input\": \"\",\n      \"expected_output\": 0,\n      \"description\": \"Validate edge case of empty input\"\n    },\n    {\n      \"test_id\": \"T5\",\n      \"name\": \"All vowels repeated\",\n      \"input\": \"AaEeIiOoUu\",\n      \"expected_output\": 10,\n      \"description\": \"Confirm all five vowels counted twice (uppercase + lowercase)\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": ""
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def count_vowels(s):\n    vowels = set('aeiouAEIOU')\n    return sum(1 for char in s if char in vowels)",
+      "loop_off_code": "def count_vowels(s):\n    s = s.lower()\n    count = 0\n    for char in s:\n        if char in \"aeiou\":\n            count += 1\n    return count",
+      "loop_on_code": "def count_vowels(s):\n    \"\"\"\n    Count the number of vowels (a, e, i, o, u) in the input string, case-insensitively.\n    \n    Args:\n        s (str): The input string to count vowels from.\n        \n    Returns:\n        int: The total number of vowels in the string.\n        \n    Raises:\n        TypeError: If input is not a string.\n    \"\"\"\n    if not isinstance(s, str):\n        raise TypeError(f\"Input must be a string, got {type(s).__name__}\")\n    \n    # Convert to lowercase for case-insensitive matching\n    s_lower = s.lower()\n    \n    # Define vowels set for efficient lookup\n    vowels = {'a', 'e', 'i', 'o', 'u'}\n    \n    # Count occurrences of vowels\n    count = sum(1 for char in s_lower if char in vowels)\n    \n    return count"
+    },
+    {
+      "id": "t7",
+      "prompt": "Write Python function is_palindrome(s) ignoring non-alnum and case.",
+      "fn": "is_palindrome",
+      "tests": [
+        "is_palindrome('A man, a plan, a canal: Panama') is True",
+        "is_palindrome('race a car') is False"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.899,
+      "loop_off_t": 1.932,
+      "loop_on_t": 14.72,
+      "loop_off_obs": {
+        "plan": "1. **Normalize**: Convert string to lowercase and keep only alphanumeric characters (e.g., using `filter` + `str.isalnum`).  \n2. **Compare**: Check if the filtered string equals its reverse (`s[::-1]`).  \n3. **Return**: Return `True` if equal, else `False`.  \n4. **Edge case handling**: Works correctly for empty/short strings automatically (empty → palindrome)."
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"critical_tasks\": [\n    {\n      \"task_id\": 1,\n      \"description\": \"Implement core palindrome logic using two-pointer or string reversal\",\n      \"dependencies\": [],\n      \"priority\": \"high\"\n    },\n    {\n      \"task_id\": 2,\n      \"description\": \"Sanitize input: filter non-alphanumeric characters and convert to lowercase\",\n      \"dependencies\": [1],\n      \"priority\": \"high\"\n    },\n    {\n      \"task_id\": 3,\n      \"description\": \"Handle edge cases: empty string, single char, all non-alnum input\",\n      \"dependencies\": [2],\n      \"priority\": \"medium\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": 1,\n      \"description\": \"Incorrect handling of Unicode characters (e.g., accented letters)\",\n      \"mitigation\": \"Use str.isalnum() which handles Unicode alphanumeric; test with non-ASCII examples\",\n      \"severity\": \"medium\"\n    },\n    {\n      \"risk_id\": 2,\n      \"description\": \"Performance issues with large strings due to repeated string concatenation or inefficient filtering\",\n      \"mitigation\": \"Use list comprehension + ''.join() for efficient sanitization; avoid regex unless necessary\",\n      \"severity\": \"low\"\n    },\n    {\n      \"risk_id\": 3,\n      \"description\": \"Misinterpreting specification: ignoring case but preserving order of alphanumerics\",\n      \"mitigation\": \"Clearly define requirements in comments and verify with unit tests\",\n      \"severity\": \"high\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": 1,\n      \"description\": \"Basic palindromes: 'aba', 'racecar'\",\n      \"input\": [\"aba\", \"racecar\"],\n      \"expected_output\": [True, True],\n      \"priority\": \"high\"\n    },\n    {\n      \"test_id\": 2,\n      \"description\": \"Non-alphanumeric filtering: 'A man, a plan, a canal: Panama'\",\n      \"input\": [\"A man, a plan, a canal: Panama\"],\n      \"expected_output\": [True],\n      \"priority\": \"high\"\n    },\n    {\n      \"test_id\": 3,\n      \"description\": \"Case insensitivity: 'RaceCar', 'RaCeCaR'\",\n      \"input\": [\"RaceCar\", \"RaCeCaR\"],\n      \"expected_output\": [True, True],\n      \"priority\": \"high\"\n    },\n    {\n      \"test_id\": 4,\n      \"description\": \"Edge cases: empty string '', single char 'a', only non-alnum '!@#'\",\n      \"input\": [\"\", \"a\", \"!@#\"],\n      \"expected_output\": [True, True, True],\n      \"priority\": \"medium\"\n    },\n    {\n      \"test_id\": 5,\n      \"description\": \"Non-palindromes: 'hello', 'abc123'\",\n      \"input\": [\"hello\", \"abc123\"],\n      \"expected_output\": [False, False],\n      \"priority\": \"high\"\n    },\n    {\n      \"test_id\": 6,\n      \"description\": \"Unicode alphanumeric: 'Álô açaí' (if valid palindrome after sanitization)\",\n      \"input\": [\"Álô açaí\"],\n      \"expected_output\": [True], // Assuming sanitized to 'aloaçai' → not palindrome; adjust as needed\n      \"priority\": \"medium\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def is_palindrome(s: str) -> bool:\n    sanitized = ''.join(filter(str.isalnum, s)).lower()\n    return sanitized == sanitized[::-1]"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def is_palindrome(s):\n    # Filter out non-alphanumeric characters and convert to lowercase\n    filtered = ''.join(char.lower() for char in s if char.isalnum())\n    # Check if the filtered string is equal to its reverse\n    return filtered == filtered[::-1]",
+      "loop_off_code": "def is_palindrome(s):\n    filtered = ''.join(filter(str.isalnum, s.lower()))\n    return filtered == filtered[::-1]",
+      "loop_on_code": "def is_palindrome(s: str) -> bool:\n    \"\"\"\n    Check if a string is a palindrome, ignoring non-alphanumeric characters and case.\n    \n    Args:\n        s (str): The input string to check\n        \n    Returns:\n        bool: True if the sanitized string is a palindrome, False otherwise\n        \n    Examples:\n        >>> is_palindrome(\"A man, a plan, a canal: Panama\")\n        True\n        >>> is_palindrome(\"racecar\")\n        True\n        >>> is_palindrome(\"hello\")\n        False\n    \"\"\"\n    # Sanitize input: keep only alphanumeric characters and convert to lowercase\n    # Using list comprehension with ''.join() for efficiency (avoids repeated string concatenation)\n    sanitized = ''.join([char.lower() for char in s if char.isalnum()])\n    \n    # Handle edge cases: empty string or single character are palindromes\n    if len(sanitized) <= 1:\n        return True\n    \n    # Use two-pointer technique to check palindrome\n    left, right = 0, len(sanitized) - 1\n    while left < right:\n        if sanitized[left] != sanitized[right]:\n            return False\n        left += 1\n        right -= 1\n        \n    return True"
+    },
+    {
+      "id": "t8",
+      "prompt": "Write Python function two_sum(nums,target) returning index pair [i,j] with i<j.",
+      "fn": "two_sum",
+      "tests": [
+        "two_sum([2,7,11,15],9)==[0,1]",
+        "two_sum([3,2,4],6)==[1,2]"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.856,
+      "loop_off_t": 2.231,
+      "loop_on_t": 18.487,
+      "loop_off_obs": {
+        "plan": "1. **Initialize a hash map** to store values → indices as we iterate.  \n2. **Loop through `nums`**, computing the complement (`target - num`).  \n3. **Check if complement exists** in the map; if yes, return `[map[complement], current_index]`.  \n4. **Store current value and index** in the map for future lookups."
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"two_sum\",\n  \"description\": \"Returns indices [i, j] of elements in nums such that nums[i] + nums[j] = target and i < j.\",\n  \"critical_tasks\": [\n    {\n      \"task\": \"Implement efficient lookup using hash map (dictionary) for O(n) time complexity\",\n      \"reason\": \"Brute-force O(n^2) approach is unacceptable for large inputs; hash map enables constant-time complement checks\"\n    },\n    {\n      \"task\": \"Ensure first occurrence index i < second occurrence index j by iterating left-to-right\",\n      \"reason\": \"Input order matters for satisfying the constraint i < j; storing indices as we go guarantees this\"\n    },\n    {\n      \"task\": \"Handle multiple valid solutions by returning the first valid pair encountered\",\n      \"reason\": \"Problem doesn't specify which solution to return if multiple exist; standard practice is first valid pair\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk\": \"Integer overflow or floating-point precision issues for extreme inputs (e.g., very large numbers)\",\n      \"mitigation\": \"Python handles arbitrary-precision integers natively, and float comparisons are acceptable for typical LeetCode-style inputs; document input expectations\"\n    },\n    {\n      \"risk\": \"Input contains duplicate values causing incorrect index mapping\",\n      \"mitigation\": \"Store only the latest seen index per value (overwriting is safe because we check complements *before* inserting current element)\"\n    },\n    {\n      \"risk\": \"No solution exists but function doesn't handle this case explicitly\",\n      \"mitigation\": \"Return [-1, -1] or raise ValueError; LeetCode-style problems typically expect empty/invalid response like [-1,-1]\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_name\": \"Basic_solution_exists\",\n      \"description\": \"Verify correct index pair for standard case with exactly one solution\",\n      \"input\": {\"nums\": [2, 7, 11, 15], \"target\": 9},\n      \"expected_output\": \"[0, 1]\",\n      \"reason\": \"Core functionality verification\"\n    },\n    {\n      \"test_name\": \"No_solution_exists\",\n      \"description\": \"Handle case where no pair sums to target\",\n      \"input\": {\"nums\": [1, 2, 3], \"target\": 7},\n      \"expected_output\": \"[-1, -1]\",\n      \"reason\": \"Robustness for invalid inputs\"\n    },\n    {\n      \"test_name\": \"Duplicate_values_solution\",\n      \"description\": \"Verify correctness with duplicate values where indices must be distinct\",\n      \"input\": {\"nums\": [3, 3], \"target\": 6},\n      \"expected_output\": \"[0, 1]\",\n      \"reason\": \"Edge case for hash map collision handling\"\n    },\n    {\n      \"test_name\": \"Negative_numbers\",\n      \"description\": \"Test with negative numbers in nums and/or target\",\n      \"input\": {\"nums\": [-1, -2, -3], \"target\": -5},\n      \"expected_output\": \"[0, 2]\",\n      \"reason\": \"Sign handling verification\"\n    },\n    {\n      \"test_name\": \"Zero_target_and_values\",\n      \"description\": \"Verify behavior when target is zero and zeros exist in input\",\n      \"input\": {\"nums\": [0, 1, 0], \"target\": 0},\n      \"expected_output\": \"[0, 2]\",\n      \"reason\": \"Edge case for zero complement handling\"\n    },\n    {\n      \"test_name\": \"Order_of_indices\",\n      \"description\": \"Ensure i < j is always satisfied by construction\",\n      \"input\": {\"nums\": [15, 7, 2], \"target\": 9},\n      \"expected_output\": \"[1, 2]\",\n      \"reason\": \"Critical constraint validation\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def two_sum(nums, target):\n    \"\"\"\n    Returns indices [i, j] of elements in nums such that nums[i] + nums[j] = target and i < j.\n    \n    Args:\n        nums: List of integers\n        target: Integer target sum\n        \n    Returns:\n        List containing [i, j] where i < j and nums[i] + nums[j] == target,\n        or [-1, -1] if no such pair exists.\n        \n    Time Complexity: O(n)\n    Space Complexity: O(n)\n    \"\"\"\n    # Hash map to store value -> index mapping\n    seen = {}\n    \n    for j, num in enumerate(nums):\n        complement = target - num\n        \n        # Check if complement exists in our hash map (guarantees i < j since we haven't added current element yet)\n        if complement in seen:\n            return [seen[complement], j]\n        \n        # Store current number and its index for future lookups\n        seen[num] = j\n    \n    # If no solution found, return invalid indices as per problem requirements\n    return [-1, -1]"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def two_sum(nums, target):\n    seen = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in seen:\n            return [seen[complement], i]\n        seen[num] = i\n    return []",
+      "loop_off_code": "def two_sum(nums, target):\n    hash_map = {}\n    for i, num in enumerate(nums):\n        complement = target - num\n        if complement in hash_map:\n            return [hash_map[complement], i]\n        hash_map[num] = i\n    return []",
+      "loop_on_code": "def two_sum(nums, target):\n    \"\"\"\n    Returns indices [i, j] of elements in nums such that nums[i] + nums[j] = target and i < j.\n    \n    Args:\n        nums: List of integers\n        target: Integer target sum\n        \n    Returns:\n        List containing [i, j] where i < j and nums[i] + nums[j] == target,\n        or [-1, -1] if no such pair exists.\n        \n    Time Complexity: O(n)\n    Space Complexity: O(n)\n    \"\"\"\n    # Hash map to store value -> index mapping\n    seen = {}\n    \n    for j, num in enumerate(nums):\n        complement = target - num\n        \n        # Check if complement exists in our hash map (guarantees i < j since we haven't added current element yet)\n        if complement in seen:\n            return [seen[complement], j]\n        \n        # Store current number and its index for future lookups\n        seen[num] = j\n    \n    # If no solution found, return invalid indices as per problem requirements\n    return [-1, -1]"
+    },
+    {
+      "id": "t9",
+      "prompt": "Write Python function merge_sorted(a,b) merging two sorted lists.",
+      "fn": "merge_sorted",
+      "tests": [
+        "merge_sorted([1,3,5],[2,4])==[1,2,3,4,5]",
+        "merge_sorted([],[])==[]"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 2.002,
+      "loop_off_t": 3.094,
+      "loop_on_t": 20.086,
+      "loop_off_obs": {
+        "plan": "1. **Initialize** pointers `i`, `j` at start of lists `a`, `b`, and result list `merged = []`.\n\n2. **Merge while both have elements**: Compare `a[i]` and `b[j]`; append the smaller to `merged`, advance that pointer.\n\n3. **Append remaining elements**: Extend `merged` with any leftover items from `a` or `b`.\n\n4. **Return** `merged`."
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"merge_sorted\",\n  \"description\": \"Merge two sorted lists into a single sorted list without modifying the input lists.\",\n  \"critical_tasks\": [\n    {\n      \"id\": 1,\n      \"task\": \"Handle edge cases: empty inputs, single-element lists\",\n      \"priority\": \"high\"\n    },\n    {\n      \"id\": 2,\n      \"task\": \"Implement two-pointer technique to traverse both lists in linear time\",\n      \"priority\": \"critical\"\n    },\n    {\n      \"id\": 3,\n      \"task\": \"Ensure input immutability (do not modify original lists)\",\n      \"priority\": \"high\"\n    },\n    {\n      \"id\": 4,\n      \"task\": \"Preserve duplicate elements and sort stability\",\n      \"priority\": \"medium\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": 1,\n      \"description\": \"Modifying input lists in-place instead of creating a new list\",\n      \"mitigation\": \"Use list slicing or copy operations, avoid direct mutation\"\n    },\n    {\n      \"risk_id\": 2,\n      \"description\": \"Off-by-one errors causing IndexError when indices exceed list lengths\",\n      \"mitigation\": \"Add bounds checking before accessing list elements\"\n    },\n    {\n      \"risk_id\": 3,\n      \"description\": \"Infinite loop if loop termination condition is incorrect\",\n      \"mitigation\": \"Ensure both pointers advance properly and loop exits when either list ends\"\n    },\n    {\n      \"risk_id\": 4,\n      \"description\": \"Type errors from non-comparable elements (e.g., mixing types)\",\n      \"mitigation\": \"Add input validation or docstring specifying type requirements\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": 1,\n      \"name\": \"Empty inputs\",\n      \"input\": [\"a=[], b=[]\"],\n      \"expected_output\": [],\n      \"reason\": \"Validate basic edge case handling\"\n    },\n    {\n      \"test_id\": 2,\n      \"name\": \"One empty list\",\n      \"input\": [\"a=[1,3], b=[]\"],\n      \"expected_output\": [1, 3],\n      \"reason\": \"Ensure non-empty list is returned unchanged\"\n    },\n    {\n      \"test_id\": 3,\n      \"name\": \"Disjoint sorted lists\",\n      \"input\": [\"a=[1,2,5], b=[3,4,6]\"],\n      \"expected_output\": [1, 2, 3, 4, 5, 6],\n      \"reason\": \"Test interleaving of elements\"\n    },\n    {\n      \"test_id\": 4,\n      \"name\": \"Overlapping values\",\n      \"input\": [\"a=[1,3,5], b=[2,3,5]\"],\n      \"expected_output\": [1, 2, 3, 3, 5, 5],\n      \"reason\": \"Verify duplicates are preserved\"\n    },\n    {\n      \"test_id\": 5,\n      \"name\": \"Input immutability\",\n      \"input\": [\"a=[1,2], b=[3,4]; original_a = a.copy(); original_b = b.copy()\"],\n      \"preconditions\": [\"assert a == original_a\", \"assert b == original_b\"],\n      \"expected_output\": [1, 2, 3, 4],\n      \"reason\": \"Confirm input lists remain unchanged\"\n    },\n    {\n      \"test_id\": 6,\n      \"name\": \"Large inputs\",\n      \"input\": [\"a=list(range(0,1000,2)), b=list(range(1,1000,2))\"],\n      \"expected_output\": \"list(range(1000))\",\n      \"reason\": \"Validate performance and correctness under load\"\n    },\n    {\n      \"test_id\": 7,\n      \"name\": \"Stability test\",\n      \"input\": [\"a=[(1,'x'), (2,'y')], b=[(1,'z'), (3,'w')]\"],\n      \"expected_output\": \"[(1,'x'), (1,'z'), (2,'y'), (3,'w')]\",\n      \"reason\": \"Verify stable sort (original order preserved for equal keys)\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def merge_sorted(a, b):\n    \"\"\"\n    Merge two sorted lists into a single sorted list without modifying the input lists.\n    \n    Args:\n        a (list): First sorted list (ascending order)\n        b (list): Second sorted list (ascending order)\n        \n    Returns:\n        list: A new sorted list containing all elements from both inputs\n        \n    Raises:\n        TypeError: If inputs are not lists or contain non-comparable elements\n    \"\"\"\n    if not isinstance(a, list) or not isinstance(b, list):\n        raise TypeError(\"Both inputs must be lists\")\n    \n    result = []\n    i, j = 0, 0\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    \n    result.extend(a[i:])\n    result.extend(b[j:])\n    return result"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def merge_sorted(a, b):\n    i = j = 0\n    result = []\n    \n    # Merge elements while both lists have remaining elements\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    \n    # Add remaining elements from list a (if any)\n    while i < len(a):\n        result.append(a[i])\n        i += 1\n    \n    # Add remaining elements from list b (if any)\n    while j < len(b):\n        result.append(b[j])\n        j += 1\n        \n    return result",
+      "loop_off_code": "def merge_sorted(a, b):\n    i, j = 0, 0\n    merged = []\n    \n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            merged.append(a[i])\n            i += 1\n        else:\n            merged.append(b[j])\n            j += 1\n    \n    # Append remaining elements from a or b\n    if i < len(a):\n        merged.extend(a[i:])\n    if j < len(b):\n        merged.extend(b[j:])\n    \n    return merged",
+      "loop_on_code": "def merge_sorted(a, b):\n    \"\"\"\n    Merge two sorted lists into a single sorted list without modifying the input lists.\n    \n    Args:\n        a (list): First sorted list (ascending order)\n        b (list): Second sorted list (ascending order)\n        \n    Returns:\n        list: A new sorted list containing all elements from both inputs\n        \n    Raises:\n        TypeError: If inputs are not lists or contain non-comparable elements\n    \"\"\"\n    # Input validation\n    if not isinstance(a, list) or not isinstance(b, list):\n        raise TypeError(\"Both inputs must be lists\")\n    \n    # Handle edge cases\n    if not a and not b:\n        return []\n    if not a:\n        return b.copy()\n    if not b:\n        return a.copy()\n    \n    # Initialize result list and pointers\n    result = []\n    i, j = 0, 0\n    \n    # Traverse both lists using two-pointer technique\n    while i < len(a) and j < len(b):\n        # Compare elements and add the smaller one to result\n        if a[i] <= b[j]:\n            result.append(a[i])\n            i += 1\n        else:\n            result.append(b[j])\n            j += 1\n    \n    # Append remaining elements from the list that wasn't exhausted\n    while i < len(a):\n        result.append(a[i])\n        i += 1\n        \n    while j < len(b):\n        result.append(b[j])\n        j += 1\n    \n    return result"
+    },
+    {
+      "id": "t10",
+      "prompt": "Write Python function word_count(s) returning dict of lowercase word frequencies split by spaces.",
+      "fn": "word_count",
+      "tests": [
+        "word_count('A a b')=={'a':2,'b':1}",
+        "word_count('')=={}"
+      ],
+      "pure_ok": true,
+      "loop_off_ok": true,
+      "loop_on_ok": true,
+      "pure_reason": "ok",
+      "loop_off_reason": "ok",
+      "loop_on_reason": "ok",
+      "pure_t": 0.74,
+      "loop_off_t": 2.656,
+      "loop_on_t": 15.806,
+      "loop_off_obs": {
+        "plan": "1. **Normalize & Split**: Convert input string `s` to lowercase and split into words using `.split()` (handles multiple spaces).  \n2. **Initialize Dictionary**: Create an empty dictionary for counts.  \n3. **Count Frequencies**: Iterate through words, updating counts with `.get(word, 0) + 1`.  \n4. **Return Result**: Return the frequency dictionary.  \n\n*(Implementation:)*  \n```python\ndef word_count(s):\n    words = s.lower().split()\n    return {w: words.count(w) for w in set(words)}  # or use dict/loop as above\n```"
+      },
+      "loop_on_obs": {
+        "plan": "```json\n{\n  \"function_name\": \"word_count\",\n  \"description\": \"Returns a dictionary mapping each lowercase word (split by whitespace) to its frequency count in the input string.\",\n  \"critical_tasks\": [\n    {\n      \"id\": 1,\n      \"task\": \"Handle empty strings and None inputs gracefully\",\n      \"priority\": \"high\"\n    },\n    {\n      \"id\": 2,\n      \"task\": \"Convert all words to lowercase for case-insensitive counting\",\n      \"priority\": \"high\"\n    },\n    {\n      \"id\": 3,\n      \"task\": \"Split input string by whitespace (including multiple spaces, tabs, newlines)\",\n      \"priority\": \"high\"\n    },\n    {\n      \"id\": 4,\n      \"task\": \"Count frequency of each unique word\",\n      \"priority\": \"high\"\n    }\n  ],\n  \"risks\": [\n    {\n      \"risk_id\": 1,\n      \"description\": \"Input may be None — could cause AttributeError if not handled\",\n      \"mitigation\": \"Add explicit None check at start, return empty dict if None\"\n    },\n    {\n      \"risk_id\": 2,\n      \"description\": \"Whitespace splitting must handle multiple consecutive spaces/tabs/newlines without producing empty strings\",\n      \"mitigation\": \"Use str.split() with no arguments (default behavior) which handles any whitespace and ignores empty tokens\"\n    },\n    {\n      \"risk_id\": 3,\n      \"description\": \"Unicode whitespace characters may be missed if using only space (' ') delimiter\",\n      \"mitigation\": \"Rely on Python's built-in str.split() without args, which recognizes all Unicode whitespace\"\n    },\n    {\n      \"risk_id\": 4,\n      \"description\": \"Large input strings could cause memory issues due to list creation from split()\",\n      \"mitigation\": \"Consider streaming approach for very large inputs (though not required for typical cases)\"\n    }\n  ],\n  \"tests_needed\": [\n    {\n      \"test_id\": \"T1\",\n      \"name\": \"Basic functionality\",\n      \"input\": \"Hello world hello\",\n      \"expected_output\": {\"hello\": 2, \"world\": 1},\n      \"notes\": \"Case-insensitive counting\"\n    },\n    {\n      \"test_id\": \"T2\",\n      \"name\": \"Empty string\",\n      \"input\": \"\",\n      \"expected_output\": {},\n      \"notes\": \"Should return empty dict\"\n    },\n    {\n      \"test_id\": \"T3\",\n      \"name\": \"None input\",\n      \"input\": None,\n      \"expected_output\": {},\n      \"notes\": \"Graceful handling of None\"\n    },\n    {\n      \"test_id\": \"T4\",\n      \"name\": \"Multiple whitespace types\",\n      \"input\": \"a\\t\\nb  c\\td\",\n      \"expected_output\": {\"a\": 1, \"b\": 1, \"c\": 1, \"d\": 1},\n      \"notes\": \"Handles spaces, tabs, newlines\"\n    },\n    {\n      \"test_id\": \"T5\",\n      \"name\": \"Unicode whitespace\",\n      \"input\": \"word\\u00a0word\", \n      \"expected_output\": {\"word\": 2},\n      \"notes\": \"Non-breaking space (U+00A0) should be treated as separator\"\n    },\n    {\n      \"test_id\": \"T6\",\n      \"name\": \"Mixed case with punctuation\",\n      \"input\": \"Hello, WORLD! hello\",\n      \"expected_output\": {\"hello,\": 1, \"world!\": 1, \"hello\": 1},\n      \"notes\": \"Punctuation remains attached; no stripping required per spec\"\n    }\n  ]\n}\n```",
+        "supervisor": {
+          "final_confidence": 0.95,
+          "evidence_conflict": false,
+          "revise_needed": false,
+          "revised_code": "def word_count(s):\n    \"\"\"\n    Returns a dictionary mapping each lowercase word (split by whitespace) \n    to its frequency count in the input string.\n    \n    Args:\n        s (str): Input string to process\n        \n    Returns:\n        dict: Dictionary with lowercase words as keys and their frequencies as values\n    \"\"\"\n    if s is None:\n        return {}\n    \n    # Split by whitespace (handles multiple spaces, tabs, newlines)\n    words = s.split()\n    \n    # Convert to lowercase and count frequencies\n    frequency_dict = {}\n    for word in words:\n        lower_word = word.lower()\n        frequency_dict[lower_word] = frequency_dict.get(lower_word, 0) + 1\n    \n    return frequency_dict"
+        },
+        "rewrite_allowed": false
+      },
+      "pure_code": "def word_count(s):\n    words = s.lower().split()\n    freq = {}\n    for word in words:\n        freq[word] = freq.get(word, 0) + 1\n    return freq",
+      "loop_off_code": "def word_count(s):\n    words = s.lower().split()\n    counts = {}\n    for word in words:\n        counts[word] = counts.get(word, 0) + 1\n    return counts",
+      "loop_on_code": "def word_count(s):\n    \"\"\"\n    Returns a dictionary mapping each lowercase word (split by whitespace) \n    to its frequency count in the input string.\n    \n    Args:\n        s (str): Input string to process\n        \n    Returns:\n        dict: Dictionary with lowercase words as keys and their frequencies as values\n    \"\"\"\n    # Handle None input gracefully\n    if s is None:\n        return {}\n    \n    # Split by whitespace (handles multiple spaces, tabs, newlines, Unicode whitespace)\n    words = s.split()\n    \n    # Convert to lowercase and count frequencies\n    frequency_dict = {}\n    for word in words:\n        lower_word = word.lower()\n        frequency_dict[lower_word] = frequency_dict.get(lower_word, 0) + 1\n    \n    return frequency_dict"
+    }
+  ],
+  "ts": 1773311291
+}

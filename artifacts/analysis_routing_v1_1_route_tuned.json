@@ -1,0 +1,163 @@
+{
+  "tag": "v1_1_route_tuned",
+  "model": "unsloth/qwen3-coder-next",
+  "acc": 0.8,
+  "acc_by_kind": {
+    "simple_direct_master": 0.8,
+    "reasoning_swarm": 0.6,
+    "engineering_complex": 1.0
+  },
+  "rows": [
+    {
+      "id": "s1",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 5480
+    },
+    {
+      "id": "s2",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 4100
+    },
+    {
+      "id": "s3",
+      "expect": "simple_direct_master",
+      "got": "reasoning_swarm",
+      "ok": false,
+      "workers": 3,
+      "confidence": 0.833,
+      "reason": "majority:用户需求为晚餐清淡选择，虽属日常决策但涉及营养、资源约束与个体差异（如厨房条件/体力精力），需多角度权衡：1) 营养学角度筛选低油盐易消化方案；2) 实操性评估常见食材与工具适配性；3) 行为经济学考虑用户 effort 成本。单点专家易偏颇，3 worker 可覆盖营养/烹饪/行为三视角，再由 master 合成最优解。; 用户需求为‘晚饭吃啥比较清淡’，属于健康饮食推荐类问题。虽看似简单，但需结合营养知识、常见食材可得性、烹饪资源约束及时间窗口（晚餐时段）做多角度推理；且隐含对‘清淡’定义的理解差异（如中医/现代营养学视角），需2-5名worker协同分析：1) 轻食原则澄清，2) 实用菜谱筛选，3) 执行可行性评估。适合启动小规模推理swarm。",
+      "latency_ms": 18316
+    },
+    {
+      "id": "s4",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 5508
+    },
+    {
+      "id": "s5",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 3651
+    },
+    {
+      "id": "r1",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.85,
+      "reason": "majority:用户处于焦虑状态，需要情感安抚（emotional first aid）与结构化任务规划的结合。这涉及心理层面的共情引导 + 认知行为导向的任务优先级建模（能量/影响/紧迫性三维度），属于轻量但需多角度推理的问题——不适合直接回复，也不至于进入完整工程loop；3名worker可分别负责：1) 情绪安抚话术生成；2) 任务识别引导；3) 多目标优化排序逻辑。; 用户处于焦虑状态，需求包含双重目标：1) 情绪安抚（需共情与语言技巧）；2) 构建今晚可执行的三件事优先级方案（需认知重构+任务拆解）。这属于典型心理-行为协同干预场景，无法由单一 master 直接高质量完成。需要 3 名 worker 分别负责：情绪识别与安抚话术生成、能量-影响矩阵建模、今夜可行性约束校验。",
+      "latency_ms": 17154
+    },
+    {
+      "id": "r2",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "override:reasoning_domain_dictionary",
+      "latency_ms": 7133
+    },
+    {
+      "id": "r3",
+      "expect": "reasoning_swarm",
+      "got": "simple_direct_master",
+      "ok": false,
+      "workers": 2,
+      "confidence": 0.95,
+      "reason": "override:single_utterance_or_rephrase",
+      "latency_ms": 5642
+    },
+    {
+      "id": "r4",
+      "expect": "reasoning_swarm",
+      "got": "engineering_complex",
+      "ok": false,
+      "workers": 3,
+      "confidence": 0.92,
+      "reason": "majority:任务虽逻辑清晰，但涉及文件系统操作（识别当日日志、模式匹配、写入新路径），需可靠工程化处理；且存在边界风险（如日志文件不存在、多份日志冲突），应启用完整 swarm + loop 流程确保鲁棒性与可审计性。; 任务明确但涉及文件IO、日期匹配（需动态识别今日日志）、过滤逻辑及输出写入，属于典型单文件处理流程；虽无需多轮推理或哲学分析，但需精确工程执行（如正则/大小写敏感性、路径拼接、异常容错），且必须调用file_read/file_write工具并确保幂等性——符合engineering_complex特征。",
+      "latency_ms": 11621
+    },
+    {
+      "id": "r5",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "workers": 3,
+      "confidence": 0.93,
+      "reason": "override:reasoning_domain_dictionary",
+      "latency_ms": 5908
+    },
+    {
+      "id": "e1",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 5991
+    },
+    {
+      "id": "e2",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 5742
+    },
+    {
+      "id": "e3",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 3682
+    },
+    {
+      "id": "e4",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 4774
+    },
+    {
+      "id": "e5",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "workers": 4,
+      "confidence": 0.97,
+      "reason": "override:engineering_dictionary",
+      "latency_ms": 5947
+    }
+  ],
+  "ts": 1773288198
+}

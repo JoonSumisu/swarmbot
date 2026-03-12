@@ -2,7 +2,7 @@
 
 [中文](README.md) | [English](README_EN.md)
 
-**Swarmbot (v1.0.0)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
+**Swarmbot (v1.1.0)** 是一个基于 **[swarms](https://github.com/kyegomez/swarms)** 和 **nanobot** 架构的多 Agent 集群智能系统，专为本地部署和私有 LLM 接口设计。
 
 它集成了 **QMD 四层记忆系统**（白板、热记忆、温记忆、冷记忆）与 **三环自进化架构**（推理、反思、行动），支持通过 **Feishu (飞书/Lark)** 等 IM 通道进行交互。
 
@@ -14,7 +14,7 @@
 
 - 开发/实验目录说明见 [WORKSPACE_LAYOUT.md](WORKSPACE_LAYOUT.md)
 
-## 🌟 版本 v1.0.0 更新亮点
+## 🌟 版本 v1.1.0 更新亮点
 
 *   **3-Loop Architecture**: 
     *   **Inference Loop**: 8 步标准推理（分析-搜集-规划-执行-评估-转译-整理）。
@@ -44,6 +44,21 @@
     *   引入反馈回路 (Feedback Loop) 进行自我纠错与系统优化。
 
 这些逻辑约束被深度集成到 System Prompts 中，确保 Swarmbot 在推理时不仅考虑"怎么做最快"，更优先考虑"这样做是否符合物理/逻辑规律"。
+
+---
+
+## 🆕 v1.1 推理编排增强
+
+- 引入 `framework_doc` 严格校验与落地，PLANNING 输出不再是松散 tasks。
+- 执行链拆分为 Skill Discovery 与 Tool Decision 双通道，明确 `skill` 与 `tool` 边界。
+- 新增 Supervisor 控制动作幂等与阶段锁机制，支持提前收敛评分触发输出。
+- Whiteboard 升级为“关键信息 + 外部内容”平衡模型，减少噪声并保留关键上下文。
+
+推荐本地模型测试名：
+
+```bash
+unsloth/qwen3-coder-next
+```
 
 ---
 

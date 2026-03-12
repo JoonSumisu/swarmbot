@@ -54,7 +54,7 @@ class GatewayServer:
         self._autonomous_report_path = Path(WORKSPACE_PATH) / "autonomous_gateway_reports.jsonl"
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v1.0.0)...")
+        logger.info("Starting Swarmbot Gateway (v1.1.0)...")
 
         # 1. Initialize Channels
         await self._init_channels()

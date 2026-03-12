@@ -1,6 +1,6 @@
 # Swarmbot
 
-Swarmbot (v1.0.0) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
+Swarmbot (v1.1.0) is a multi-agent collective intelligence system designed for local/private LLMs. It integrates a 4-layer memory system and a 3-loop self-evolution architecture.
 
 > Core idea: “All-in-One” — gateway, memory, toolchain, and multi-agent orchestration in one lightweight process.
 
@@ -21,6 +21,21 @@ To address common logical pitfalls in traditional Agents (e.g., "Walking 50m is 
     *   Implements Feedback Loops for self-correction and optimization.
 
 These constraints are deeply integrated into the System Prompts, ensuring Swarmbot prioritizes "Physical/Logical Consistency" over mere "Efficiency".
+
+---
+
+## 🆕 v1.1 Inference Orchestration Upgrade
+
+- Enforces a strict `framework_doc` contract in PLANNING.
+- Splits execution into dual channels: Skill Discovery and Tool Decision.
+- Adds Supervisor idempotent control actions and stage lock.
+- Upgrades Whiteboard to a balanced model: critical in-board context + external long content.
+
+Recommended local model tag for regression:
+
+```bash
+unsloth/qwen3-coder-next
+```
 
 ---
 

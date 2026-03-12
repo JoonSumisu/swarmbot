@@ -1,0 +1,55 @@
+{
+  "tag": "v1_1_final_loop_tuned",
+  "model": "unsloth/qwen3-coder-next",
+  "routing_acc": 1.0,
+  "engineering_acc": 1.0,
+  "legal_pass": 1.0,
+  "business_pass": 1.0,
+  "think_pass": 1.0,
+  "evidence_growth": 1,
+  "rows": [
+    {
+      "type": "routing",
+      "expect": "simple_direct_master",
+      "got": "simple_direct_master",
+      "ok": true,
+      "reason": "override:single_utterance_or_rephrase"
+    },
+    {
+      "type": "routing",
+      "expect": "reasoning_swarm",
+      "got": "reasoning_swarm",
+      "ok": true,
+      "reason": "override:reasoning_domain_dictionary"
+    },
+    {
+      "type": "routing",
+      "expect": "engineering_complex",
+      "got": "engineering_complex",
+      "ok": true,
+      "reason": "override:engineering_dictionary"
+    },
+    {
+      "type": "legal",
+      "route": "reasoning_swarm",
+      "used_search": true,
+      "has_law": true,
+      "has_article": true,
+      "ok": true
+    },
+    {
+      "type": "business",
+      "route": "reasoning_swarm",
+      "used_search": true,
+      "keywords_ok": true,
+      "ok": true
+    },
+    {
+      "type": "think",
+      "route": "reasoning_swarm",
+      "structured": true,
+      "ok": true
+    }
+  ],
+  "ts": 1773289070
+}
