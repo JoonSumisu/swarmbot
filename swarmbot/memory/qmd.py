@@ -197,16 +197,17 @@ class QMDMemoryStore(MemoryStore):
         This is usually called by Overthinking Loop or explicit 'save' action.
         """
         target_coll = collection or self.default_collection
+        safe_content = content.encode("utf-8", "replace").decode("utf-8") if isinstance(content, str) else str(content)
         
         # Use EmbeddedQMD
-        self.embedded_qmd.add(content, collection=target_coll)
+        self.embedded_qmd.add(safe_content, collection=target_coll)
         
         # Optional: Still save markdown file for portability/backup
         filename = f"memory_{int(time.time())}.md"
         coll_path = os.path.join(self._qmd_root, target_coll, filename)
         os.makedirs(os.path.dirname(coll_path), exist_ok=True)
         with open(coll_path, "w", encoding="utf-8", errors='replace') as f:
-            f.write(content)
+            f.write(safe_content)
 
     def _extract_keywords(self, text: str) -> List[str]:
         tokens: List[str] = []

@@ -66,8 +66,20 @@ class EmbeddedQMD:
     def _sanitize(self, text: str) -> str:
         if not isinstance(text, str):
             return text
-        # Remove surrogate characters that are not allowed in UTF-8
         return text.encode('utf-8', 'replace').decode('utf-8')
+
+    def _sanitize_value(self, value: Any) -> Any:
+        if isinstance(value, str):
+            return self._sanitize(value)
+        if isinstance(value, dict):
+            return {k: self._sanitize_value(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._sanitize_value(v) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self._sanitize_value(v) for v in value)
+        if isinstance(value, set):
+            return {self._sanitize_value(v) for v in value}
+        return value
 
     def add(self, content: str, collection: str = "default", meta: Dict[str, Any] = None) -> None:
         coll_id = self._get_collection_id(collection)
@@ -76,11 +88,7 @@ class EmbeddedQMD:
         safe_content = self._sanitize(content)
         safe_meta = {}
         if meta:
-            for k, v in meta.items():
-                if isinstance(v, str):
-                    safe_meta[k] = self._sanitize(v)
-                else:
-                    safe_meta[k] = v
+            safe_meta = self._sanitize_value(meta)
                     
         meta_json = json.dumps(safe_meta, ensure_ascii=False)
         
@@ -101,10 +109,11 @@ class EmbeddedQMD:
             sql = ""
             params = []
             
+            safe_query_text = self._sanitize(query or "")
             if self.has_fts:
                 sql = "SELECT content, meta FROM documents_fts WHERE content MATCH ?"
                 # Simple FTS query sanitization
-                safe_query = query.replace('"', '""')
+                safe_query = safe_query_text.replace('"', '""')
                 params.append(f'"{safe_query}"')
                 
                 if collection:
@@ -116,7 +125,7 @@ class EmbeddedQMD:
             else:
                 # Fallback to LIKE
                 sql = "SELECT content, meta FROM documents WHERE content LIKE ?"
-                params.append(f"%{query}%")
+                params.append(f"%{safe_query_text}%")
                 
                 if collection:
                     coll_id = self._get_collection_id(collection)

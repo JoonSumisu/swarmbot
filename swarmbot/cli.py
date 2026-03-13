@@ -14,8 +14,10 @@ from .config_manager import (
     ensure_dirs,
     CONFIG_PATH,
     BOOT_CONFIG_PATH,
+    WORKSPACE_PATH,
 )
 from .swarm.manager import SwarmManager
+from .loops.inference import InferenceLoop
 import shutil
 
 
@@ -222,7 +224,8 @@ def cmd_onboard() -> None:
 
 def cmd_run() -> None:
     cfg = load_config()
-    swarm = SwarmManager.from_swarmbot_config(cfg)
+    inference = InferenceLoop(cfg, WORKSPACE_PATH)
+    session_id = "cli_run_default"
     print("Swarmbot run 模式已启动，Ctrl+C 退出。")
     turn = 0
     while True:
@@ -234,7 +237,7 @@ def cmd_run() -> None:
             break
         if not user_input:
             continue
-        reply = swarm.chat(user_input)
+        reply = inference.run(user_input, session_id=session_id)
         print(f"\nSwarmbot:\n{reply}")
         turn += 1
 

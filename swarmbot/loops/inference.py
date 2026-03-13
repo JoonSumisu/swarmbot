@@ -438,14 +438,29 @@ class InferenceLoop:
             return {"ok": False, "profile": "balanced", "reason": "parse_failed", "confidence": 0.0}
 
     def _decide_loop_profile(self) -> str:
-        # Strictly couple profile to route mode as per user instruction
-        if self.route_mode == "simple_direct_master":
-            return "lean"
-        if self.route_mode == "reasoning_swarm":
+        forced = self.loop_profile_mode
+        if forced in ["lean", "balanced", "swarm_max"]:
+            self.whiteboard.update("profile_decision", {"profile": forced, "reason": "forced"})
+            return forced
+        decisions = [self._decide_loop_profile_once() for _ in range(3)]
+        valid = [d for d in decisions if d.get("ok")]
+        if not valid:
+            self.whiteboard.update("profile_decision", {"profile": "balanced", "reason": "all_parse_failed", "mode": "fallback"})
             return "balanced"
-        if self.route_mode == "engineering_complex":
-            return "swarm_max"
-        return "balanced"
+        counts: Dict[str, int] = {"lean": 0, "balanced": 0, "swarm_max": 0}
+        for d in valid:
+            p = str(d.get("profile") or "balanced")
+            if p in counts:
+                counts[p] += 1
+        best = sorted(counts.items(), key=lambda x: (-x[1], 0 if x[0] == "balanced" else 1))[0][0]
+        winners = [d for d in valid if d.get("profile") == best] or valid
+        avg_conf = sum(float(d.get("confidence") or 0.5) for d in winners) / max(1, len(winners))
+        reason = "; ".join([str(d.get("reason") or "") for d in winners[:2]]).strip("; ")
+        self.whiteboard.update(
+            "profile_decision",
+            {"profile": best, "reason": f"majority:{reason}", "confidence": round(avg_conf, 3), "mode": "majority_vote"},
+        )
+        return best
 
 
     def _need_evidence_increment(self, question: str) -> bool:
@@ -541,14 +556,18 @@ class InferenceLoop:
             except:
                 pass
         
-        # Default fallback if voting fails
         if not votes:
-             return {"route": "reasoning_swarm", "reason": "fallback:default_reasoning", "confidence": 0.5, "workers": 3}
-             
+             return {"route": "simple_direct_master", "reason": "fallback:default_simple", "confidence": 0.5, "workers": 1}
+
         counts = {"simple_direct_master": 0, "reasoning_swarm": 0, "engineering_complex": 0}
+        conf_sums = {"simple_direct_master": 0.0, "reasoning_swarm": 0.0, "engineering_complex": 0.0}
         for v in votes:
             counts[v["route"]] += 1
-        route = sorted(counts.items(), key=lambda x: (-x[1], 0 if x[0] == "reasoning_swarm" else 1))[0][0]
+            conf_sums[v["route"]] += float(v.get("confidence") or 0.0)
+        route = sorted(
+            counts.keys(),
+            key=lambda r: (-counts[r], -(conf_sums[r] / max(1, counts[r])), 0 if r == "simple_direct_master" else 1),
+        )[0]
         winners = [v for v in votes if v["route"] == route] or votes
         workers = round(sum(v["workers"] for v in winners) / len(winners))
         conf = sum(v["confidence"] for v in winners) / len(winners)
@@ -663,20 +682,51 @@ class InferenceLoop:
         return self._execute_pipeline(user_input)
 
     def _execute_pipeline(self, user_input: str) -> str:
+        if "ANALYSIS" not in self.completed_stages:
+            early_route = self._decide_route_mode(user_input, {})
+            self.route_mode = str(early_route.get("route") or "simple_direct_master")
+            self.route_workers = int(early_route.get("workers") or 1)
+            self.whiteboard.update("route_decision", early_route)
+            if self.route_mode == "simple_direct_master":
+                self.whiteboard.update("loop_profile", "lean")
+                self._set_stage("MASTER_OUTPUT")
+                final_response = self._step_direct_master()
+                final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+                final_response = self._postprocess_domain_response(user_input, final_response)
+                self.whiteboard.update("final_response", final_response)
+                self.completed_stages.add("MASTER_OUTPUT")
+                self._set_stage("ORGANIZATION")
+                self._step_organization()
+                self._update_evidence_increment(user_input, final_response, self.route_mode)
+                self._set_stage("DONE")
+                self.completed_stages.add("DONE")
+                return final_response
+            if self.route_mode == "reasoning_swarm":
+                self.whiteboard.update("loop_profile", "balanced")
+                self._set_stage("EXECUTION")
+                final_response = self._step_reasoning_swarm()
+                final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+                final_response = self._postprocess_domain_response(user_input, final_response)
+                self.whiteboard.update("final_response", final_response)
+                self.completed_stages.add("EXECUTION")
+                self._set_stage("MASTER_OUTPUT")
+                self._set_stage("ORGANIZATION")
+                self._step_organization()
+                self._update_evidence_increment(user_input, final_response, self.route_mode)
+                self._set_stage("DONE")
+                self.completed_stages.add("DONE")
+                return final_response
+
         # Stage 1: ANALYSIS
         if "ANALYSIS" not in self.completed_stages:
             self._set_stage("ANALYSIS")
             self._step_analysis(light=True)
             self.completed_stages.add("ANALYSIS")
-            
-            # Routing Decision
-            route_decision = self._decide_route_mode(user_input, self.whiteboard.get("problem_analysis") or {})
-            self.route_mode = str(route_decision.get("route") or "reasoning_swarm")
-            self.route_workers = int(route_decision.get("workers") or 3)
-            self.whiteboard.update("route_decision", route_decision)
-            
+
             # Profile Decision
             selected_profile = self._decide_loop_profile()
+            if self.route_mode == "engineering_complex":
+                selected_profile = "swarm_max"
             self.whiteboard.update("loop_profile", selected_profile)
 
         # INTERACTIVE CHECK 1: Analysis Alignment (Only for engineering_complex / swarm_max)
@@ -704,22 +754,6 @@ class InferenceLoop:
                 self.whiteboard.update("final_response", final_response)
                 self.completed_stages.add("MASTER_OUTPUT")
                 
-                self._set_stage("ORGANIZATION")
-                self._step_organization()
-                self._update_evidence_increment(user_input, final_response, self.route_mode)
-                self._set_stage("DONE")
-                self.completed_stages.add("DONE")
-                return final_response
-
-        if self.route_mode == "reasoning_swarm":
-            if "EXECUTION" not in self.completed_stages:
-                self._set_stage("EXECUTION")
-                final_response = self._step_reasoning_swarm()
-                final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
-                final_response = self._postprocess_domain_response(user_input, final_response)
-                self.whiteboard.update("final_response", final_response)
-                self.completed_stages.add("EXECUTION")
-                self._set_stage("MASTER_OUTPUT")
                 self._set_stage("ORGANIZATION")
                 self._step_organization()
                 self._update_evidence_increment(user_input, final_response, self.route_mode)

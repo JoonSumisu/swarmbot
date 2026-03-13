@@ -19,9 +19,11 @@ def test_interactive_flow():
     
     print("\n=== Test 1: Simple Query (Non-Interactive) ===")
     simple_loop = InferenceLoop(config, workspace_path)
-    response = simple_loop.run("你好", session_id)
+    response = simple_loop.run("没什么，我只是想跟你聊下天", session_id)
     print(f"Simple Response: {response[:100]}...")
     assert not simple_loop.is_suspended, "Simple query should not suspend"
+    assert simple_loop.route_mode == "simple_direct_master", f"Expected simple_direct_master, got {simple_loop.route_mode}"
+    assert "ANALYSIS" not in simple_loop.completed_stages, "Simple query should not enter ANALYSIS"
     assert "DONE" in simple_loop.completed_stages, "Simple query should complete"
     
     print("\n=== Test 2: Complex Query (Interactive) ===")
@@ -66,6 +68,7 @@ def test_interactive_flow():
     assert not balanced_loop.is_suspended, "Balanced query should NOT suspend"
     assert balanced_loop.route_mode == "reasoning_swarm", f"Expected reasoning_swarm, got {balanced_loop.route_mode}"
     assert "DONE" in balanced_loop.completed_stages, "Balanced query should complete"
+    assert "ANALYSIS" not in balanced_loop.completed_stages, "Balanced should not enter ANALYSIS stage"
     assert "COLLECTION" not in balanced_loop.completed_stages, "Balanced should not enter COLLECTION stage"
     assert "PLANNING" not in balanced_loop.completed_stages, "Balanced should not enter PLANNING stage"
     assert balanced_loop.whiteboard.get("reasoning_swarm_strategy"), "Balanced should use swarms strategy decision"
