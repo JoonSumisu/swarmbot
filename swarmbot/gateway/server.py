@@ -29,8 +29,6 @@ from nanobot.channels.feishu import FeishuChannel
 from nanobot.config.schema import FeishuConfig
 
 from swarmbot.loops.inference import InferenceLoop
-from swarmbot.loops.overthinking import OverthinkingLoop
-from swarmbot.loops.overaction import OveractionLoop
 from swarmbot.autonomous import AutonomousEngine
 
 class GatewayServer:
@@ -40,21 +38,20 @@ class GatewayServer:
         self.channels = []
 
         # Loops
-        self.overthinking_loop = None
-        self.overaction_loop = None
         self.autonomous_engine = None
 
         self._stop_event = threading.Event()
-        self._executor = ThreadPoolExecutor(max_workers=5)
-        self._inflight = asyncio.Semaphore(5)
-        self._subtasks = {}
-        self._subtask_lock = asyncio.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=10)
+        self._inflight = asyncio.Semaphore(10)
         self._latest_inbound = {"channel": "", "chat_id": "", "message_id": ""}
         self._autonomous_report_pos = 0
         self._autonomous_report_path = Path(WORKSPACE_PATH) / "autonomous_gateway_reports.jsonl"
+        
+        # Interactive Session Storage
+        self.active_loops = {}  # Dict[str, InferenceLoop] keyed by chat_id
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v1.1.0)...")
+        logger.info("Starting Swarmbot Gateway (v1.1.0 Interactive)...")
 
         # 1. Initialize Channels
         await self._init_channels()
@@ -66,13 +63,6 @@ class GatewayServer:
         if bool(getattr(getattr(self.config, "autonomous", None), "enabled", True)):
             self.autonomous_engine = AutonomousEngine(self._stop_event)
             self.autonomous_engine.start()
-        else:
-            if getattr(self.config.overthinking, "enabled", True):
-                self.overthinking_loop = OverthinkingLoop(self._stop_event)
-                self.overthinking_loop.start()
-            if getattr(getattr(self.config, "overaction", None), "enabled", True):
-                self.overaction_loop = OveractionLoop(self._stop_event)
-                self.overaction_loop.start()
 
         # 3. Start Message Processing Loop
         asyncio.create_task(self.bus.dispatch_outbound())
@@ -85,13 +75,9 @@ class GatewayServer:
         if feishu_conf:
             # Handle both dict and object config
             if isinstance(feishu_conf, dict):
-                # If it's a dict, it might be the raw config from json
-                # In config_manager, channels are usually ChannelConfig objects
-                # But let's be safe
                 enabled = feishu_conf.get("enabled", False)
                 conf_data = feishu_conf.get("config", {}) if "config" in feishu_conf else feishu_conf
             else:
-                # It is a ChannelConfig object
                 enabled = feishu_conf.enabled
                 conf_data = dict(feishu_conf.config or {})
                 if getattr(feishu_conf, "app_id", "") and "app_id" not in conf_data:
@@ -106,7 +92,6 @@ class GatewayServer:
             if enabled:
                 logger.info("Initializing Feishu channel...")
                 try:
-                    # Support both snake_case (standard) and camelCase (legacy)
                     app_id = conf_data.get("app_id") or conf_data.get("appId")
                     app_secret = conf_data.get("app_secret") or conf_data.get("appSecret")
                     encrypt_key = conf_data.get("encrypt_key") or conf_data.get("encryptKey") or ""
@@ -155,54 +140,67 @@ class GatewayServer:
             self.stop()
 
     async def _handle_message_async(self, message: InboundMessage):
-        """Async wrapper for blocking inference."""
+        """Async wrapper for blocking inference with stateful interactive loop."""
         loop = asyncio.get_running_loop()
+        chat_id = message.chat_id or "unknown"
+        
         async with self._inflight:
             self._latest_inbound = {
                 "channel": message.channel or "",
-                "chat_id": message.chat_id or "",
+                "chat_id": chat_id,
                 "message_id": message.message_id or "",
             }
             raw = (message.content or "").strip()
-            if raw in ["/jobs", "任务状态", "subtasks", "/subtasks"]:
-                text = await self._format_subtask_status(message.chat_id or "unknown")
-                await self._publish_reply(message, text)
-                return
-            if raw.startswith("/job "):
-                task_id = raw.replace("/job", "", 1).strip()
-                text = await self._format_subtask_detail(message.chat_id or "unknown", task_id)
-                await self._publish_reply(message, text)
-                return
-            try:
-                inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
-                route_decision = await loop.run_in_executor(
-                    self._executor,
-                    inference_loop.preview_route,
-                    message.content,
-                )
-                route = str((route_decision or {}).get("route") or "reasoning_swarm")
-                if route == "simple_direct_master":
-                    response_text = await loop.run_in_executor(
-                        self._executor,
-                        inference_loop.run,
-                        message.content,
-                        message.chat_id or "unknown"
-                    )
+            
+            # Command Handling
+            if raw == "/clear":
+                if chat_id in self.active_loops:
+                    del self.active_loops[chat_id]
+                    await self._publish_reply(message, "已清除当前会话状态。")
                 else:
-                    task_id = f"sb_{uuid.uuid4().hex[:10]}"
-                    await self._register_subtask(task_id, message, route_decision)
-                    asyncio.create_task(self._run_subtask_and_announce(task_id, message))
-                    response_text = (
-                        f"已启动后台子任务 {task_id}（route={route}）。\n"
-                        "你可以继续聊天处理普通问题；完成后我会主动推送结果。\n"
-                        "发送 /jobs 可查看任务状态。"
-                    )
-                if not isinstance(response_text, str) or not response_text.strip():
-                    response_text = "已收到消息，但本次推理结果为空。请重试一次。"
+                    await self._publish_reply(message, "当前无活跃会话。")
+                return
+
+            try:
+                # Retrieve existing loop or create new one
+                if chat_id in self.active_loops:
+                    inference_loop = self.active_loops[chat_id]
+                    logger.info(f"Resuming interactive loop for {chat_id}")
+                else:
+                    inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
+                    logger.info(f"Starting new inference loop for {chat_id}")
+
+                # Run inference (blocking call in executor)
+                response_text = await loop.run_in_executor(
+                    self._executor,
+                    inference_loop.run,
+                    message.content,
+                    chat_id
+                )
+
+                # Handle Result
+                if inference_loop.is_suspended:
+                    # Task paused for user input (Analysis/Plan Review)
+                    self.active_loops[chat_id] = inference_loop
+                    await self._publish_reply(message, response_text)
+                else:
+                    # Task completed
+                    if chat_id in self.active_loops:
+                        del self.active_loops[chat_id]
+                    
+                    if not isinstance(response_text, str) or not response_text.strip():
+                        response_text = "（无内容返回）"
+                    
+                    # Split long responses
+                    chunks = self._split_message(response_text)
+                    for chunk in chunks:
+                         await self._publish_reply(message, chunk)
+
             except Exception as e:
                 logger.error(f"Inference processing failed: {e}")
-                response_text = "系统处理消息时出现异常，请稍后重试。"
-            await self._publish_reply(message, response_text)
+                if chat_id in self.active_loops:
+                    del self.active_loops[chat_id]
+                await self._publish_reply(message, "系统处理消息时出现异常，会话已重置。")
 
     async def _autonomous_report_poller(self):
         while not self._stop_event.is_set():
@@ -250,46 +248,6 @@ class GatewayServer:
         except Exception as e:
             logger.error(f"Publish outbound failed: {e}")
 
-    async def _register_subtask(self, task_id: str, message: InboundMessage, route_decision: dict):
-        async with self._subtask_lock:
-            self._subtasks[task_id] = {
-                "task_id": task_id,
-                "status": "running",
-                "route": str((route_decision or {}).get("route") or ""),
-                "reason": str((route_decision or {}).get("reason") or ""),
-                "workers": int((route_decision or {}).get("workers") or 0),
-                "chat_id": message.chat_id or "unknown",
-                "channel": message.channel,
-                "input_preview": (message.content or "")[:120],
-                "created_at": int(time.time()),
-                "updated_at": int(time.time()),
-                "progress_tick": 0,
-                "progress_percent": 0,
-                "result_full": "",
-            }
-
-    def _estimate_progress(self, elapsed_s: int, route: str) -> int:
-        if route == "reasoning_swarm":
-            x = min(0.92, elapsed_s / 420.0)
-            return int(12 + 80 * x)
-        if route == "engineering_complex":
-            x = min(0.9, elapsed_s / 900.0)
-            return int(8 + 82 * x)
-        x = min(0.95, elapsed_s / 180.0)
-        return int(20 + 70 * x)
-
-    def _compress_subtask_result(self, result: str, max_len: int = 700) -> str:
-        text = (result or "").strip()
-        if not text:
-            return "无可用结果。"
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        bullets = [ln for ln in lines if ln.startswith(("-", "•", "1.", "2.", "3.", "4.", "5."))]
-        picked = bullets[:5] if bullets else lines[:6]
-        merged = "\n".join(picked).strip()
-        if len(merged) > max_len:
-            merged = merged[:max_len] + "..."
-        return merged
-
     def _split_message(self, text: str, part_len: int = 1200) -> list[str]:
         raw = (text or "").strip()
         if not raw:
@@ -301,108 +259,10 @@ class GatewayServer:
             i += part_len
         return chunks
 
-    async def _progress_publisher(self, task_id: str, message: InboundMessage):
-        started = int(time.time())
-        while True:
-            await asyncio.sleep(45)
-            async with self._subtask_lock:
-                rec = self._subtasks.get(task_id, {})
-                if not rec or rec.get("status") != "running":
-                    return
-                elapsed = int(time.time()) - started
-                p = self._estimate_progress(elapsed, str(rec.get("route") or "reasoning_swarm"))
-                if p <= int(rec.get("progress_percent") or 0):
-                    p = int(rec.get("progress_percent") or 0)
-                rec["progress_percent"] = p
-                rec["progress_tick"] = int(rec.get("progress_tick") or 0) + 1
-                rec["updated_at"] = int(time.time())
-                self._subtasks[task_id] = rec
-                tick = rec["progress_tick"]
-            await self._publish_reply(
-                message,
-                f"[子任务 {task_id} 进度] {p}%（第{tick}次进度回传）\n发送 /job {task_id} 查看详情。",
-            )
-
-    async def _run_subtask_and_announce(self, task_id: str, message: InboundMessage):
-        loop = asyncio.get_running_loop()
-        progress_task = asyncio.create_task(self._progress_publisher(task_id, message))
-        try:
-            inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
-            result = await loop.run_in_executor(
-                self._executor,
-                inference_loop.run,
-                message.content,
-                message.chat_id or "unknown",
-            )
-            async with self._subtask_lock:
-                rec = self._subtasks.get(task_id, {})
-                rec["status"] = "completed"
-                rec["updated_at"] = int(time.time())
-                rec["result_preview"] = (result or "")[:180]
-                rec["result_full"] = result or ""
-                rec["progress_percent"] = 100
-                self._subtasks[task_id] = rec
-            summary = self._compress_subtask_result(result)
-            chunks = self._split_message(result, part_len=1200)
-            await self._publish_reply(message, f"[子任务 {task_id} 完成] 摘要如下：\n{summary}")
-            for idx, c in enumerate(chunks[:4], start=1):
-                await self._publish_reply(message, f"[子任务 {task_id} 结果分段 {idx}/{min(len(chunks),4)}]\n{c}")
-            if len(chunks) > 4:
-                await self._publish_reply(message, f"[子任务 {task_id}] 结果较长，剩余内容请发送 /job {task_id} 查看。")
-        except Exception as e:
-            async with self._subtask_lock:
-                rec = self._subtasks.get(task_id, {})
-                rec["status"] = "failed"
-                rec["updated_at"] = int(time.time())
-                rec["error"] = str(e)
-                self._subtasks[task_id] = rec
-            await self._publish_reply(
-                message,
-                f"[子任务 {task_id} 失败]\n{e}",
-            )
-        finally:
-            if progress_task and not progress_task.done():
-                progress_task.cancel()
-
-    async def _format_subtask_status(self, chat_id: str) -> str:
-        async with self._subtask_lock:
-            rows = [v for v in self._subtasks.values() if str(v.get("chat_id")) == str(chat_id)]
-        rows = sorted(rows, key=lambda x: int(x.get("created_at") or 0), reverse=True)[:8]
-        if not rows:
-            return "当前没有子任务记录。"
-        lines = ["最近子任务状态："]
-        for r in rows:
-            lines.append(
-                f"- {r.get('task_id')} | {r.get('status')} | {r.get('route')} | workers={r.get('workers')} | progress={r.get('progress_percent',0)}%"
-            )
-        return "\n".join(lines)
-
-    async def _format_subtask_detail(self, chat_id: str, task_id: str) -> str:
-        async with self._subtask_lock:
-            rec = self._subtasks.get(task_id)
-        if not rec or str(rec.get("chat_id")) != str(chat_id):
-            return f"未找到任务 {task_id}。"
-        head = (
-            f"任务 {task_id}\n"
-            f"- 状态: {rec.get('status')}\n"
-            f"- 路由: {rec.get('route')}\n"
-            f"- workers: {rec.get('workers')}\n"
-            f"- 进度: {rec.get('progress_percent',0)}%\n"
-            f"- 输入: {rec.get('input_preview','')}"
-        )
-        if rec.get("status") == "completed":
-            full = str(rec.get("result_full") or "")
-            return head + "\n\n" + (full[:3000] + ("..." if len(full) > 3000 else ""))
-        if rec.get("status") == "failed":
-            return head + f"\n\n错误: {rec.get('error','')}"
-        return head
-
     def stop(self):
         logger.info("Stopping Gateway...")
         self._stop_event.set()
         if self.autonomous_engine: self.autonomous_engine.stop()
-        if self.overthinking_loop: self.overthinking_loop.stop()
-        if self.overaction_loop: self.overaction_loop.stop()
         for ch in self.channels:
             asyncio.create_task(ch.stop())
         self._executor.shutdown(wait=False)

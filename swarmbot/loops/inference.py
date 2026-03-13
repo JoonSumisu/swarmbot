@@ -16,6 +16,7 @@ from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
 from ..memory.evidence_store import EvidenceStore
 from ..boot.context_loader import load_boot_markdown
+from ..swarm.manager import SwarmManager
 from .definitions import *
 from .skill_registry import SkillRegistry
 
@@ -36,10 +37,17 @@ class InferenceLoop:
         self.swarmboot = self._load_boot_file("swarmboot.md")
         self.soul = self._load_boot_file("SOUL.md")
         self.loop_profile_mode = (os.environ.get("SWARMBOT_LOOP_PROFILE") or "auto").strip().lower()
+
         self.route_mode = "engineering_complex"
         self.route_workers = 4
         self.evidence_store = EvidenceStore()
         self._supervisor_seen_actions: set[str] = set()
+        
+        # Suspend/Resume State
+        self.is_suspended: bool = False
+        self.suspended_stage: str = ""
+        self.suspended_data: Dict[str, Any] = {}
+        self.completed_stages: set[str] = set()
 
     def _extract_urls(self, text: str) -> List[str]:
         if not isinstance(text, str):
@@ -430,64 +438,15 @@ class InferenceLoop:
             return {"ok": False, "profile": "balanced", "reason": "parse_failed", "confidence": 0.0}
 
     def _decide_loop_profile(self) -> str:
-        forced = self.loop_profile_mode
-        if forced in ["lean", "balanced", "swarm_max"]:
-            self.whiteboard.update("profile_decision", {"profile": forced, "reason": "forced"})
-            return forced
-        decisions = [self._decide_loop_profile_once() for _ in range(3)]
-        valid = [d for d in decisions if d.get("ok")]
-        if not valid:
-            self.whiteboard.update("profile_decision", {"profile": "balanced", "reason": "all_parse_failed", "mode": "fallback"})
+        # Strictly couple profile to route mode as per user instruction
+        if self.route_mode == "simple_direct_master":
+            return "lean"
+        if self.route_mode == "reasoning_swarm":
             return "balanced"
-        counts: Dict[str, int] = {"lean": 0, "balanced": 0, "swarm_max": 0}
-        for d in valid:
-            p = str(d.get("profile") or "balanced")
-            if p in counts:
-                counts[p] += 1
-        best = sorted(counts.items(), key=lambda x: (-x[1], 0 if x[0] == "balanced" else 1))[0][0]
-        winners = [d for d in valid if d.get("profile") == best] or valid
-        avg_conf = sum(float(d.get("confidence") or 0.5) for d in winners) / max(1, len(winners))
-        reason = "; ".join([str(d.get("reason") or "") for d in winners[:2]]).strip("; ")
-        self.whiteboard.update(
-            "profile_decision",
-            {"profile": best, "reason": f"majority:{reason}", "confidence": round(avg_conf, 3), "mode": "majority_vote"},
-        )
-        return best
+        if self.route_mode == "engineering_complex":
+            return "swarm_max"
+        return "balanced"
 
-    def _heuristic_route_mode(self, user_input: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        t = (user_input or "").lower()
-        if any(k in t for k in ["报错", "bug", "重构", "架构", "多文件", "生产", "上线", "pipeline", "ci", "复杂", "工程"]):
-            return {"route": "engineering_complex", "reason": "heuristic:engineering_keywords", "confidence": 0.72, "workers": 5}
-        if any(k in t for k in ["为什么", "哲学", "心理", "分析", "解释", "建议", "计划", "priority", "优先级", "沟通"]):
-            return {"route": "reasoning_swarm", "reason": "heuristic:reasoning_keywords", "confidence": 0.7, "workers": 3}
-        if any(k in t for k in ["改一下boot", "写个脚本", "调整参数", "给我一句", "润色", "草稿", "聊聊", "安抚"]):
-            return {"route": "reasoning_swarm", "reason": "heuristic:light_code_or_dialogue", "confidence": 0.68, "workers": 2}
-        if len(t) <= 80 and not any(k in t for k in ["并且", "同时", "然后", "如果", "但", "且"]):
-            return {"route": "simple_direct_master", "reason": "heuristic:short_simple_query", "confidence": 0.66, "workers": 2}
-        return {"route": "reasoning_swarm", "reason": "heuristic:default_reasoning", "confidence": 0.6, "workers": 3}
-
-    def _hard_route_override(self, user_input: str) -> Dict[str, Any] | None:
-        t = (user_input or "").lower().strip()
-        engineering_markers = [
-            "ci", "pipeline", "门禁", "sast", "lint", "单测", "发布审批", "回滚", "多租户", "审计日志",
-            "循环依赖", "重构", "网关", "并发", "熔断", "限流", "生产", "上线", "架构", "多模块", "故障",
-        ]
-        if any(k in t for k in engineering_markers):
-            return {"route": "engineering_complex", "reason": "override:engineering_dictionary", "confidence": 0.97, "workers": 4}
-        reasoning_markers = ["法律", "法条", "合同", "劳动法", "刑法", "心理", "哲学", "商业", "产品设计", "评估", "分析", "策略"]
-        if any(k in t for k in reasoning_markers):
-            return {"route": "reasoning_swarm", "reason": "override:reasoning_domain_dictionary", "confidence": 0.93, "workers": 3}
-        simple_markers = ["一句", "一句话", "润色", "更礼貌", "更自然", "改写", "安慰我一句", "写一句", "打个招呼"]
-        if any(k in t for k in simple_markers) and len(t) <= 200:
-            return {"route": "simple_direct_master", "reason": "override:single_utterance_or_rephrase", "confidence": 0.95, "workers": 2}
-        lifestyle_simple_markers = ["晚餐", "晚饭", "早餐", "午餐", "食谱", "推荐吃", "做什么菜", "穿什么", "去哪里玩"]
-        if (
-            any(k in t for k in lifestyle_simple_markers)
-            and len(t) <= 80
-            and not any(k in t for k in ["为什么", "分析", "策略", "计划", "评估"])
-        ):
-            return {"route": "simple_direct_master", "reason": "override:lifestyle_simple_query", "confidence": 0.9, "workers": 2}
-        return None
 
     def _need_evidence_increment(self, question: str) -> bool:
         t = (question or "").lower()
@@ -558,14 +517,11 @@ class InferenceLoop:
         self.whiteboard.update("evidence_prefetch", {"raw": out})
 
     def _decide_route_mode(self, user_input: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        override = self._hard_route_override(user_input)
-        if override:
-            return override
         prompt = (
             "你是路由决策器。请把请求路由到三类之一：\n"
-            "1) simple_direct_master: 简单问题，直接交给 master 用自然语言回复。\n"
-            "2) reasoning_swarm: 需要分析/哲学心理分析/简单代码与参数调整，用 2-5 worker 推理后交给 master。\n"
-            "3) engineering_complex: 工程复杂问题，进入完整 swarm+loop。\n"
+            "1) simple_direct_master: 简单问题，无需任何复杂流程，直接交给 master 用自然语言回复。\n"
+            "2) reasoning_swarm: 需要分析和多角色协作（Balanced模式），直接调用Swarm解决，然后由Master输出。\n"
+            "3) engineering_complex: 工程复杂问题（Swarm Max），需要启动 Interactive Workflow（人机交互），在分析和计划阶段暂停确认。\n"
             f"用户输入: {user_input}\n"
             f"分析摘要: {self._safe_dumps(analysis, max_len=1800)}\n"
             "只输出JSON：{\"route\":\"reasoning_swarm\",\"confidence\":0.8,\"reason\":\"...\",\"workers\":3}"
@@ -584,8 +540,11 @@ class InferenceLoop:
                 votes.append({"route": route, "confidence": max(0.0, min(1.0, conf)), "reason": str(d.get("reason") or ""), "workers": workers})
             except:
                 pass
+        
+        # Default fallback if voting fails
         if not votes:
-            return self._heuristic_route_mode(user_input, analysis)
+             return {"route": "reasoning_swarm", "reason": "fallback:default_reasoning", "confidence": 0.5, "workers": 3}
+             
         counts = {"simple_direct_master": 0, "reasoning_swarm": 0, "engineering_complex": 0}
         for v in votes:
             counts[v["route"]] += 1
@@ -595,6 +554,79 @@ class InferenceLoop:
         conf = sum(v["confidence"] for v in winners) / len(winners)
         reason = "; ".join([v["reason"] for v in winners[:2]]).strip("; ")
         return {"route": route, "confidence": round(conf, 3), "reason": f"majority:{reason}", "workers": max(2, min(5, workers))}
+
+    def _decide_reasoning_swarm_strategy(self, user_input: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = (
+            "你是Swarm策略决策器。"
+            "请为 reasoning_swarm 决定 architecture 与 agent_count(0-5)。\n"
+            "可选 architecture: concurrent, mixture, group_chat, hierarchical, sequential, swarm_router, long_horizon, state_machine, auto。\n"
+            f"用户输入: {user_input}\n"
+            f"分析摘要: {self._safe_dumps(analysis, max_len=1800)}\n"
+            "输出JSON："
+            "{\"architecture\":\"concurrent\",\"agent_count\":3,\"reason\":\"...\",\"confidence\":0.82}"
+        )
+        votes = []
+        valid_arch = {
+            "concurrent",
+            "mixture",
+            "group_chat",
+            "hierarchical",
+            "sequential",
+            "swarm_router",
+            "long_horizon",
+            "state_machine",
+            "auto",
+        }
+        for _ in range(3):
+            res = self._create_worker("planner", enable_tools=False).step(prompt)
+            try:
+                d = json.loads(self._extract_json(res))
+                arch = str(d.get("architecture") or "concurrent").strip().lower()
+                if arch not in valid_arch:
+                    arch = "concurrent"
+                n = int(d.get("agent_count") or 3)
+                n = max(0, min(5, n))
+                conf = float(d.get("confidence") or 0.5)
+                conf = max(0.0, min(1.0, conf))
+                votes.append(
+                    {
+                        "architecture": arch,
+                        "agent_count": n,
+                        "reason": str(d.get("reason") or ""),
+                        "confidence": conf,
+                    }
+                )
+            except:
+                pass
+        if not votes:
+            return {"architecture": "concurrent", "agent_count": 3, "reason": "fallback", "confidence": 0.5}
+        counts: Dict[str, int] = {}
+        for v in votes:
+            counts[v["architecture"]] = counts.get(v["architecture"], 0) + 1
+        arch = sorted(counts.items(), key=lambda x: (-x[1], 0 if x[0] == "concurrent" else 1))[0][0]
+        winners = [v for v in votes if v["architecture"] == arch] or votes
+        n = round(sum(v["agent_count"] for v in winners) / len(winners))
+        conf = sum(v["confidence"] for v in winners) / len(winners)
+        reason = "; ".join([v["reason"] for v in winners[:2]]).strip("; ")
+        return {
+            "architecture": arch,
+            "agent_count": max(0, min(5, n)),
+            "reason": f"majority:{reason}",
+            "confidence": round(conf, 3),
+        }
+
+    def _step_reasoning_swarm(self) -> str:
+        user_input = self.whiteboard.get("input_prompt") or ""
+        analysis = self.whiteboard.get("problem_analysis") or {}
+        strategy = self._decide_reasoning_swarm_strategy(user_input, analysis)
+        self.whiteboard.update("reasoning_swarm_strategy", strategy)
+        session_id = str((self.whiteboard.get("metadata") or {}).get("session_id") or "default")
+        manager = SwarmManager.from_swarmbot_config(self.config)
+        session = manager.get_session(session_id)
+        session.architecture = str(strategy.get("architecture") or "concurrent")
+        worker_count = int(strategy.get("agent_count") or 0)
+        session.resize_swarm(max(1, worker_count))
+        return manager.chat(user_input=user_input, session_id=session_id)
 
     def _step_direct_master(self) -> str:
         user_input = self.whiteboard.get("input_prompt") or ""
@@ -613,69 +645,146 @@ class InferenceLoop:
         return "我在。我们先把问题拆开，一步一步来。"
 
     def run(self, user_input: str, session_id: str) -> str:
-        self.whiteboard.clear()
-        self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
-        self.whiteboard.update("input_prompt", user_input)
-        self.whiteboard.update("loop_profile", self.loop_profile_mode)
-        self._set_stage("INIT")
-        
-        print(f"[InferenceLoop] Start: {user_input[:50]}...")
+        # 1. Initialization (only if not resuming)
+        if not self.is_suspended:
+            self.whiteboard.clear()
+            self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
+            self.whiteboard.update("input_prompt", user_input)
+            self.whiteboard.update("loop_profile", self.loop_profile_mode)
+            self._set_stage("INIT")
+            print(f"[InferenceLoop] Start: {user_input[:50]}...")
+        else:
+            print(f"[InferenceLoop] Resuming from suspension: {self.suspended_stage}...")
+            # If resuming, user_input is the feedback/confirmation
+            self.whiteboard.update("user_feedback", user_input)
+            # Clear suspension flag for the run (it will be set again if we hit another breakpoint)
+            self.is_suspended = False
 
-        pre = self._hard_route_override(user_input)
-        if pre and str(pre.get("route")) == "simple_direct_master":
-            self.route_mode = "simple_direct_master"
-            self.route_workers = int(pre.get("workers") or 2)
-            self.whiteboard.update("route_decision", pre)
-            self._set_stage("MASTER_OUTPUT")
-            final_response = self._step_direct_master()
-            final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
-            final_response = self._postprocess_domain_response(user_input, final_response)
-            self.whiteboard.update("final_response", final_response)
-            self._set_stage("ORGANIZATION")
-            self._step_organization()
-            self._update_evidence_increment(user_input, final_response, self.route_mode)
-            self._set_stage("DONE")
-            return final_response
+        return self._execute_pipeline(user_input)
 
-        # Step 2: Problem Analysis (No Tools)
-        self._set_stage("ANALYSIS")
-        self._step_analysis(light=True)
-        route_decision = self._decide_route_mode(user_input, self.whiteboard.get("problem_analysis") or {})
-        self.route_mode = str(route_decision.get("route") or "reasoning_swarm")
-        self.route_workers = int(route_decision.get("workers") or 3)
-        self.whiteboard.update("route_decision", route_decision)
+    def _execute_pipeline(self, user_input: str) -> str:
+        # Stage 1: ANALYSIS
+        if "ANALYSIS" not in self.completed_stages:
+            self._set_stage("ANALYSIS")
+            self._step_analysis(light=True)
+            self.completed_stages.add("ANALYSIS")
+            
+            # Routing Decision
+            route_decision = self._decide_route_mode(user_input, self.whiteboard.get("problem_analysis") or {})
+            self.route_mode = str(route_decision.get("route") or "reasoning_swarm")
+            self.route_workers = int(route_decision.get("workers") or 3)
+            self.whiteboard.update("route_decision", route_decision)
+            
+            # Profile Decision
+            selected_profile = self._decide_loop_profile()
+            self.whiteboard.update("loop_profile", selected_profile)
+
+        # INTERACTIVE CHECK 1: Analysis Alignment (Only for engineering_complex / swarm_max)
+        if self.route_mode == "engineering_complex":
+            if "ANALYSIS_REVIEW" not in self.completed_stages:
+                # If we have user feedback from a previous suspension at this stage, process it
+                if self.suspended_stage == "ANALYSIS_REVIEW":
+                     # Logic to handle feedback (optional: update analysis)
+                     self.completed_stages.add("ANALYSIS_REVIEW")
+                     self.suspended_stage = ""
+                else:
+                    # Suspend and ask user
+                    self.is_suspended = True
+                    self.suspended_stage = "ANALYSIS_REVIEW"
+                    self.completed_stages.add("ANALYSIS_REVIEW")
+                    return self._generate_analysis_review_message()
+
+        # Stage: Simple Direct Master (Fast Track)
         if self.route_mode == "simple_direct_master":
-            self._set_stage("MASTER_OUTPUT")
-            final_response = self._step_direct_master()
-            final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
-            final_response = self._postprocess_domain_response(user_input, final_response)
-            self.whiteboard.update("final_response", final_response)
-            self._set_stage("ORGANIZATION")
-            self._step_organization()
-            self._update_evidence_increment(user_input, final_response, self.route_mode)
-            self._set_stage("DONE")
-            return final_response
+            if "MASTER_OUTPUT" not in self.completed_stages:
+                self._set_stage("MASTER_OUTPUT")
+                final_response = self._step_direct_master()
+                final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+                final_response = self._postprocess_domain_response(user_input, final_response)
+                self.whiteboard.update("final_response", final_response)
+                self.completed_stages.add("MASTER_OUTPUT")
+                
+                self._set_stage("ORGANIZATION")
+                self._step_organization()
+                self._update_evidence_increment(user_input, final_response, self.route_mode)
+                self._set_stage("DONE")
+                self.completed_stages.add("DONE")
+                return final_response
 
-        selected_profile = self._decide_loop_profile()
         if self.route_mode == "reasoning_swarm":
-            selected_profile = "lean"
-        self.whiteboard.update("loop_profile", selected_profile)
-        settings = self._profile_settings(selected_profile)
+            if "EXECUTION" not in self.completed_stages:
+                self._set_stage("EXECUTION")
+                final_response = self._step_reasoning_swarm()
+                final_response = self._calibrate_final_response(self.whiteboard.get("input_prompt"), final_response)
+                final_response = self._postprocess_domain_response(user_input, final_response)
+                self.whiteboard.update("final_response", final_response)
+                self.completed_stages.add("EXECUTION")
+                self._set_stage("MASTER_OUTPUT")
+                self._set_stage("ORGANIZATION")
+                self._step_organization()
+                self._update_evidence_increment(user_input, final_response, self.route_mode)
+                self._set_stage("DONE")
+                self.completed_stages.add("DONE")
+                return final_response
+
+        # Stage 2: COLLECTION
+        if "COLLECTION" not in self.completed_stages:
+            self._set_stage("COLLECTION")
+            self._step_collection()
+            self.completed_stages.add("COLLECTION")
+
+        # Stage 3: PLANNING
+        if "PLANNING" not in self.completed_stages:
+            self._set_stage("PLANNING")
+            self._step_planning()
+            self._step_skill_discovery()
+            self.completed_stages.add("PLANNING")
+
+        # INTERACTIVE CHECK 2: Plan Alignment (Only for engineering_complex / swarm_max)
+        if self.route_mode == "engineering_complex":
+            if "PLAN_REVIEW" not in self.completed_stages:
+                if self.suspended_stage == "PLAN_REVIEW":
+                     self.completed_stages.add("PLAN_REVIEW")
+                     self.suspended_stage = ""
+                else:
+                    self.is_suspended = True
+                    self.suspended_stage = "PLAN_REVIEW"
+                    self.completed_stages.add("PLAN_REVIEW")
+                    return self._generate_plan_review_message()
+
+        # Step 5 & 6: Inference & Evaluation
+        settings = self._profile_settings(self.whiteboard.get("loop_profile"))
         
-        # Step 3: Information Collection (Tools Enabled - User Requirement)
-        self._set_stage("COLLECTION")
-        self._step_collection()
-        
-        # Step 4: Action Planning (No Tools - JSON Gen)
-        self._set_stage("PLANNING")
-        self._step_planning()
-        self._step_skill_discovery()
-        
-        # Step 5 & 6: Inference & Evaluation (Max 3 Loops with Re-planning)
-        if self.route_mode == "reasoning_swarm":
-            self._set_stage("EXECUTION")
-            self._step_inference()
-            self._calc_supervisor_metrics()
+        if self.route_mode == "engineering_complex":
+            max_eval_loops = int(settings.get("max_eval_loops", 3))
+            start_loop = self.whiteboard.get("current_eval_loop") or 0
+            
+            for i in range(start_loop, max_eval_loops):
+                self.whiteboard.update("current_eval_loop", i)
+                self.whiteboard.update("evaluation_report", {"retry_count": i})
+                
+                # Step 5: Inference
+                self._set_stage("EXECUTION")
+                self._step_inference()
+                metrics = self._calc_supervisor_metrics()
+                if float(metrics.get("promote_to_master", 0.0)) >= 1.0:
+                    self._supervisor_control_action("promote_to_master", "MASTER_OUTPUT", "threshold_met")
+                    self.whiteboard.update("evaluation_report", {"passed": True, "reasons": ["promote_to_master"], "roles": ["supervisor"]})
+                    break
+                
+                # Step 6: Evaluation
+                self._set_stage("EVALUATION")
+                if self._step_evaluation():
+                    break
+                
+                print(f"[InferenceLoop] Evaluation failed, retrying {i+1}/{max_eval_loops}")
+                if i < max_eval_loops - 1:
+                    self._set_stage("PLANNING")
+                    self._step_replanning(retry_idx=i)
+                    self._step_skill_discovery()
+
+        # Step 7: Output Translation
+        if "FINAL_TRANSLATION" not in self.completed_stages:
             self._set_stage("MASTER_OUTPUT")
             final_response = self._step_translation()
             final_response = self._calibrate_final_response(
@@ -684,56 +793,28 @@ class InferenceLoop:
             )
             final_response = self._postprocess_domain_response(user_input, final_response)
             self.whiteboard.update("final_response", final_response)
-            self._set_stage("ORGANIZATION")
-            self._step_organization()
-            self._update_evidence_increment(user_input, final_response, self.route_mode)
-            self._set_stage("DONE")
-            return final_response
-
-        max_eval_loops = int(settings.get("max_eval_loops", 3))
-        promoted = False
-        for i in range(max_eval_loops):
-            self.whiteboard.update("evaluation_report", {"retry_count": i})
-            
-            # Step 5: Inference (Tools Enabled)
-            self._set_stage("EXECUTION")
-            self._step_inference()
-            metrics = self._calc_supervisor_metrics()
-            if float(metrics.get("promote_to_master", 0.0)) >= 1.0:
-                promoted = True
-                self._supervisor_control_action("promote_to_master", "MASTER_OUTPUT", "threshold_met")
-                self.whiteboard.update("evaluation_report", {"passed": True, "reasons": ["promote_to_master"], "roles": ["supervisor"]})
-                break
-            
-            # Step 6: Evaluation (No Tools - Logic Check)
-            self._set_stage("EVALUATION")
-            if self._step_evaluation():
-                break
-            
-            print(f"[InferenceLoop] Evaluation failed, retrying {i+1}/{max_eval_loops}")
-            # Re-planning Logic: If failed, adjust plan before next inference
-            if i < max_eval_loops - 1:
-                self._set_stage("PLANNING")
-                self._step_replanning(retry_idx=i)
-                self._step_skill_discovery()
-
-        # Step 7: Output Translation (Tools Enabled - User Requirement)
-        self._set_stage("MASTER_OUTPUT")
-        final_response = self._step_translation()
-        final_response = self._calibrate_final_response(
-            self.whiteboard.get("input_prompt"),
-            final_response,
-        )
-        final_response = self._postprocess_domain_response(user_input, final_response)
-        self.whiteboard.update("final_response", final_response)
+            self.completed_stages.add("FINAL_TRANSLATION")
         
-        # Step 8: Organization & Persistence (No Tools)
+        # Step 8: Organization & Persistence
         self._set_stage("ORGANIZATION")
         self._step_organization()
-        self._update_evidence_increment(user_input, final_response, self.route_mode)
+        self._update_evidence_increment(user_input, self.whiteboard.get("final_response"), self.route_mode)
         self._set_stage("DONE")
+        self.completed_stages.add("DONE")
         
-        return final_response
+        return self.whiteboard.get("final_response")
+
+    def _generate_analysis_review_message(self) -> str:
+        analysis = self.whiteboard.get("problem_analysis") or {}
+        summary = analysis.get("summary") or "分析完成"
+        goals = analysis.get("goals") or []
+        return f"### 任务分析确认\n\n我已分析您的请求。\n\n**核心理解**: {summary}\n**识别目标**: {', '.join(goals)}\n\n是否继续执行？(回复 '是' 继续，或提供修正意见)"
+
+    def _generate_plan_review_message(self) -> str:
+        plan = self.whiteboard.get("action_plan") or {}
+        tasks = plan.get("tasks") or []
+        task_list = "\n".join([f"- {t.get('desc')}" for t in tasks[:5]])
+        return f"### 执行计划确认\n\n我已制定以下计划：\n\n{task_list}\n\n是否批准执行？(回复 '是' 开始执行)"
 
     def preview_route(self, user_input: str) -> Dict[str, Any]:
         self.whiteboard.clear()
@@ -1323,18 +1404,13 @@ class InferenceLoop:
             response=self.whiteboard.get("final_response"),
             conclusions_json=self._safe_dumps(self.whiteboard.get("inference_conclusions"), max_len=1500)
         ) + f"\n关键证据摘要: {self._safe_dumps(wb_evidence, max_len=1200)}"
-        # Optimized: enable_tools=False
         res = self._create_worker("master", enable_tools=False).step(prompt)
         try:
             data = json.loads(self._extract_json(res))
-            # 1. Update Hot Memory
             hot_upd = data.get("hot_memory_update")
             if hot_upd:
-                # Basic append logic for now
                 cur_hot = self.hot_memory.read()
                 self.hot_memory.update(cur_hot + f"\n\n### Loop Update\n{hot_upd}")
-            
-            # 2. Update Warm Memory
             self.warm_memory.append_log(
                 self.whiteboard.get("metadata").get("loop_id"),
                 self.whiteboard.get("input_prompt"),
