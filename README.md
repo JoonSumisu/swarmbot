@@ -394,4 +394,9 @@ Inference Loop 固定 8 个 phase，但不同 profile 会自动调整 worker 数
 
 MIT License
 
-All code power by trae & tomoko
+---
+
+## 👥 Contributors
+
+- [JoonSumisu](https://github.com/JoonSumisu) - Original Author
+- [opencode](https://opencode.ai) - v2.0.2 Architecture Enhancement
