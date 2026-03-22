@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: swarmbot
+Version: 1.1.0
+Summary: Swarmbot: 基于 nanobot 框架的多 Agent Swarm 系统，支持本地 OpenAI 接口模型与记忆(QMD)。
+Requires-Python: >=3.10
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: pydantic>=2.7.0
+Requires-Dist: swarms>=5.0.0
+Requires-Dist: json_repair>=0.10.0
+Requires-Dist: loguru>=0.7.0
+Requires-Dist: typer>=0.9.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: prompt_toolkit>=3.0.0
+Requires-Dist: litellm>=1.0.0
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: uvicorn>=0.20.0
+Requires-Dist: lark-oapi>=1.0.0

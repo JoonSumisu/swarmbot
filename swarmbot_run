@@ -1,0 +1,3 @@
+#!/bin/bash
+source "/root/swarmbot_dev/.venv/bin/activate"
+exec swarmbot "$@"

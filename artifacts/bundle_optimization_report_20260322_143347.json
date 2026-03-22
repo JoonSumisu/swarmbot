@@ -1,0 +1,29 @@
+{
+  "experiment_start": "2026-03-22T14:28:24.309798",
+  "experiment_end": "2026-03-22T14:33:47.263812",
+  "phases": {
+    "phase1": {
+      "start": "2026-03-22T14:28:24.309807",
+      "success": true,
+      "bundle_id": "custom.experiment_1774160904"
+    },
+    "phase2": {
+      "start": "2026-03-22T14:28:24.312083",
+      "success": true,
+      "execution_count": 3,
+      "avg_score": 0.65
+    },
+    "phase3": {
+      "start": "2026-03-22T14:33:42.187832",
+      "optimization_timestamp": 1774161222,
+      "success": true,
+      "target_score": 0.5
+    },
+    "phase4": {
+      "start": "2026-03-22T14:33:47.263609",
+      "success": false
+    }
+  },
+  "bundle_id": "custom.experiment_1774160904",
+  "success": false
+}

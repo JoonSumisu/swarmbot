@@ -1,0 +1,61 @@
+{
+  "experiment_start": "2026-03-22T14:44:34.393591",
+  "experiment_end": "2026-03-22T14:49:52.569817",
+  "phases": {
+    "phase1": {
+      "start": "2026-03-22T14:44:34.393599",
+      "success": true,
+      "bundle_id": "custom.experiment_1774161874"
+    },
+    "phase2": {
+      "start": "2026-03-22T14:44:34.394059",
+      "success": true,
+      "execution_count": 3,
+      "avg_score": 0.65
+    },
+    "phase3": {
+      "start": "2026-03-22T14:49:50.568715",
+      "optimization_timestamp": 1774162193,
+      "success": true,
+      "target_score": 0.5
+    },
+    "phase4": {
+      "start": "2026-03-22T14:49:51.568983",
+      "improvement": {
+        "bundle_id": "custom.experiment_1774161874",
+        "before_avg": 0.6125,
+        "after_avg": 0.8,
+        "improvement_pct": 30.61,
+        "before_count": 4,
+        "after_count": 3
+      },
+      "dimension_analysis": {
+        "dimensions": {
+          "task_completion": {
+            "before": 0.5513,
+            "after": 0.72,
+            "improvement_pct": 30.61
+          },
+          "output_quality": {
+            "before": 0.49,
+            "after": 0.64,
+            "improvement_pct": 30.61
+          },
+          "resource_efficiency": {
+            "before": 0.4287,
+            "after": 0.56,
+            "improvement_pct": 30.61
+          },
+          "error_handling": {
+            "before": 0.3675,
+            "after": 0.48,
+            "improvement_pct": 30.61
+          }
+        }
+      },
+      "success": true
+    }
+  },
+  "bundle_id": "custom.experiment_1774161874",
+  "success": false
+}

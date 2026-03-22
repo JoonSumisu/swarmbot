@@ -1,0 +1,326 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+from ..llm_client import OpenAICompatibleClient
+from ..memory.base import MemoryStore
+from ..memory.hot_memory import HotMemory
+from ..tools.adapter import ToolAdapter
+import json
+
+@dataclass
+class AgentContext:
+    agent_id: str
+    role: str = "assistant"
+    skills: Dict[str, Any] = field(default_factory=dict)
+
+
+class CoreAgent:
+    def __init__(
+        self,
+        ctx: AgentContext,
+        llm: OpenAICompatibleClient,
+        memory: MemoryStore,
+        hot_memory: Optional[HotMemory] = None,
+        enable_tools: bool = True,
+    ) -> None:
+        self.ctx = ctx
+        self.llm = llm
+        self.memory = memory
+        self.hot_memory = hot_memory
+        self.enable_tools = enable_tools
+        self._tool_adapter = ToolAdapter()
+        
+        # Bind memory stores to adapter
+        if hasattr(memory, "whiteboard"):
+            self._tool_adapter.whiteboard = memory.whiteboard
+        
+        if hot_memory:
+            self._tool_adapter.hot_memory = hot_memory
+
+    def _message_to_dict(self, message: Any) -> Dict[str, Any]:
+        role = getattr(message, "role", "assistant")
+        content = getattr(message, "content", "")
+        if content is None:
+            content = ""
+        tool_calls = getattr(message, "tool_calls", None)
+        normalized_tool_calls = []
+        if tool_calls:
+            for tc in tool_calls:
+                function = getattr(tc, "function", None)
+                normalized_tool_calls.append(
+                    {
+                        "id": getattr(tc, "id", ""),
+                        "type": "function",
+                        "function": {
+                            "name": getattr(function, "name", ""),
+                            "arguments": getattr(function, "arguments", "{}"),
+                        },
+                    }
+                )
+        result = {"role": role, "content": content}
+        if normalized_tool_calls:
+            result["tool_calls"] = normalized_tool_calls
+        return result
+
+    def _clean_visible_content(self, content: str) -> str:
+        text = content or ""
+        lower = text.lower()
+        if "</think>" in lower:
+            idx = lower.rfind("</think>")
+            text = text[idx + len("</think>") :]
+        return text.strip() or (content or "")
+
+    def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
+        history = self.memory.get_context(self.ctx.agent_id, limit=8, query=user_input)
+        messages: List[Dict[str, Any]] = []
+        
+        # 1. System Prompt (Role / Soul)
+        import datetime
+        import time
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timezone = time.strftime("%z")
+        weekday = datetime.datetime.now().strftime("%A")
+        
+        # Soul Loading Logic
+        # Only the 'Master' agent (Planner/Judge) or if specifically configured should load the full Soul.
+        # Sub-agents should have a functional persona.
+        
+        is_overthinking = self.ctx.agent_id == "overthinker"
+        is_master = self.ctx.role in ["planner", "judge", "master", "consensus_moderator"] or is_overthinking
+        soul_content = ""
+        
+        if is_master:
+            try:
+                import os
+                soul_paths = []
+                if is_overthinking:
+                    soul_paths.append(os.path.expanduser("~/.swarmbot/boot/OVERTHINKING.md"))
+                soul_paths.extend(
+                    [
+                        os.path.expanduser("~/.swarmbot/boot/SOUL.md"),
+                        "soul.md",
+                    ]
+                )
+                for p in soul_paths:
+                    if os.path.exists(p):
+                        with open(p, "r", encoding="utf-8") as f:
+                            soul_content = f.read()
+                        break
+            except:
+                pass
+            
+            # Fallback if no soul file
+            if not soul_content:
+                soul_content = (
+                    "You are Swarmbot, a collective AI intelligence designed to solve complex problems through "
+                    "multi-agent collaboration. You are helpful, precise, and objective."
+                )
+        else:
+            # Functional Role Persona for Sub-Agents
+            soul_content = (
+                f"You are a specialized functional node within the Swarmbot collective. "
+                f"Your specific role is: {self.ctx.role}."
+            )
+
+        # UNIFIED PERSONA ENFORCEMENT
+        role_desc = (
+            f"{soul_content}\n\n"
+            f"Current Context:\n"
+            f"- Time: {current_time} ({timezone})\n"
+            f"- Weekday: {weekday}\n"
+            "Act as a seamless part of the swarm. "
+        )
+        
+        if is_master:
+            role_desc += "You are the primary interface to the user. Speak with the voice defined in your Soul."
+        else:
+            role_desc += "Do not introduce yourself or deviate from your specific task. Output only what is required for the collective."
+
+        if self.ctx.skills:
+            role_desc += f" You possess the following skills: {', '.join(self.ctx.skills.keys())}. "
+        
+        system_instructions = (
+            "【记忆与白板分层】\n"
+            "1. **Whiteboard (L1)**: 会话级临时白板。用于当前 Loop 的推理状态、临时变量、Step 拆解。任务结束后会被清除。使用 `whiteboard_update`。\n"
+            "   - 适用：当前任务的 intermediate_results, execution_plan。\n"
+            "2. **Hot Memory (L2)**: 短期持久记忆。用于记录跨会话的 Todo List、近期计划、重要备忘。使用 `hot_memory_update`。\n"
+            "   - 适用：用户明确要求的待办事项（如 'Add to todo'）、跨天计划。\n"
+            "   - 注意：这是全局共享的，请谨慎覆盖，通常应追加或更新特定章节。\n\n"
+            "【Programmatic Tool Calling】\n"
+            "For complex tasks involving data processing, multi-step workflows, or when outputting large data is inefficient, "
+            "use the 'python_exec' tool. This allows you to write Python code to orchestrate other tools "
+            "(e.g., file_read, web_search) and process their output locally. "
+            "Instead of making multiple individual tool calls, write a single script to handle the logic and return only the final result.\n\n"
+            "【工具与 Skill 使用】\n"
+            "调用工具前先查看 Whiteboard 的 current_task_context 和 Hot Memory 的 L2 Context：若已存在 fact_checked=true 的可靠结论，应优先复用；"
+            "若只有 fact_checked=false 的假设，需要通过工具补充或复核后再做判断。"
+            "使用技能时，优先调用 'skill_summary' 获取列表，仅在确实需要时再用 'skill_load' 加载单个技能详情，避免一次性加载全部技能。\n\n"
+            "【系统能力与运维】\n"
+            "系统能力（daemon、heartbeat、cron、skills 等）通过 system_capabilities 提供，你可以结合 'file_read'、'file_write' 和 'shell_exec' 分析或调整状态，"
+            "但涉及任务调度、心跳、定时任务变更时，应在回答中明确提示风险并要求用户确认。\n\n"
+            "【输出与检索规范】\n"
+            "输出语言必须与用户输入保持一致。回答涉及最新事件或动态数据时，应优先使用 'web_search' 或相关工具，并在确认信息后再给出结论。"
+        )
+        
+        system_content = f"{role_desc}\n{system_instructions}"
+        if len(system_content) > 6000:
+            system_content = system_content[:6000] + "\n...[system instructions truncated]\n"
+        messages.append({"role": "system", "content": system_content})
+
+        # 3. History
+        for item in history:
+            content = item.get("content", "").strip()
+            if content:  # Only add non-empty messages
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": content,
+                    }
+                )
+        messages.append({"role": "user", "content": user_input})
+        return messages
+
+    def _should_enable_skill_tools(self, user_input: str) -> bool:
+        text = (user_input or "").lower()
+        keys = ["skill", "技能", "skill_summary", "skill_load", "加载技能", "可用技能"]
+        return any(k in text for k in keys)
+
+    def step(self, user_input: str) -> str:
+        messages = self._build_messages(user_input)
+        
+        # Inject tool definitions from adapter
+        # Filter tools based on self.ctx.skills
+        # Only expose tools that are in the skills list
+        all_tools = self._tool_adapter.get_tool_definitions()
+        
+        tools = []
+        if self.enable_tools:
+            if self.ctx.skills:
+                for tool in all_tools:
+                    tool_name = tool["function"]["name"]
+                    if tool_name in self.ctx.skills:
+                        tools.append(tool)
+            else:
+                tools = []
+        if tools and not self._should_enable_skill_tools(user_input):
+            tools = [t for t in tools if not t["function"]["name"].startswith("skill_")]
+        
+        # Chain of Thought Logging
+        print(f"[CoT] Agent {self.ctx.role} starting thought process...")
+        
+        try:
+            completion_kwargs: Dict[str, Any] = {"messages": messages}
+            if tools:
+                completion_kwargs["tools"] = tools
+
+            content = ""
+            max_tool_rounds = 3
+            for round_idx in range(max_tool_rounds):
+                resp = self.llm.completion(**completion_kwargs)
+                choice = resp.choices[0]
+                message = choice.message
+                content = self._clean_visible_content(message.content or "")
+                tool_calls = message.tool_calls
+
+                if round_idx == 0 and content:
+                    print(f"[CoT] {self.ctx.role} thought: {content[:200]}...")
+
+                if not tool_calls:
+                    if round_idx > 0:
+                        print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
+                    break
+
+                messages.append(self._message_to_dict(message))
+                
+                # Execute tools in parallel
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                
+                def execute_single_tool(tc):
+                    func_name = tc.function.name
+                    # Tool name sanitization
+                    if self._tool_adapter.registry.get_tool(func_name) is None:
+                        import re
+                        matched = re.match(r"[A-Za-z0-9_]+", func_name or "")
+                        if matched:
+                            candidate = matched.group(0)
+                            if self._tool_adapter.registry.get_tool(candidate) is not None:
+                                func_name = candidate
+                    if self.ctx.skills and func_name not in self.ctx.skills:
+                        return {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "name": func_name,
+                            "content": f"Tool '{func_name}' is not allowed for this agent.",
+                        }
+                    
+                    func_args_str = tc.function.arguments
+                    print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")
+
+                    try:
+                        func_args = json.loads(func_args_str)
+                    except json.JSONDecodeError:
+                        func_args = {}
+
+                    tool_context = {}
+                    if hasattr(self.memory, "whiteboard"):
+                        tool_context["memory_map"] = self.memory.whiteboard
+                        
+                    result = self._tool_adapter.execute(func_name, func_args, context=tool_context)
+                    print(f"[CoT] Tool result: {str(result)[:100]}...")
+                    
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": func_name,
+                        "content": str(result),
+                    }
+
+                if tool_calls:
+                    max_workers = len(tool_calls)
+                    
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        # Map tool calls to futures
+                        # Maintain order if needed? Messages order usually doesn't strictly matter for different tool calls,
+                        # but keeping them in order of tool_calls list is safer for deterministic history.
+                        # So we use map or submit and collect in order.
+                        futures = [executor.submit(execute_single_tool, tc) for tc in tool_calls]
+                        
+                        # Collect results in order
+                        for future in futures:
+                            try:
+                                msg = future.result()
+                                messages.append(msg)
+                            except Exception as e:
+                                print(f"[Agent {self.ctx.role}] Tool Execution Error: {e}")
+                                # Append error message to history to avoid hanging LLM state
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": "unknown", # We might lose ID if future fails before returning it
+                                    "name": "unknown",
+                                    "content": f"Error: {str(e)}"
+                                })
+
+                completion_kwargs["messages"] = messages
+            else:
+                # If we exhausted max_tool_rounds, we force a final response generation
+                # based on the accumulated tool results.
+                print(f"[CoT] {self.ctx.role} exhausted tool rounds. Generating final response...")
+                # Remove tools to force a text response (optional, but safer to avoid infinite loops)
+                if "tools" in completion_kwargs:
+                    del completion_kwargs["tools"]
+                
+                resp = self.llm.completion(**completion_kwargs)
+                content = self._clean_visible_content(resp.choices[0].message.content or "")
+                if content:
+                    print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
+
+        except Exception as e:
+            content = f"Error during execution: {str(e)}"
+            # Log error
+            print(f"[Agent {self.ctx.role}] Error: {e}")
+            
+        self.memory.add_event(self.ctx.agent_id, user_input, {"kind": "user"})
+        self.memory.add_event(self.ctx.agent_id, content, {"kind": "assistant"})
+        return content
