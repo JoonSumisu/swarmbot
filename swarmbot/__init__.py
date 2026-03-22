@@ -1,4 +1,4 @@
-__version__ = "0.5.7"
+__version__ = "2.0.2"
 
 __all__ = [
     "CoreAgent",

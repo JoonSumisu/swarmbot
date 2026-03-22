@@ -33,6 +33,9 @@ class ToolAdapter:
         self._process_meta: Dict[str, Dict[str, Any]] = {}
         self._proc_lock = threading.Lock()
         self._load_skills()
+        self.whiteboard: Any = None
+        self.hot_memory: Any = None
+        self.session_memory: Any = None
 
     def _register_builtin(self, name: str, desc: str, args: List[str], func: Optional[callable] = None) -> None:
         props = {}

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import sys
 import logging
@@ -28,14 +30,21 @@ from nanobot.bus.queue import MessageBus, InboundMessage, OutboundMessage
 from nanobot.channels.feishu import FeishuChannel
 from nanobot.config.schema import FeishuConfig
 
-from swarmbot.loops.inference import InferenceLoop
 from swarmbot.autonomous import AutonomousEngine
+from swarmbot.gateway.orchestrator import GatewayMasterAgent
+from swarmbot.gateway.communication_hub import CommunicationHub, MessageSender, MessageType
 
 class GatewayServer:
     def __init__(self):
         self.config: SwarmbotConfig = load_config()
         self.bus = MessageBus()
         self.channels = []
+
+        # CommunicationHub (共享聊天室)
+        self.hub = CommunicationHub(WORKSPACE_PATH)
+        
+        # GatewayMasterAgent (智能核心)
+        self.master_agent = GatewayMasterAgent(WORKSPACE_PATH, self.config)
 
         # Loops
         self.autonomous_engine = None
@@ -47,11 +56,14 @@ class GatewayServer:
         self._autonomous_report_pos = 0
         self._autonomous_report_path = Path(WORKSPACE_PATH) / "autonomous_gateway_reports.jsonl"
         
-        # Interactive Session Storage
-        self.active_loops = {}  # Dict[str, InferenceLoop] keyed by chat_id
+        # Interactive Session Storage (for inference tools)
+        self.active_inference_tools = {}  # tool_id -> tool_instance
+        
+        # 会话管理: chat_id -> session_data
+        self.sessions = {}
 
     async def start(self):
-        logger.info("Starting Swarmbot Gateway (v1.1.0 Interactive)...")
+        logger.info("Starting Swarmbot Gateway (v2.0.2) with GatewayMasterAgent...")
 
         # 1. Initialize Channels
         await self._init_channels()
@@ -59,12 +71,15 @@ class GatewayServer:
         if not self.channels:
             logger.warning("No channel initialized. Gateway will run but cannot send/receive external messages.")
 
-        # 2. Start Background Loops
+        # 2. Start Hub Poller (异步检查消息)
+        asyncio.create_task(self._hub_message_poller())
+
+        # 3. Start Background Loops
         if bool(getattr(getattr(self.config, "autonomous", None), "enabled", True)):
             self.autonomous_engine = AutonomousEngine(self._stop_event)
             self.autonomous_engine.start()
 
-        # 3. Start Message Processing Loop
+        # 4. Start Message Processing Loop
         asyncio.create_task(self.bus.dispatch_outbound())
         asyncio.create_task(self._autonomous_report_poller())
         await self._run_message_loop()
@@ -140,7 +155,7 @@ class GatewayServer:
             self.stop()
 
     async def _handle_message_async(self, message: InboundMessage):
-        """Async wrapper for blocking inference with stateful interactive loop."""
+        """使用 GatewayMasterAgent 处理消息"""
         loop = asyncio.get_running_loop()
         chat_id = message.chat_id or "unknown"
         
@@ -154,53 +169,73 @@ class GatewayServer:
             
             # Command Handling
             if raw == "/clear":
-                if chat_id in self.active_loops:
-                    del self.active_loops[chat_id]
+                if chat_id in self.sessions:
+                    del self.sessions[chat_id]
                     await self._publish_reply(message, "已清除当前会话状态。")
                 else:
                     await self._publish_reply(message, "当前无活跃会话。")
                 return
-
-            try:
-                # Retrieve existing loop or create new one
-                if chat_id in self.active_loops:
-                    inference_loop = self.active_loops[chat_id]
-                    logger.info(f"Resuming interactive loop for {chat_id}")
-                else:
-                    inference_loop = InferenceLoop(self.config, WORKSPACE_PATH)
-                    logger.info(f"Starting new inference loop for {chat_id}")
-
-                # Run inference (blocking call in executor)
+            
+            # 检查是否需要处理人在回路的反馈
+            session = self.sessions.get(chat_id, {})
+            if session.get("suspended"):
+                # 处理用户反馈
+                response_text = self.master_agent.handle_user_feedback(raw, chat_id)
+                self.sessions[chat_id]["suspended"] = False
+            else:
+                # 使用 MasterAgent 处理消息
                 response_text = await loop.run_in_executor(
                     self._executor,
-                    inference_loop.run,
-                    message.content,
+                    self.master_agent.handle_message,
+                    raw,
                     chat_id
                 )
+                
+                # 保存会话状态
+                if chat_id not in self.sessions:
+                    self.sessions[chat_id] = {}
+                
+                # 检查是否暂停 (人在回路)
+                session_data = self.master_agent.get_session_context(chat_id)
+                if session_data.get("suspended"):
+                    self.sessions[chat_id]["suspended"] = True
+                    self.sessions[chat_id]["last_input"] = raw
+            
+            # 检查是否需要发送最终回复
+            if response_text:
+                chunks = self._split_message(response_text)
+                for chunk in chunks:
+                    await self._publish_reply(message, chunk)
 
-                # Handle Result
-                if inference_loop.is_suspended:
-                    # Task paused for user input (Analysis/Plan Review)
-                    self.active_loops[chat_id] = inference_loop
-                    await self._publish_reply(message, response_text)
-                else:
-                    # Task completed
-                    if chat_id in self.active_loops:
-                        del self.active_loops[chat_id]
+    async def _hub_message_poller(self):
+        """检查 CommunicationHub 中的消息"""
+        while not self._stop_event.is_set():
+            try:
+                # 检查来自 InferenceTool 和 Autonomous 的消息
+                messages = self.hub.get_unconsumed_messages(
+                    recipient=MessageSender.MASTER_AGENT
+                )
+                
+                for msg in messages:
+                    # 处理推理工具的结果
+                    if msg.msg_type == MessageType.TASK_RESULT:
+                        logger.info(f"[Hub] Received task result: {msg.msg_id}")
                     
-                    if not isinstance(response_text, str) or not response_text.strip():
-                        response_text = "（无内容返回）"
+                    # 处理人在回路请求
+                    elif msg.msg_type == MessageType.SUSPEND_REQUEST:
+                        logger.info(f"[Hub] Suspend request: {msg.metadata.get('checkpoint_name')}")
                     
-                    # Split long responses
-                    chunks = self._split_message(response_text)
-                    for chunk in chunks:
-                         await self._publish_reply(message, chunk)
-
+                    # 处理 Autonomous 消息
+                    elif msg.msg_type == MessageType.AUTONOMOUS_STATUS:
+                        logger.info(f"[Hub] Autonomous status: {msg.content[:50]}...")
+                    
+                    # 标记已消费
+                    self.hub.mark_consumed(msg.msg_id)
+                    
             except Exception as e:
-                logger.error(f"Inference processing failed: {e}")
-                if chat_id in self.active_loops:
-                    del self.active_loops[chat_id]
-                await self._publish_reply(message, "系统处理消息时出现异常，会话已重置。")
+                logger.error(f"[Hub] Poller error: {e}")
+            
+            await asyncio.sleep(1)
 
     async def _autonomous_report_poller(self):
         while not self._stop_event.is_set():

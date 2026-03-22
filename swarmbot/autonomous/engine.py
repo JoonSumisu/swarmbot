@@ -9,7 +9,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Set
 
 from ..config_manager import ProviderConfig, WORKSPACE_PATH, load_config
 from ..loops.overthinking import OverthinkingLoop
@@ -55,6 +55,34 @@ class ActionQueueItem:
     eval_result: Dict[str, Any] = field(default_factory=dict)
     decision_feedback: Dict[str, Any] = field(default_factory=dict)
     reported_to_gateway: bool = False
+
+
+@dataclass
+class BundleLifecycleState:
+    """Bundle 生命周期状态"""
+    bundle_id: str
+    state: str
+    created_at: float
+    last_execution: float
+    pause_reason: Optional[str] = None
+    retire_reason: Optional[str] = None
+    pause_count: int = 0
+    total_runtime_seconds: float = 0.0
+
+
+@dataclass
+class BundleEvaluationResult:
+    """Bundle 效能评估结果"""
+    bundle_id: str
+    efficiency_score: float
+    success_rate: float
+    avg_execution_time: float
+    total_executions: int
+    recent_failures: int
+    value_output_score: float
+    resource_efficiency_score: float
+    recommendation: str
+    evaluated_at: float = field(default_factory=time.time)
 
 
 class _Bundle:
@@ -669,3 +697,280 @@ class AutonomousEngine:
             self._dispatch_actions()
             if self.stop_event.wait(tick):
                 break
+
+
+class BundleGovernor:
+    """
+    Bundle 管理者 - 负责 Bundle 生命周期管理
+
+    功能:
+    1. 效能评估：定期评估每个 Bundle 的表现
+    2. 自动暂停：低效能 Bundle 自动暂停
+    3. 自动恢复：暂停的 Bundle 定期尝试恢复
+    4. 淘汰机制：长期低效能 Bundle 被淘汰
+    5. 状态追踪：记录 Bundle 生命周期状态
+    """
+
+    EFFICIENCY_PAUSE_THRESHOLD = 0.3
+    EFFICIENCY_RETIRE_THRESHOLD = 0.15
+    RECENT_FAILURE_THRESHOLD = 5
+    PAUSE_CHECK_INTERVAL = 300
+    AUTO_RESUME_INTERVAL = 1800
+    RETIRE_AFTER_PAUSES = 3
+
+    def __init__(self, bundles_path: Path):
+        self.bundles_path = bundles_path
+        self.lifecycle_states: Dict[str, BundleLifecycleState] = {}
+        self.evaluation_history: Dict[str, List[BundleEvaluationResult]] = {}
+        self.paused_bundles: Set[str] = set()
+        self.retired_bundles: Set[str] = set()
+        self._load_lifecycle_states()
+
+    def _load_lifecycle_states(self):
+        lifecycle_file = self.bundles_path / "_registry" / "lifecycle_states.json"
+        if lifecycle_file.exists():
+            try:
+                with open(lifecycle_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for bundle_id, state_data in data.items():
+                    self.lifecycle_states[bundle_id] = BundleLifecycleState(**state_data)
+            except Exception as e:
+                print(f"[BundleGovernor] Failed to load lifecycle states: {e}")
+
+    def _save_lifecycle_states(self):
+        lifecycle_file = self.bundles_path / "_registry" / "lifecycle_states.json"
+        lifecycle_file.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {}
+        for bundle_id, state in self.lifecycle_states.items():
+            data[bundle_id] = {
+                "bundle_id": state.bundle_id,
+                "state": state.state,
+                "created_at": state.created_at,
+                "last_execution": state.last_execution,
+                "pause_reason": state.pause_reason,
+                "retire_reason": state.retire_reason,
+                "pause_count": state.pause_count,
+                "total_runtime_seconds": state.total_runtime_seconds,
+            }
+
+        with open(lifecycle_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def register_bundle(self, bundle_id: str):
+        if bundle_id not in self.lifecycle_states:
+            now = time.time()
+            self.lifecycle_states[bundle_id] = BundleLifecycleState(
+                bundle_id=bundle_id,
+                state="active",
+                created_at=now,
+                last_execution=now,
+            )
+            self._save_lifecycle_states()
+
+    def evaluate_bundle_performance(self, bundle_id: str) -> BundleEvaluationResult:
+        bundle_path = self.bundles_path / bundle_id
+        memory_dir = bundle_path / "memory"
+
+        execution_history = self._load_jsonl(memory_dir / "execution_history.jsonl")
+        eval_results = self._load_jsonl(memory_dir / "eval_results.jsonl")
+        optimization_records = self._load_jsonl(memory_dir / "optimization_records.jsonl")
+
+        total_executions = len(execution_history)
+        if total_executions == 0:
+            return BundleEvaluationResult(
+                bundle_id=bundle_id,
+                efficiency_score=0.5,
+                success_rate=0.5,
+                avg_execution_time=0.0,
+                total_executions=0,
+                recent_failures=0,
+                value_output_score=0.5,
+                resource_efficiency_score=0.5,
+                recommendation="keep",
+            )
+
+        success_count = sum(1 for e in eval_results if e.get("grade", "C") in ["A", "B"])
+        success_rate = success_count / max(1, len(eval_results))
+
+        avg_execution_time = self._compute_avg_execution_time(execution_history)
+        time_score = self._compute_time_score(avg_execution_time)
+
+        skill_generated = len(optimization_records)
+        problems_solved = sum(1 for e in eval_results if e.get("grade") == "A")
+        value_score = min(1.0, (skill_generated * 0.5 + problems_solved) / max(1, total_executions))
+
+        recent_failures = self._count_recent_failures(eval_results, last_n=5)
+        resource_score = max(0.0, 1.0 - (recent_failures / 5))
+
+        efficiency_score = (
+            success_rate * 0.3 +
+            time_score * 0.2 +
+            value_score * 0.3 +
+            resource_score * 0.2
+        )
+
+        recommendation = self._generate_recommendation(efficiency_score, recent_failures, total_executions)
+
+        result = BundleEvaluationResult(
+            bundle_id=bundle_id,
+            efficiency_score=efficiency_score,
+            success_rate=success_rate,
+            avg_execution_time=avg_execution_time,
+            total_executions=total_executions,
+            recent_failures=recent_failures,
+            value_output_score=value_score,
+            resource_efficiency_score=resource_score,
+            recommendation=recommendation,
+        )
+
+        if bundle_id not in self.evaluation_history:
+            self.evaluation_history[bundle_id] = []
+        self.evaluation_history[bundle_id].append(result)
+
+        return result
+
+    def _load_jsonl(self, path: Path) -> List[Dict]:
+        if not path.exists():
+            return []
+        records = []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        records.append(json.loads(line))
+        except Exception:
+            pass
+        return records
+
+    def _compute_avg_execution_time(self, execution_history: List[Dict]) -> float:
+        times = []
+        for record in execution_history:
+            if "execution_time" in record:
+                times.append(record["execution_time"])
+            elif "start_ts" in record and "end_ts" in record:
+                times.append(record["end_ts"] - record["start_ts"])
+        return sum(times) / len(times) if times else 0.0
+
+    def _compute_time_score(self, avg_time: float) -> float:
+        if avg_time == 0:
+            return 0.5
+        if avg_time < 30:
+            return 1.0
+        if avg_time < 180:
+            return 0.8
+        if avg_time < 600:
+            return 0.5
+        return 0.2
+
+    def _count_recent_failures(self, eval_results: List[Dict], last_n: int = 5) -> int:
+        recent = eval_results[-last_n:] if len(eval_results) >= last_n else eval_results
+        return sum(1 for e in recent if e.get("grade", "C") in ["C", "D"])
+
+    def _generate_recommendation(self, efficiency_score: float, recent_failures: int, total_executions: int) -> str:
+        if efficiency_score < self.EFFICIENCY_RETIRE_THRESHOLD:
+            return "retire"
+        if efficiency_score < self.EFFICIENCY_PAUSE_THRESHOLD or recent_failures >= self.RECENT_FAILURE_THRESHOLD:
+            return "pause"
+        if efficiency_score < 0.5:
+            return "optimize"
+        return "keep"
+
+    def should_execute(self, bundle_id: str) -> bool:
+        if bundle_id in self.retired_bundles:
+            return False
+        if bundle_id in self.paused_bundles:
+            state = self.lifecycle_states.get(bundle_id)
+            if state and state.state == "paused":
+                last_exec = state.last_execution
+                if time.time() - last_exec >= self.AUTO_RESUME_INTERVAL:
+                    return self._try_resume_bundle(bundle_id)
+            return False
+        return True
+
+    def pause_bundle(self, bundle_id: str, reason: str = "low_efficiency"):
+        if bundle_id in self.paused_bundles:
+            return
+
+        self.paused_bundles.add(bundle_id)
+        state = self.lifecycle_states.get(bundle_id)
+        if state:
+            state.state = "paused"
+            state.pause_reason = reason
+            state.pause_count += 1
+            self._save_lifecycle_states()
+
+        print(f"[BundleGovernor] Paused bundle: {bundle_id} (reason: {reason})")
+
+        if state and state.pause_count >= self.RETIRE_AFTER_PAUSES:
+            self.retire_bundle(bundle_id, "too_many_pauses")
+
+    def retire_bundle(self, bundle_id: str, reason: str = "low_efficiency"):
+        self.retired_bundles.add(bundle_id)
+        if bundle_id in self.paused_bundles:
+            self.paused_bundles.remove(bundle_id)
+
+        state = self.lifecycle_states.get(bundle_id)
+        if state:
+            state.state = "retired"
+            state.retire_reason = reason
+            self._save_lifecycle_states()
+
+        print(f"[BundleGovernor] Retired bundle: {bundle_id} (reason: {reason})")
+
+    def _try_resume_bundle(self, bundle_id: str) -> bool:
+        if bundle_id in self.evaluation_history:
+            recent_evals = self.evaluation_history[bundle_id][-3:]
+            if recent_evals:
+                avg_score = sum(e.efficiency_score for e in recent_evals) / len(recent_evals)
+                if avg_score >= self.EFFICIENCY_PAUSE_THRESHOLD + 0.1:
+                    self.paused_bundles.discard(bundle_id)
+                    state = self.lifecycle_states.get(bundle_id)
+                    if state:
+                        state.state = "active"
+                        state.pause_reason = None
+                        self._save_lifecycle_states()
+                    print(f"[BundleGovernor] Auto-resumed bundle: {bundle_id}")
+                    return True
+        return False
+
+    def run_evaluation_cycle(self, bundles: Dict[str, Any]) -> List[BundleEvaluationResult]:
+        results = []
+        for bundle_id in bundles:
+            if bundle_id in self.retired_bundles:
+                continue
+            eval_result = self.evaluate_bundle_performance(bundle_id)
+            results.append(eval_result)
+
+            if eval_result.recommendation == "pause":
+                self.pause_bundle(bundle_id, "low_efficiency")
+            elif eval_result.recommendation == "retire":
+                self.retire_bundle(bundle_id, "low_efficiency")
+            elif eval_result.recommendation == "optimize":
+                print(f"[BundleGovernor] Bundle {bundle_id} needs optimization (score: {eval_result.efficiency_score:.2f})")
+
+        return results
+
+    def get_bundle_status(self, bundle_id: str) -> Dict[str, Any]:
+        state = self.lifecycle_states.get(bundle_id)
+        if not state:
+            return {"state": "unknown"}
+
+        return {
+            "state": state.state,
+            "created_at": state.created_at,
+            "last_execution": state.last_execution,
+            "pause_count": state.pause_count,
+            "pause_reason": state.pause_reason,
+            "retire_reason": state.retire_reason,
+            "total_runtime_seconds": state.total_runtime_seconds,
+            "is_paused": bundle_id in self.paused_bundles,
+            "is_retired": bundle_id in self.retired_bundles,
+        }
+
+    def get_all_statuses(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            bundle_id: self.get_bundle_status(bundle_id)
+            for bundle_id in self.lifecycle_states
+        }

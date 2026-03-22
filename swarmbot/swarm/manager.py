@@ -43,11 +43,7 @@ class SwarmSession:
         self.skill_registry = SkillRegistry()
         
         self.agents: List[SwarmAgentSlot] = []
-        self.architecture: Literal[
-            "sequential", "concurrent", "agent_rearrange", "graph", "mixture",
-            "group_chat", "forest", "hierarchical", "heavy", "swarm_router",
-            "long_horizon", "state_machine", "auto"
-        ] = "concurrent"
+        self.architecture: str = "concurrent"
         self.display_mode = "simple"
         
         self._init_default_agents()

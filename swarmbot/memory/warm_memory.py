@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 import time
 import os
+import json
+
 
 class WarmMemory:
     """
@@ -28,6 +33,25 @@ class WarmMemory:
         
         with open(file_path, "a", encoding="utf-8") as f:
             f.write(entry)
+
+    def add_event(self, session_id: str, content: str, meta: Optional[Dict[str, Any]] = None) -> None:
+        """Add an event to the daily log (for inference tool integration)"""
+        file_path = self._get_today_file()
+        timestamp = time.strftime("%H:%M:%S")
+        
+        role = meta.get("role", "assistant") if meta else "assistant"
+        event_type = meta.get("type", "general") if meta else "general"
+        
+        entry = f"\n\n## [{timestamp}] Session: {session_id} | Type: {event_type}\n"
+        entry += f"**Role**: {role}\n\n"
+        entry += f"{content}\n"
+        
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+
+    def get_context(self, agent_id: str, limit: int = 20, query: str | None = None) -> List[Dict[str, Any]]:
+        """Get context from recent events (for MemoryStore interface)"""
+        return []
 
     def read_today(self) -> str:
         file_path = self._get_today_file()

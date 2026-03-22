@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import os
+import readline  # Enable arrow keys and better input handling
 
 from .config_manager import (
     SwarmbotConfig,
@@ -223,22 +224,82 @@ def cmd_onboard() -> None:
 
 
 def cmd_run() -> None:
+    """
+    CLI run mode - thin client that passes messages to Gateway.
+
+    v2.0 architecture:
+    - cli.py is a thin client
+    - GatewayServer receives messages
+    - GatewayMasterAgent handles all routing and tool selection
+    - InferenceLoop tools (Standard/Supervised/SwarmsWorker) are called by MasterAgent
+    """
+    from .memory.session_memory import SessionMemory
+    from .gateway.orchestrator import GatewayMasterAgent
+
+    session_memory = SessionMemory(WORKSPACE_PATH)
+    session_id = "cli-session"
+
+    print("Swarmbot run 模式已启动 (v2.0)，Ctrl+C 退出。")
+    print("MasterAgent 将根据 inference_tools.md 配置文件自动选择推理工具。")
+    print("可用命令：/clear (清除会话), /compact (压缩历史), /status (会话状态), /quit (退出)")
+
     cfg = load_config()
-    inference = InferenceLoop(cfg, WORKSPACE_PATH)
-    session_id = "cli_run_default"
-    print("Swarmbot run 模式已启动，Ctrl+C 退出。")
+    orchestrator = GatewayMasterAgent(WORKSPACE_PATH, cfg)
+
     turn = 0
+
     while True:
-        if cfg.swarm.max_turns and turn >= cfg.swarm.max_turns:
-            break
         try:
-            user_input = input("\n你: ").strip()
+            user_input = input("\n你：").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if not user_input:
             continue
-        reply = inference.run(user_input, session_id=session_id)
+
+        if user_input in ["/quit", "/exit"]:
+            print("退出 Swarmbot run 模式。")
+            break
+
+        if user_input == "/clear":
+            session_memory.clear_session(session_id)
+            print("已清除当前会话状态和记忆。")
+            turn = 0
+            continue
+
+        if user_input == "/compact":
+            session_memory.compact_session(session_id, keep_turns=3)
+            print("已压缩会话历史，保留最近 3 轮对话。")
+            continue
+
+        if user_input == "/status":
+            session_data = session_memory.get_context(session_id, max_turns=1)
+            turn_count = session_data.get("turn_count", 0)
+            last_access = session_data.get("last_access", 0)
+            from time import strftime, localtime
+            print(f"会话状态:")
+            print(f"  - 对话轮数：{turn_count}")
+            print(f"  - 最后活动：{strftime('%Y-%m-%d %H:%M:%S', localtime(last_access)) if last_access else '无'}")
+            continue
+
+        class MessageWrapper:
+            def __init__(self, chat_id: str, content: str):
+                self.chat_id = chat_id
+                self.content = content
+
+        message = MessageWrapper(chat_id=session_id, content=user_input)
+
+        print("\n[MasterAgent] 处理中...")
+        reply = orchestrator.handle_user_message_sync(message)
+
         print(f"\nSwarmbot:\n{reply}")
+
+        session_memory.add_turn(
+            chat_id=session_id,
+            user_input=user_input,
+            assistant_response=reply,
+            metadata={"master_response": reply}
+        )
+
         turn += 1
 
 
@@ -297,38 +358,10 @@ def cmd_heartbeat(args: argparse.Namespace) -> None:
 def cmd_tool() -> None:
     print("工具管理 CLI 已简化，请在对话中通过 LLM 工具调用使用工具。")
 
-from .loops.overthinking import OverthinkingLoop
-import threading
-
 
 def cmd_cron(args: argparse.Namespace) -> None:
     print("Cron 管理功能当前已禁用（nanobot 依赖已移除）。")
 
-def cmd_overthinking(args: argparse.Namespace) -> None:
-    cfg = load_config()
-    if args.action == "setup":
-        if args.enabled is not None:
-            cfg.overthinking.enabled = args.enabled
-        if args.interval is not None:
-            cfg.overthinking.interval_minutes = args.interval
-        if args.steps is not None:
-            cfg.overthinking.max_steps = args.steps
-        save_config(cfg)
-        print("Overthinking 配置已更新。")
-        print(json.dumps(cfg.overthinking.__dict__, ensure_ascii=False, indent=2))
-    elif args.action == "start":
-        print("Starting Overthinking Loop in background...")
-        # Note: This starts a loop in the foreground for CLI usage, 
-        # or implies daemon start. For CLI simple run, we just start it.
-        stop_event = threading.Event()
-        loop = OverthinkingLoop(stop_event)
-        loop.start()
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            stop_event.set()
-            print("Stopping overthinking loop...")
 
 def cmd_status() -> None:
     cfg = load_config()
@@ -339,9 +372,6 @@ def cmd_status() -> None:
     print()
     print("Swarm:")
     print(json.dumps({"swarm": cfg.swarm.__dict__}, ensure_ascii=False, indent=2))
-    print()
-    print("Overthinking:")
-    print(json.dumps({"overthinking": cfg.overthinking.__dict__}, ensure_ascii=False, indent=2))
 
 
 
@@ -417,7 +447,7 @@ def cmd_daemon(args: argparse.Namespace) -> None:
         try:
             cfg = load_config()
             cfg.daemon.manage_gateway = True
-            cfg.daemon.manage_overthinking = True
+            cfg.daemon.manage_autonomous = True
             save_config(cfg)
         except Exception:
             pass
@@ -620,14 +650,6 @@ def main() -> None:
     daemon_sub.add_parser("start", help="启动守护进程")
     daemon_sub.add_parser("shutdown", help="关闭守护进程")
 
-    overthink_parser = subparsers.add_parser("overthinking", help="管理 Overthinking 后台思考循环")
-    overthink_sub = overthink_parser.add_subparsers(dest="action", required=True)
-    overthink_setup = overthink_sub.add_parser("setup", help="配置 Overthinking 参数")
-    overthink_setup.add_argument("--enabled", type=lambda x: x.lower() in ("true", "1", "yes"), help="是否开启 (true/false)")
-    overthink_setup.add_argument("--interval", type=int, help="工作周期（分钟）")
-    overthink_setup.add_argument("--steps", type=int, help="自主探索步数 (0 为关闭)")
-    overthink_sub.add_parser("start", help="手动启动 Overthinking 循环（前台运行）")
-
     subparsers.add_parser("update", help="更新 Swarmbot 核心代码（保留配置）")
 
     args, _ = parser.parse_known_args()
@@ -661,8 +683,6 @@ def main() -> None:
         cmd_config(args)
     elif args.command == "skill":
         print("技能管理请通过对话中的 skill_summary / skill_load 工具完成。")
-    elif args.command == "overthinking":
-        cmd_overthinking(args)
     elif args.command == "daemon":
         cmd_daemon(args)
 
