@@ -132,9 +132,20 @@ swarmbot/
 │   ├── warm_memory.py        # L3: Daily logs
 │   └── cold_memory.py        # L4: Semantic vector DB
 ├── autonomous/               # Autonomous engine
-│   └── engine.py            # Bundle-based self-optimization
+│   └── engine.py            # BundleGovernor + self-optimization
+├── skill_pool.py            # SkillPool (能力固化池)
 └── nanobot/                  # Channel integrations
 ```
+
+### Key Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| GatewayMasterAgent | `gateway/orchestrator.py` | 路由、演绎、人在回路 |
+| CommunicationHub | `gateway/communication_hub.py` | FIFO 消息队列 |
+| SkillPool | `skill_pool.py` | 能力固化池 |
+| BundleGovernor | `autonomous/engine.py` | Bundle 生命周期管理 |
+| SessionMemory | `memory/session_memory.py` | L1.5 会话记忆 |
 
 ---
 
@@ -172,6 +183,7 @@ MasterAgent          InferenceTools        Autonomous
 | `standard` | 标准8步推理 | 否 |
 | `supervised` | 人在回路推理 | 是 (ANALYSIS_REVIEW, PLAN_REVIEW) |
 | `swarms` | 多Worker协作 | 否 |
+| `subswarm` | 异步子任务编排 | 可选 |
 
 ### CommunicationHub Message Types
 - `TASK_REQUEST` / `TASK_RESULT`: MasterAgent ↔ InferenceTool
