@@ -28,7 +28,9 @@ BUNDLES = {
         },
         "constraints": [
             "不影响主会话响应时间",
-            "压缩过程不可阻塞主线程"
+            "压缩过程不可阻塞主线程",
+            "需使用移动平均计算效率",
+            "波动大于 20% 时暂停优化"
         ],
         "optimization_targets": [
             {
@@ -36,7 +38,10 @@ BUNDLES = {
                 "metric_name": "compression_rate",
                 "current_threshold": 0.5,
                 "direction": "minimize",
-                "feedback_source": "both"
+                "feedback_source": "both",
+                "smoothing_window": 5,
+                "stability_threshold": 0.2,
+                "pause_on_instability": True
             }
         ],
         "feedback_loop": {
@@ -54,15 +59,20 @@ BUNDLES = {
         },
         "constraints": [
             "不改变核心系统行为",
-            "优化需经过 A/B 测试验证"
+            "优化需经过 A/B 测试验证",
+            "优化冷却时间至少 1 小时",
+            "单次优化幅度不超过 5%"
         ],
         "optimization_targets": [
             {
                 "target_id": "t1",
                 "metric_name": "boot_prompt_score",
-                "current_threshold": 0.7,
+                "current_threshold": 0.5,  # 更严格才触发
                 "direction": "maximize",
-                "feedback_source": "auto_eval"
+                "feedback_source": "auto_eval",
+                "min_optimization_interval": 3600,  # 1小时冷却
+                "max_optimization_per_hour": 2,
+                "require_improvement_validation": True
             }
         ],
         "feedback_loop": {
@@ -117,7 +127,9 @@ BUNDLES = {
         },
         "constraints": [
             "不误删活跃 Bundle",
-            "冲突判定需有明确证据"
+            "冲突判定需有明确证据",
+            "优化冷却时间至少 2 小时",
+            "最多连续优化 3 次"
         ],
         "optimization_targets": [
             {
@@ -125,7 +137,10 @@ BUNDLES = {
                 "metric_name": "conflict_detection_rate",
                 "current_threshold": 0.95,
                 "direction": "maximize",
-                "feedback_source": "both"
+                "feedback_source": "both",
+                "min_optimization_interval": 7200,  # 2小时冷却
+                "max_optimization_per_hour": 1,
+                "max_consecutive_optimizations": 3
             }
         ],
         "feedback_loop": {
@@ -134,7 +149,37 @@ BUNDLES = {
             "via": "gateway"
         },
     },
-}
+    "core.memory_foundation": {
+        "interval_seconds": 1800,  # 30 min
+        "objective": "高效整理记忆，提升知识复用率",
+        "success_metrics": {
+            "compression_rate": {"target": 0.5, "direction": "minimize"},
+            "retrieval_accuracy": {"target": 0.8, "direction": "maximize"}
+        },
+        "constraints": [
+            "不影响主会话响应时间",
+            "压缩过程不可阻塞主线程",
+            "需使用移动平均计算效率",
+            "波动大于 20% 时暂停优化"
+        ],
+        "optimization_targets": [
+            {
+                "target_id": "t1",
+                "metric_name": "compression_rate",
+                "current_threshold": 0.5,
+                "direction": "minimize",
+                "feedback_source": "both",
+                "smoothing_window": 5,  # 移动平均窗口
+                "stability_threshold": 0.2,  # 波动阈值
+                "pause_on_instability": True
+            }
+        ],
+        "feedback_loop": {
+            "enabled": True,
+            "trigger": "on_eval_fail",
+            "via": "gateway"
+        },
+    },
 
 
 def create_bundle_json(bundle_id: str, bundle_config: Dict[str, Any]) -> Dict[str, Any]:
