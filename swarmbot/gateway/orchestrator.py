@@ -257,33 +257,32 @@ Persona (Soul): {self.boot_files.get('soul', '')}
         # 3. 选择推理工具
         tool_id = self._select_tool(user_input)
         
-        # 4. 通过 Hub 发送任务
-        self.hub.send_task_request(tool_id, user_input, session_id)
+        # 4. 直接调用推理工具 (不通过 Hub)
+        return self._run_inference_tool(tool_id, user_input, session_id)
+    
+    def _run_inference_tool(self, tool_id: str, user_input: str, session_id: str) -> str:
+        """直接运行推理工具"""
+        tool_class = self._tools.get(tool_id)
+        if not tool_class:
+            return f"工具 {tool_id} 不存在"
         
-        # 5. 通过 Hub 接收结果 (阻塞等待)
-        result_msg = self.hub.recv(
-            recipient=MessageSender.MASTER_AGENT,
-            session_id=session_id,
-            blocking=True,
-            timeout=120,
-        )
-        
-        if result_msg and result_msg.msg_type == MessageType.TASK_RESULT:
-            raw_content = result_msg.content
+        try:
+            tool = tool_class(self.config, str(self.workspace_path))
+            result = tool.run(user_input, session_id=session_id)
             
-            # 检查是否需要人在回路
-            if result_msg.metadata.get("needs_human_review"):
-                return self._handle_human_in_loop(result_msg, session_id)
-            
-            # 6. 演绎结果
-            interpreted = self._interpret_result(raw_content, user_input)
-            
-            # 7. 写入 Warm Memory
-            self._write_to_memory(user_input, interpreted, session_id)
-            
-            return interpreted
-        
-        return "抱歉，处理过程中出现了一些问题，请稍后重试。"
+            if result:
+                raw_content = result.content if hasattr(result, 'content') else str(result)
+                
+                # 演绎结果
+                interpreted = self._interpret_result(raw_content, user_input)
+                
+                # 写入 Warm Memory
+                self._write_to_memory(user_input, interpreted, session_id)
+                
+                return interpreted
+            return "工具执行返回为空"
+        except Exception as e:
+            return f"工具执行失败: {e}"
 
     def _handle_human_in_loop(self, suspend_msg: HubMessage, session_id: str) -> str:
         """处理人在回路暂停"""
