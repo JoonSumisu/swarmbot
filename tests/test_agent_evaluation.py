@@ -227,19 +227,24 @@ class AgentEvaluator:
 
     def get_test_cases(self) -> List[TestCase]:
         return [
-            # 简单问候 (10)
+            # ===== 简单问候 (15) =====
             TestCase("你好！", "simple_direct", "问候", complexity="simple"),
             TestCase("你好", "simple_direct", "问候", complexity="simple"),
             TestCase("您好", "simple_direct", "问候", complexity="simple"),
             TestCase("hi", "simple_direct", "问候", complexity="simple"),
             TestCase("hello", "simple_direct", "问候", complexity="simple"),
+            TestCase("嗨", "simple_direct", "问候", complexity="simple"),
+            TestCase("早啊", "simple_direct", "问候", complexity="simple"),
+            TestCase("晚上好", "simple_direct", "问候", complexity="simple"),
             TestCase("再见！", "simple_direct", "寒暄", complexity="simple"),
             TestCase("bye", "simple_direct", "寒暄", complexity="simple"),
+            TestCase("明天见", "simple_direct", "寒暄", complexity="simple"),
             TestCase("谢谢", "simple_direct", "感谢", complexity="simple"),
             TestCase("thanks", "simple_direct", "感谢", complexity="simple"),
             TestCase("好的", "simple_direct", "确认", complexity="simple"),
+            TestCase("没问题", "simple_direct", "确认", complexity="simple"),
             
-            # 简单概念定义 (10)
+            # ===== 简单概念定义 (20) =====
             TestCase("什么是Python？", "simple_direct", "概念", complexity="simple"),
             TestCase("什么是机器学习？", "simple_direct", "概念", complexity="simple"),
             TestCase("人工智能是什么？", "simple_direct", "概念", complexity="simple"),
@@ -250,8 +255,18 @@ class AgentEvaluator:
             TestCase("HTTP是什么？", "simple_direct", "概念", complexity="simple"),
             TestCase("数据库是什么？", "simple_direct", "概念", complexity="simple"),
             TestCase("云计算是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("什么是深度学习？", "simple_direct", "概念", complexity="simple"),
+            TestCase("大数据是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("物联网是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("5G是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("什么是DevOps？", "simple_direct", "概念", complexity="simple"),
+            TestCase("CI/CD是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("微服务是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("什么是容器化？", "simple_direct", "概念", complexity="simple"),
+            TestCase("Serverless是什么？", "simple_direct", "概念", complexity="simple"),
+            TestCase("边缘计算是什么？", "simple_direct", "概念", complexity="simple"),
             
-            # 代码生成 (10)
+            # ===== 代码生成 (20) =====
             TestCase("帮我写一个快速排序算法", "standard", "代码生成"),
             TestCase("写一个Python函数计算斐波那契数列", "standard", "代码生成"),
             TestCase("生成一个Flask应用结构", "standard", "项目创建"),
@@ -262,8 +277,18 @@ class AgentEvaluator:
             TestCase("创建一个人脸识别Python脚本", "standard", "代码任务"),
             TestCase("写一个数据分析的Python脚本", "standard", "代码+分析"),
             TestCase("生成一个贪吃蛇游戏代码", "standard", "代码生成"),
+            TestCase("帮我写一个二分查找算法", "standard", "代码生成"),
+            TestCase("生成一个Django项目结构", "standard", "项目创建"),
+            TestCase("写一个Python脚本发送邮件", "standard", "代码任务"),
+            TestCase("帮我写一个归并排序", "standard", "代码生成"),
+            TestCase("生成一个JWT认证示例", "standard", "代码生成"),
+            TestCase("写一个Redis缓存封装类", "standard", "代码生成"),
+            TestCase("帮我写一个状态机实现", "standard", "代码生成"),
+            TestCase("生成一个WebSocket聊天示例", "standard", "代码+实时"),
+            TestCase("写一个Python装饰器实现重试", "standard", "代码生成"),
+            TestCase("帮我创建一个CLI工具框架", "standard", "项目创建"),
             
-            # 调研分析 (10)
+            # ===== 调研分析 (20) =====
             TestCase("帮我调查2024年AI发展趋势", "standard", "调研", True),
             TestCase("分析React vs Vue优缺点", "standard", "对比分析", True),
             TestCase("最新的人工智能新闻有哪些？", "standard", "调研", True),
@@ -274,22 +299,47 @@ class AgentEvaluator:
             TestCase("研究Kubernetes的核心特性", "standard", "技术调研", True),
             TestCase("分析微服务架构的优缺点", "standard", "架构分析"),
             TestCase("对比云计算三大平台AWS/Azure/GCP", "standard", "对比分析", True),
+            TestCase("帮我调研最新的大模型技术", "standard", "调研", True),
+            TestCase("分析TypeScript vs JavaScript", "standard", "对比分析"),
+            TestCase("研究一下向量数据库的应用", "standard", "技术调研", True),
+            TestCase("对比GraphQL和REST API", "standard", "对比分析"),
+            TestCase("帮我分析日志系统的选型", "standard", "技术分析"),
+            TestCase("调研Serverless的适用场景", "standard", "调研", True),
+            TestCase("分析Redis和Memcached区别", "standard", "对比分析"),
+            TestCase("帮我研究自动驾驶技术现状", "standard", "调研", True),
+            TestCase("对比GitFlow和TrunkBased开发", "standard", "对比分析"),
+            TestCase("分析区块链在供应链的应用", "standard", "技术分析", True),
             
-            # 评估报告 (5)
+            # ===== 评估报告 (10) =====
             TestCase("评估微服务架构重构方案", "standard", "评估任务"),
             TestCase("帮我创建一个数据分析报告", "standard", "报告生成", True),
             TestCase("评估这个技术选型的可行性", "standard", "评估任务"),
             TestCase("生成一份项目进度报告", "standard", "报告生成"),
             TestCase("帮我评估系统安全性", "standard", "安全评估"),
+            TestCase("评估这个数据库设计", "standard", "评估任务"),
+            TestCase("帮我写一份技术方案评审", "standard", "报告生成"),
+            TestCase("评估API接口的性能", "standard", "性能评估"),
+            TestCase("生成一份代码质量报告", "standard", "报告生成"),
+            TestCase("帮我评估迁移到云平台的风险", "standard", "风险评估"),
             
-            # 需要确认 (3)
+            # ===== 需要确认 (10) =====
             TestCase("请确认是否删除所有临时文件", "supervised", "需确认"),
             TestCase("是否批准这个代码合并请求？", "supervised", "审批"),
             TestCase("帮我删除测试环境中的所有数据", "supervised", "危险操作"),
+            TestCase("确认执行数据库迁移脚本", "supervised", "需确认"),
+            TestCase("批准这个产品发布吗？", "supervised", "审批"),
+            TestCase("帮我清空生产环境缓存", "supervised", "危险操作"),
+            TestCase("确认关闭这个服务实例", "supervised", "需确认"),
+            TestCase("批准用户权限变更请求", "supervised", "审批"),
+            TestCase("帮我删除过期的日志文件", "supervised", "需确认"),
+            TestCase("确认回滚这次部署", "supervised", "需确认"),
             
-            # 多角色 (2)
+            # ===== 多角色 (5) =====
             TestCase("帮我组织一场产品评审会议", "swarms", "多角色"),
             TestCase("模拟一场技术方案评审讨论", "swarms", "多角色"),
+            TestCase("组织一个代码审查会议", "swarms", "多角色"),
+            TestCase("模拟产品经理和开发者的对话", "swarms", "多角色"),
+            TestCase("帮我组织一场头脑风暴", "swarms", "多角色"),
         ]
 
     def print_summary(self):
