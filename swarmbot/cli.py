@@ -288,7 +288,6 @@ def cmd_run() -> None:
 
         message = MessageWrapper(chat_id=session_id, content=user_input)
 
-        print("\n[MasterAgent] 处理中...")
         reply = orchestrator.handle_user_message_sync(message)
 
         print(f"\nSwarmbot:\n{reply}")

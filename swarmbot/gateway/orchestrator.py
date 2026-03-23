@@ -17,6 +17,7 @@ from ..memory.cold_memory import ColdMemory
 from ..memory.whiteboard import Whiteboard
 from .communication_hub import CommunicationHub, HubMessage, MessageSender, MessageType
 from ..loops.base import BaseInferenceTool, InferenceResult
+from ..core.agent import AgentContext, CoreAgent
 
 
 class GatewayMasterAgent:
@@ -46,13 +47,15 @@ class GatewayMasterAgent:
         self._llm: Optional[OpenAICompatibleClient] = None
 
     def _load_boot_and_memory(self):
-        """加载 boot 文件和记忆系统"""
+        """加载 MasterAgent 专用 boot 文件"""
+        boot_dir = Path(__file__).parent.parent / "boot" / "master"
+        
         self.boot_files = {
-            "swarmboot": load_boot_markdown("swarmboot.md", "master_agent", max_chars=12000) or "",
             "soul": load_boot_markdown("SOUL.md", "master_agent", max_chars=5000) or "",
-            "master_agent_boot": load_boot_markdown("masteragentboot.md", "master_agent", max_chars=3000) or "",
             "identity": load_boot_markdown("IDENTITY.md", "master_agent", max_chars=2000) or "",
             "user": load_boot_markdown("USER.md", "master_agent", max_chars=2000) or "",
+            "master_agent_boot": load_boot_markdown("masteragentboot.md", "master_agent", max_chars=3000) or "",
+            "boot_index": load_boot_markdown("../BOOT_INDEX.md", "master_agent", max_chars=3000) or "",
         }
         
         # 记忆系统
@@ -60,21 +63,17 @@ class GatewayMasterAgent:
         self.hot_memory = HotMemory(self.workspace_path)
         self.warm_memory = WarmMemory(self.workspace_path)
         self.cold_memory = ColdMemory()
-        
-        print(f"[GatewayMasterAgent] Loaded boot files: {list(self.boot_files.keys())}")
-        print(f"[GatewayMasterAgent] Memory initialized: Hot, Warm, Cold, Whiteboard")
 
     def _load_tools(self):
         """从 inference_tools.md 加载工具配置并动态导入"""
-        config_path = Path(os.path.expanduser("~/.swarmbot/boot/inference_tools.md"))
+        config_path = Path(os.path.expanduser("~/.swarmbot/boot/inference/inference_tools.md"))
         if not config_path.exists():
-            config_path = Path(__file__).parent.parent / "boot" / "inference_tools.md"
+            config_path = Path(__file__).parent.parent / "boot" / "inference" / "inference_tools.md"
         
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
                 content = f.read()
             
-            # 解析工具配置
             tool_pattern = r"### (\d+)\. (\w+).*?\*\*工具 ID\*\*: `(\w+)`.*?\*\*类名\*\*: `(\w+)`.*?\*\*模块路径\*\*: `([\w.]+)`"
             matches = re.findall(tool_pattern, content, re.DOTALL)
             
@@ -83,11 +82,8 @@ class GatewayMasterAgent:
                     module = importlib.import_module(module_path)
                     tool_class = getattr(module, class_name)
                     self._tools[tool_id] = tool_class
-                    print(f"[GatewayMasterAgent] Loaded tool: {tool_id} ({name})")
                 except Exception as e:
                     print(f"[GatewayMasterAgent] Failed to load tool {tool_id}: {e}")
-        
-        print(f"[GatewayMasterAgent] Total tools loaded: {len(self._tools)}")
 
     def _get_llm(self) -> OpenAICompatibleClient:
         if self._llm is None:
@@ -180,26 +176,20 @@ REASON: brief reason"""
             return "standard"
 
     def _simple_direct(self, user_input: str, session_id: str) -> str:
-        """简单直接回复模式"""
-        prompt = f"""你是 Master Agent。请直接给用户自然、友好、可执行的回答。
-优先使用正常对话语气，不要工程化术语。
-用户输入: {user_input}
-Persona (Soul): {self.boot_files.get('soul', '')}
-系统配置: {self.boot_files.get('master_agent_boot', '')}"""
-
+        """
+        简单直接回复 - 无需复杂推理工具
+        """
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
+            prompt = self._build_prompt(user_input, session_id)
             ctx = AgentContext(
-                agent_id=f"master-{session_id}-{time.time_ns()}",
+                agent_id="master",
                 role="master",
                 skills={},
             )
-            agent = CoreAgent(ctx, self._get_llm(), self.cold_memory, hot_memory=self.hot_memory, enable_tools=False)
+            agent = CoreAgent(ctx, self._get_llm(), self.cold_memory, hot_memory=self.hot_memory, enable_tools=False, quiet=True)
             result = agent.step(prompt)
             return result or "好的，我明白了。"
         except Exception as e:
-            print(f"[GatewayMasterAgent] Simple direct failed: {e}")
             return f"好的，这是我的回答：{user_input}"
 
     def _interpret_result(self, raw_result: str, user_input: str) -> str:

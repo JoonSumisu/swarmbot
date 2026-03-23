@@ -27,6 +27,7 @@ class CoreAgent:
         hot_memory: Optional[HotMemory] = None,
         session_memory: Optional[SessionMemory] = None,
         enable_tools: bool = True,
+        quiet: bool = False,
     ) -> None:
         self.ctx = ctx
         self.llm = llm
@@ -34,6 +35,7 @@ class CoreAgent:
         self.hot_memory = hot_memory
         self.session_memory = session_memory
         self.enable_tools = enable_tools
+        self.quiet = quiet
         self._tool_adapter = ToolAdapter()
         
         if hasattr(memory, "whiteboard"):
@@ -214,7 +216,8 @@ class CoreAgent:
             tools = [t for t in tools if not t["function"]["name"].startswith("skill_")]
         
         # Chain of Thought Logging
-        print(f"[CoT] Agent {self.ctx.role} starting thought process...")
+        if not self.quiet:
+            print(f"[CoT] Agent {self.ctx.role} starting thought process...")
         
         try:
             completion_kwargs: Dict[str, Any] = {"messages": messages}
@@ -230,11 +233,11 @@ class CoreAgent:
                 content = self._clean_visible_content(message.content or "")
                 tool_calls = message.tool_calls
 
-                if round_idx == 0 and content:
+                if round_idx == 0 and content and not self.quiet:
                     print(f"[CoT] {self.ctx.role} thought: {content[:200]}...")
 
                 if not tool_calls:
-                    if round_idx > 0:
+                    if round_idx > 0 and not self.quiet:
                         print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
                     break
 
@@ -262,7 +265,8 @@ class CoreAgent:
                         }
                     
                     func_args_str = tc.function.arguments
-                    print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")
+                    if not self.quiet:
+                        print(f"[CoT] {self.ctx.role} calls tool: {func_name}({func_args_str[:50]}...)")
 
                     try:
                         func_args = json.loads(func_args_str)
@@ -274,7 +278,8 @@ class CoreAgent:
                         tool_context["memory_map"] = self.memory.whiteboard
                         
                     result = self._tool_adapter.execute(func_name, func_args, context=tool_context)
-                    print(f"[CoT] Tool result: {str(result)[:100]}...")
+                    if not self.quiet:
+                        print(f"[CoT] Tool result: {str(result)[:100]}...")
                     
                     return {
                         "role": "tool",
@@ -312,20 +317,21 @@ class CoreAgent:
             else:
                 # If we exhausted max_tool_rounds, we force a final response generation
                 # based on the accumulated tool results.
-                print(f"[CoT] {self.ctx.role} exhausted tool rounds. Generating final response...")
+                if not self.quiet:
+                    print(f"[CoT] {self.ctx.role} exhausted tool rounds. Generating final response...")
                 # Remove tools to force a text response (optional, but safer to avoid infinite loops)
                 if "tools" in completion_kwargs:
                     del completion_kwargs["tools"]
                 
                 resp = self.llm.completion(**completion_kwargs)
                 content = self._clean_visible_content(resp.choices[0].message.content or "")
-                if content:
+                if content and not self.quiet:
                     print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
 
         except Exception as e:
             content = f"Error during execution: {str(e)}"
-            # Log error
-            print(f"[Agent {self.ctx.role}] Error: {e}")
+            if not self.quiet:
+                print(f"[Agent {self.ctx.role}] Error: {e}")
             
         self.memory.add_event(self.ctx.agent_id, user_input, {"kind": "user"})
         self.memory.add_event(self.ctx.agent_id, content, {"kind": "assistant"})
