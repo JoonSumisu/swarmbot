@@ -68,6 +68,20 @@ class CoreAgent:
             text = text[idx + len("</think>") :]
         return text.strip() or (content or "")
 
+    def _extract_content(self, message) -> str:
+        """从消息中提取内容（处理 reasoning 模型）"""
+        content = message.content or ""
+        if content.strip():
+            return content
+        
+        # 处理 reasoning 模型（内容在 reasoning_content 中）
+        reasoning = getattr(message, "reasoning_content", None) or ""
+        if reasoning:
+            # 从 reasoning 中提取最终回答
+            return reasoning
+        
+        return ""
+
     def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
         history = self.memory.get_context(self.ctx.agent_id, limit=8, query=user_input)
         messages: List[Dict[str, Any]] = []
@@ -218,7 +232,7 @@ class CoreAgent:
                 resp = self.llm.completion(**completion_kwargs)
                 choice = resp.choices[0]
                 message = choice.message
-                content = self._clean_visible_content(message.content or "")
+                content = self._clean_visible_content(self._extract_content(message))
                 tool_calls = message.tool_calls
 
                 if round_idx == 0 and content and not self.quiet:
@@ -312,7 +326,7 @@ class CoreAgent:
                     del completion_kwargs["tools"]
                 
                 resp = self.llm.completion(**completion_kwargs)
-                content = self._clean_visible_content(resp.choices[0].message.content or "")
+                content = self._clean_visible_content(self._extract_content(resp.choices[0].message))
                 if content and not self.quiet:
                     print(f"[CoT] {self.ctx.role} final thought: {content[:200]}...")
 

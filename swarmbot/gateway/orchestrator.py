@@ -103,76 +103,64 @@ class GatewayMasterAgent:
 
     def _think_then_decide(self, user_input: str, session_id: str = None) -> str:
         """
-        LLM 浅思考路由决策 - 先读上下文，再判断走 simple_direct 还是推理工具
-        
-        流程:
-        1. before_think: 读取 session 上下文 (whiteboard/hot_memory)
-        2. 根据 [上下文 + 问题] 送给 LLM 判断
+        路由决策 - 基于规则 + LLM 浅思考
         """
-        # === before_think: 读取上下文 ===
-        context = ""
-        try:
-            if session_id and session_id in self._sessions:
-                session = self._sessions[session_id]
-                history = session.get("history", [])
-                if history:
-                    # 获取最近5条历史
-                    recent = history[-5:] if len(history) > 5 else history
-                    context = "\n".join([
-                        f"{r.get('role', 'user')}: {r.get('content', '')[:100]}" 
-                        for r in recent
-                    ])
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Failed to read context: {e}")
+        user_lower = user_input.lower().strip()
         
-        has_context = bool(context and len(context) > 10)
+        # 规则 1：简单的问候/确认/短消息 → simple
+        simple_patterns = [
+            "你好", "hi", "hello", "嗨", "谢谢", "thanks", "再见", "拜拜",
+            "好的", "嗯", "ok", "yes", "no", "不是", "是的",
+            "你是谁", "介绍一下", "最近怎么样", "怎么样",
+        ]
         
-        # === 路由决策 ===
-        # 构建 prompt，包含上下文
-        context_section = f"\n\nRecent conversation:\n{context}\n\n" if has_context else "\n\n(No previous conversation context)\n\n"
+        if len(user_input) < 30 and any(p in user_lower for p in simple_patterns):
+            return "simple"
         
-        prompt = f"""You are a dialog classifier. Classify the user input based on the conversation context.
+        # 规则 2：非常短的消息 → simple
+        if len(user_input) < 15:
+            return "simple"
+        
+        # 规则 3：自我介绍/身份信息 → simple
+        identity_patterns = ["我是", "我叫", "我住", "我的名字", "我是一名", "我的职业"]
+        if any(p in user_input for p in identity_patterns):
+            return "simple"
+        
+        # 规则 4：询问之前说过的话 → simple（需要上下文）
+        memory_patterns = ["你还记得", "你还记得吗", "我之前说过", "我刚才说", "我的名字", "我叫什么", "我住在哪里", "我的职业"]
+        if any(p in user_input for p in memory_patterns):
+            return "simple"
+        
+        # 规则 5：简单概念问题 → simple
+        simple_question_patterns = ["什么是", "what is", "怎么", "如何", "为什么"]
+        if any(p in user_lower for p in simple_question_patterns) and len(user_input) < 50:
+            return "simple"
+        
+        # 其他情况用 LLM 判断
+        prompt = f"""Classify as SIMPLE or COMPLEX.
 
-{context_section}
-User input: {user_input}
+User: {user_input}
 
-Classification rules:
-- SIMPLE: greetings (你好，hi，嗨), thanks (谢谢), farewells (再见，拜拜), confirmations (好的，嗯), short self-intro requests (介绍一下你自己，你是谁), short identity Q&A, small talk (最近怎么样，明天见), VERY SHORT concept questions (什么是Python？ API是什么？), questions that don't need tools or deep reasoning
-- COMPLEX: concept explanations that need details, how-to questions (如何..., 怎么做...), analysis requests (分析), coding tasks (写代码，创建，解释代码), problem solving (怎么办，如何解决), LONG identity requests, deployment (部署), tasks requiring research or tools, questions that need previous context to answer
+SIMPLE: greetings, thanks, short questions, confirmations, identity info, memory recall
+COMPLEX: tasks, analysis, coding, how-to, research, deployment
 
-Important: If the question references previous conversation (like "继续", "之前", "刚才") but there IS previous context, classify as COMPLEX.
-
-First, think briefly about the classification. Then output your final answer:
-CLASSIFICATION: [SIMPLE] or CLASSIFICATION: [COMPLEX]"""
+Output: SIMPLE or COMPLEX"""
 
         try:
             llm = self._get_llm()
             response = llm.completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=1000,
+                max_tokens=100,
             )
             
             decision = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            decision_lower = decision.lower()
-            
-            # 多策略解析
-            class_match = re.search(r'CLASSIFICATION:\s*\[(SIMPLE|COMPLEX)\]', decision, re.IGNORECASE)
-            if class_match:
-                return class_match.group(1).lower()
-            
-            bracket_match = re.search(r'\[(simple|complex)\]', decision_lower)
-            if bracket_match:
-                return bracket_match.group(1)
-            
-            words = re.findall(r'\b(simple|complex)\b', decision_lower)
-            if words:
-                return words[-1]
-            
+            if "SIMPLE" in decision.upper():
+                return "simple"
             return "complex"
         except Exception as e:
-            print(f"[GatewayMasterAgent] LLM decision failed: {e}, defaulting to complex")
-            return "complex"
+            print(f"[GatewayMasterAgent] LLM decision failed: {e}, defaulting to simple")
+            return "simple"
 
     def _build_prompt(self, user_input: str, session_id: str) -> str:
         """构建 prompt，从 MemoryManager 获取上下文"""
