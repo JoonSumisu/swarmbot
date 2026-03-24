@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Literal, Optional
 from ..config import SwarmConfig
 from ..config_manager import SwarmbotConfig
 from ..llm_client import OpenAICompatibleClient
-from ..memory.qmd import QMDMemoryStore
+try:
+    from ..memory.qmd import QMDMemoryStore
+except ImportError:
+    from ..memory.cold_memory import ColdMemory as QMDMemoryStore
 from ..memory.hot_memory import HotMemory
 from ..core.agent import AgentContext, CoreAgent
 from ..loops.skill_registry import SkillRegistry

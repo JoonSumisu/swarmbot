@@ -24,6 +24,9 @@ dependencies = [
   "fastapi>=0.100.0",
   "uvicorn>=0.20.0",
   "lark-oapi>=1.0.0",
+  "graphiti-core[kuzu]>=0.28.0",
+  "nomic[local]>=3.0.0",
+  "nest-asyncio>=1.5.0",
 ]
 
 [project.scripts]

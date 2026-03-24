@@ -12,10 +12,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from ..config_manager import ProviderConfig, WORKSPACE_PATH, load_config
-from ..loops.overthinking import OverthinkingLoop
 from ..loops.overaction import OveractionLoop
-from ..memory.cold_memory import ColdMemory
 from ..swarm.manager import SwarmManager
+from ..memory.graphiti_adapter import GraphitiMemoryAdapter
 
 
 @dataclass
@@ -310,7 +309,7 @@ class AutonomousEngine:
         self.stop_event = stop_event
         self.config = load_config()
         self.workspace = WORKSPACE_PATH
-        self.cold = ColdMemory()
+        self.graphiti_memory: GraphitiMemoryAdapter | None = None
         queues_cfg = getattr(self.config.autonomous, "queues", {}) or {}
         self.monitor_queue = deque(maxlen=max(50, int(queues_cfg.get("monitor_queue_size", 1000))))
         self._action_capacity = max(20, int(queues_cfg.get("action_queue_size", 500)))
@@ -344,13 +343,8 @@ class AutonomousEngine:
         monitor = getattr(self.config.autonomous, "monitor", {}) or {}
         registry = getattr(self.config.autonomous, "bundle_registry", {}) or {}
         bundles: List[_Bundle] = []
-        mem_cfg = monitor.get("memory_organizer", {}) if isinstance(monitor, dict) else {}
         boot_cfg = monitor.get("long_task_reporter", {}) if isinstance(monitor, dict) else {}
         sys_cfg = monitor.get("system_health", {}) if isinstance(monitor, dict) else {}
-
-        mem_bundle_config = self._load_bundle_config("core.memory_foundation")
-        mem_anti_opt = self._get_anti_over_opt_params(mem_bundle_config)
-        bundles.append(_MemoryFoundationBundle("core.memory_foundation", int(mem_cfg.get("interval_minutes", 30)) * 60, mem_anti_opt))
 
         boot_bundle_config = self._load_bundle_config("core.boot_optimizer")
         boot_anti_opt = self._get_anti_over_opt_params(boot_bundle_config)
@@ -378,9 +372,37 @@ class AutonomousEngine:
         return bundles
 
     def start(self):
+        self._init_graphiti_memory()
         t = threading.Thread(target=self._loop, daemon=True)
         t.start()
         print("[Autonomous] Engine started.")
+
+    def _init_graphiti_memory(self):
+        print("[Autonomous] Initializing Graphiti memory with local embedding model...")
+        try:
+            import os
+            os.environ["GPT4ALL_NO_GPU"] = "1"
+            from nomic import embed
+            print("[Autonomous] Pre-downloading embedding model (nomic-embed-text-v1.5)...")
+            embed.text(
+                texts=["initializing nomic embed model"],
+                model="nomic-embed-text-v1.5",
+                task_type="search_document",
+                inference_mode="local",
+                device="cpu",
+            )
+            print("[Autonomous] Embedding model ready.")
+        except Exception as e:
+            print(f"[Autonomous] Warning: Failed to pre-download embedding model: {e}")
+
+        try:
+            import asyncio
+            self.graphiti_memory = GraphitiMemoryAdapter(provider_config=self.config.providers[0] if self.config.providers else None)
+            asyncio.get_event_loop().run_until_complete(self.graphiti_memory.initialize())
+            print("[Autonomous] Graphiti memory initialized.")
+        except Exception as e:
+            print(f"[Autonomous] Warning: Failed to initialize Graphiti memory: {e}")
+            self.graphiti_memory = None
 
     def stop(self):
         self.stop_event.set()
@@ -731,10 +753,18 @@ class AutonomousEngine:
             "summary": action.action_result.get("summary", ""),
         }
         self._log_diag(row)
-        self.cold.add(
-            content=f"autonomous_action plan={action.plan_id} bundle={action.bundle_id} kind={action.kind} type={action.action_type} state={action.state} next={action.decision_feedback.get('next_action')}",
-            meta={"source": "autonomous_engine", "collection": "autonomous"},
-        )
+        if self.graphiti_memory:
+            import asyncio
+            try:
+                content = f"autonomous_action plan={action.plan_id} bundle={action.bundle_id} kind={action.kind} type={action.action_type} state={action.state} next={action.decision_feedback.get('next_action')}"
+                asyncio.get_event_loop().run_until_complete(
+                    self.graphiti_memory.add_episode(
+                        content=content,
+                        metadata={"source": "autonomous_engine", "collection": "autonomous"},
+                    )
+                )
+            except Exception as e:
+                print(f"[Autonomous] Warning: Failed to log to graphiti: {e}")
         nxt = action.decision_feedback.get("next_action")
         if nxt == "retry":
             retry_item = copy.deepcopy(action)

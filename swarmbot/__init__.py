@@ -18,4 +18,7 @@ except Exception:
 from .core.agent import CoreAgent
 from .swarm.manager import SwarmManager
 from .memory.base import MemoryStore
-from .memory.qmd import QMDMemoryStore
+try:
+    from .memory.qmd import QMDMemoryStore
+except ImportError:
+    from .memory.cold_memory import ColdMemory as QMDMemoryStore

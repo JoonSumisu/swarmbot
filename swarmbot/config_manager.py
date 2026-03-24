@@ -19,6 +19,8 @@ class ProviderConfig:
     model: str = ""
     max_tokens: int = 4096
     temperature: float = 0.6
+    embedding_model: str = ""  # Internal: auto-configured by GraphitiMemoryAdapter
+    embedding_device: str = ""  # Internal: auto-detected by nomic
 
 
 @dataclass
@@ -76,7 +78,6 @@ class AutonomousConfig:
     model_routing: Dict[str, Any] = field(default_factory=dict)
     default_locked_bundles: List[str] = field(
         default_factory=lambda: [
-            "core.memory_foundation",
             "core.boot_optimizer",
             "core.system_hygiene",
             "core.bundle_governor",
