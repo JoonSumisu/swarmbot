@@ -81,7 +81,6 @@ class GraphitiMemoryAdapter:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
         from graphiti_core import Graphiti
-        from graphiti_core.driver.kuzu_driver import KuzuDriver
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
         from graphiti_core.llm_client.config import LLMConfig
 
@@ -219,43 +218,23 @@ class GraphitiMemoryAdapter:
         
         self._llm_client._generate_response = patched_generate
 
-        kuzu_driver = KuzuDriver(db=self.db_path)
-
-        from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
-        from graphiti_core.llm_client.config import LLMConfig as CrossEncoderConfig
-
-        cross_encoder_config = CrossEncoderConfig(
-            api_key="dummy",
-            model=self.provider_config.model,
-            small_model=self.provider_config.model,
-            base_url=self.provider_config.base_url or None,
-        )
-        cross_encoder = OpenAIRerankerClient(config=cross_encoder_config)
+        db_path_sqlite = self.db_path.replace(".kuzu", ".sqlite")
+        
+        print(f"[Graphiti] Using SQLite backend: {db_path_sqlite}")
+        
+        from graphiti_core.driver.sqlite_driver import SqliteDriver
+        sqlite_driver = SqliteDriver(db=db_path_sqlite)
 
         self._graphiti = Graphiti(
-            graph_driver=kuzu_driver,
+            graph_driver=sqlite_driver,
             llm_client=self._llm_client,
             embedder=self._nomic_embedder,
-            cross_encoder=cross_encoder,
         )
 
         try:
             await self._graphiti.build_indices_and_constraints()
         except Exception as e:
             print(f"[Graphiti] build_indices_and_constraints: {e}")
-
-        await self._create_fts_index()
-
-    async def _create_fts_index(self) -> None:
-        try:
-            await self._graphiti.driver.execute_query(
-                "CALL CREATE_FTS_INDEX('Entity', 'node_name_and_summary', ['name','summary'])"
-            )
-        except Exception as e:
-            if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-                pass
-            else:
-                print(f"[Graphiti] FTS index creation: {e}")
 
     def embed_text(self, texts: List[str], task_type: str = "search_document") -> List[List[float]]:
         import asyncio
@@ -351,16 +330,11 @@ class GraphitiMemoryAdapter:
     ) -> List[Dict[str, Any]]:
         """获取实体历史 - 通过查询实现"""
         try:
-            cypher = f"""
-            MATCH (e:Entity {{name: '{entity_name}'}})<-[:MENTIONS]-(r)
-            RETURN e.name as name, e.summary as summary
-            LIMIT {limit}
-            """
-            results = await self._graphiti.driver.execute_query(cypher)
+            results = await self._graphiti.search(entity_name, num_results=limit)
             return [
                 {
-                    "name": r.get("name", ""),
-                    "summary": r.get("summary", ""),
+                    "name": r.name,
+                    "summary": r.summary,
                 }
                 for r in results
             ]
@@ -385,27 +359,6 @@ class GraphitiMemoryAdapter:
         limit: int = 5,
     ) -> List[Dict[str, Any]]:
         """BM25 全文搜索 (通过 Graphiti search)"""
-        try:
-            results = await self._graphiti.search(query, num_results=limit)
-            return [
-                {
-                    "name": r.name,
-                    "summary": r.summary,
-                    "content": r.node_content,
-                    "score": r.score,
-                }
-                for r in results
-            ]
-        except Exception as e:
-            print(f"[Graphiti] BM25 search error: {e}")
-            return []
-
-    async def search_hybrid(
-        self,
-        query: str,
-        limit: int = 5,
-    ) -> List[Dict[str, Any]]:
-        """混合搜索 (Vector + BM25)"""
         return await self.search(query, limit)
 
     async def search_hybrid(
@@ -425,78 +378,26 @@ class GraphitiMemoryAdapter:
     ) -> List[Dict[str, Any]]:
         """获取实体的关联实体 (Graph Traversal)"""
         try:
-            history = await self.get_entity_history(entity_name, limit)
-            
-            cypher = f"""
-            MATCH (e:Entity {{name: '{entity_name}'}})-[r:MENTIONS]->(related:Entity)
-            RETURN related.name as name, related.summary as summary, 
-                   type(r) as relation, r.weight as weight
-            LIMIT {limit}
-            """
-            results = await self._graphiti.driver.execute_query(cypher)
+            results = await self._graphiti.search(entity_name, num_results=limit)
             
             related = [
                 {
-                    "name": r.get("name", ""),
-                    "summary": r.get("summary", ""),
-                    "relation": r.get("relation", ""),
+                    "name": r.name,
+                    "summary": r.summary,
+                    "relation": "related",
                 }
                 for r in results
+                if r.name != entity_name
             ]
             
-            if not related and history:
-                related = [
-                    {
-                        "name": h.get("name", ""),
-                        "summary": h.get("summary", ""),
-                        "relation": "historical_mention",
-                    }
-                    for h in history[:limit]
-                ]
-            
-            return related
+            return related[:limit]
         except Exception as e:
             print(f"[Graphiti] Graph traversal error: {e}")
             return []
 
     def get_stats(self) -> Dict[str, Any]:
         """获取记忆统计信息"""
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            
-            try:
-                entity_result = loop.run_until_complete(
-                    self._graphiti.driver.execute_query("MATCH (e:Entity) RETURN count(e) as count")
-                )
-                entity_count = entity_result[0].get("count", 0) if entity_result else 0
-            except:
-                entity_count = 0
-            
-            try:
-                episode_result = loop.run_until_complete(
-                    self._graphiti.driver.execute_query("MATCH (e:Episode) RETURN count(e) as count")
-                )
-                episode_count = episode_result[0].get("count", 0) if episode_result else 0
-            except:
-                episode_count = 0
-            
-            try:
-                edge_result = loop.run_until_complete(
-                    self._graphiti.driver.execute_query("MATCH ()-[r:MENTIONS]->() RETURN count(r) as count")
-                )
-                edge_count = edge_result[0].get("count", 0) if edge_result else 0
-            except:
-                edge_count = 0
-            
-            return {
-                "entities": entity_count,
-                "episodes": episode_count,
-                "relations": edge_count,
-            }
-        except Exception as e:
-            print(f"[Graphiti] Stats error: {e}")
-            return {"entities": 0, "episodes": 0, "relations": 0}
+        return {"entities": "N/A", "episodes": "N/A", "relations": "N/A"}
 
     async def close(self) -> None:
         if self._graphiti:
