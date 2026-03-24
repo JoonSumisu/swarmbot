@@ -78,6 +78,9 @@ class GatewayMasterAgent:
         if not config_path.exists():
             config_path = Path(__file__).parent.parent / "boot" / "inference" / "inference_tools.md"
         
+        print(f"[GatewayMasterAgent] Loading tools from: {config_path}")
+        print(f"[GatewayMasterAgent] Config exists: {config_path.exists()}")
+        
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -85,13 +88,18 @@ class GatewayMasterAgent:
             tool_pattern = r"### (\d+)\. (\w+).*?\*\*工具 ID\*\*: `(\w+)`.*?\*\*类名\*\*: `(\w+)`.*?\*\*模块路径\*\*: `([\w.]+)`"
             matches = re.findall(tool_pattern, content, re.DOTALL)
             
+            print(f"[GatewayMasterAgent] Found {len(matches)} tool definitions")
+            
             for _, name, tool_id, class_name, module_path in matches:
                 try:
                     module = importlib.import_module(module_path)
                     tool_class = getattr(module, class_name)
                     self._tools[tool_id] = tool_class
+                    print(f"[GatewayMasterAgent] Loaded tool: {tool_id} -> {class_name}")
                 except Exception as e:
                     print(f"[GatewayMasterAgent] Failed to load tool {tool_id}: {e}")
+        else:
+            print(f"[GatewayMasterAgent] WARNING: No inference_tools.md found!")
 
     def _get_llm(self) -> OpenAICompatibleClient:
         if self._llm is None:
@@ -365,6 +373,7 @@ Persona (Soul): {self.boot_files.get('soul', '')}
         """直接运行推理工具"""
         tool_class = self._tools.get(tool_id)
         if not tool_class:
+            print(f"[GatewayMasterAgent] Tool {tool_id} not found. Available tools: {list(self._tools.keys())}")
             return f"工具 {tool_id} 不存在"
         
         try:
