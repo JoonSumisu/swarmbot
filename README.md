@@ -1,14 +1,14 @@
-# Swarmbot v2.0.2
+# Swarmbot v2.2.0
 
 [English](README.md) | [中文](README.md)
 
-**Swarmbot (v2.0.2)** 是一个基于 **GatewayMasterAgent + CommunicationHub** 架构的多 Agent 智能系统，支持本地 OpenAI 兼容接口模型与 QMD 四层记忆系统。
+**Swarmbot (v2.2.0)** 是一个基于 **GatewayMasterAgent + CommunicationHub** 架构的多 Agent 智能系统，支持本地 OpenAI 兼容接口模型与 QMD 四层记忆系统。
 
 > **核心理念**: "All-in-One" —— 网关编排、记忆管理、工具链和多智能体推理融合在一个轻量级进程中。
 
 ---
 
-## 核心架构 (v2.0.2)
+## 核心架构 (v2.2.0)
 
 ### 架构图
 
@@ -41,15 +41,37 @@ GatewayMasterAgent    InferenceTools      AutonomousEngine
 
 ---
 
-## 记忆系统 (L1-L4 + L1.5)
+## 记忆系统 (v2.2.0)
 
-| 层级 | 类型 | 说明 |
-|------|------|------|
-| L1 | Whiteboard | 会话级临时工作区 |
-| L1.5 | SessionMemory | chat_id 索引，7天TTL |
-| L2 | HotMemory | 全局待办/计划，跨会话 |
-| L3 | WarmMemory | 每日归档日志 |
-| L4 | ColdMemory | QMD 语义向量库 |
+### 记忆层级
+
+| 层级 | 类型 | 容量 | 生命周期 | 说明 |
+|------|------|------|----------|------|
+| L1 | Whiteboard | 无限制 | Loop 结束后清除 | 单次推理内的临时工作区 |
+| L1.5 | SessionMemory | 8 轮滑动窗口 | 会话结束时/7天TTL | 会话级上下文，自动 compact 提取关键信息 |
+| L2 | HotMemory | 最多 20 条 | 持续更新 | 重要信息/待办/计划，超过容量删除最旧 |
+| L3 | WarmMemory | 无限制 | 每日归档 | 每日自动保存的会话日志，Autonomous 整理后清理 (>30天) |
+| L4 | ColdMemory | 无限制 | 永久 | QMD 语义向量库 |
+
+### 记忆流转
+
+```
+用户输入
+    │
+    ▼
+MasterAgent (simple_direct / 推理模式)
+    ├── 读取: Session + Hot + Cold
+    └── 写入: Session + Warm
+
+会话 > 8 轮 → Auto Compact
+    ├── 保留最近8轮完整对话结果
+    └── 调用 MasterAgent 提取 → 写入 Hot
+
+Autonomous memory_foundation (定时/30分钟)
+    ├── 读取: Hot + Warm
+    ├── 压缩写入: Cold (QMD)
+    └── 清理: Warm 文件 (>30天)
+```
 
 ---
 
@@ -187,13 +209,16 @@ python3 tests/smoke_test_v2.py --quick
 python3 tests/test_subswarm.py --quick
 ```
 
-### 测试结果 (v2.0.2)
+### 测试结果 (v2.2.0)
 
 | 测试 | 结果 |
 |------|------|
 | 11项检查清单 | ✅ 11/11 |
 | 冒烟测试 | ✅ 8/8 |
 | SubSwarm | ✅ 4/4 |
+| 记忆系统端到端 | ✅ 通过 |
+| Auto Compact | ✅ 触发正常 |
+| Hot 容量限制 | ✅ 20条自动清理 |
 
 ---
 
@@ -232,4 +257,4 @@ MIT License
 ## 👥 Contributors
 
 - [JoonSumisu](https://github.com/JoonSumisu) - Original Author
-- [opencode](https://opencode.ai) - v2.0.2 Architecture Enhancement
+- [opencode](https://opencode.ai) - v2.2.0 Memory System Architecture
