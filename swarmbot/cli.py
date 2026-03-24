@@ -209,10 +209,26 @@ def cmd_onboard() -> None:
     pkg_boot_dir = os.path.join(os.path.dirname(__file__), "boot")
     if os.path.exists(pkg_boot_dir):
         print(f"Initializing boot configuration in {BOOT_CONFIG_PATH}...")
+        
+        # Copy root level .md files
         for filename in os.listdir(pkg_boot_dir):
-            if filename.endswith(".md"):
-                src = os.path.join(pkg_boot_dir, filename)
-                dst = os.path.join(BOOT_CONFIG_PATH, filename)
+            src = os.path.join(pkg_boot_dir, filename)
+            dst = os.path.join(BOOT_CONFIG_PATH, filename)
+            
+            if os.path.isdir(src):
+                # Create subfolder and copy contents
+                os.makedirs(dst, exist_ok=True)
+                for subfile in os.listdir(src):
+                    if subfile.endswith(".md"):
+                        subsrc = os.path.join(src, subfile)
+                        subdst = os.path.join(dst, subfile)
+                        if not os.path.exists(subdst):
+                            shutil.copy2(subsrc, subdst)
+                            print(f"  Created {filename}/{subfile}")
+                        else:
+                            print(f"  Skipped {filename}/{subfile} (already exists)")
+            elif filename.endswith(".md"):
+                # Copy root level file
                 if not os.path.exists(dst):
                     shutil.copy2(src, dst)
                     print(f"  Created {filename}")

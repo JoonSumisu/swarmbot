@@ -9,7 +9,7 @@ from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
-from ..memory.cold_memory import ColdMemory
+from ..memory.memory_manager import MemoryManager
 from ..swarm.manager import SwarmManager
 from .base import BaseInferenceTool, InferenceResult
 from .skill_registry import SkillRegistry
@@ -23,11 +23,12 @@ class SwarmsInferenceTool(BaseInferenceTool):
 
     def _initialize(self):
         self.whiteboard = Whiteboard()
-        self.cold_memory = ColdMemory()
+        self.memory_manager = MemoryManager.get_instance()
         self.skill_registry = SkillRegistry()
 
-        self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=12000) or ""
-        self.soul = load_boot_markdown("SOUL.md", "inference_loop", max_chars=5000) or ""
+        self.inference_boot = load_boot_markdown("inference/inference_boot.md", "inference_loop", max_chars=3000) or ""
+        self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=6000) or ""
+        self.soul = load_boot_markdown("SOUL.md", "inference_loop", max_chars=3000) or ""
 
         self.llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
 
@@ -121,7 +122,7 @@ class SwarmsInferenceTool(BaseInferenceTool):
                 role="planner",
                 skills={}
             )
-            worker = CoreAgent(ctx, self.llm, self.cold_memory, enable_tools=False)
+            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=False)
             result = worker.step(prompt)
             strategy = self._extract_json(result)
             return strategy or {"architecture": "concurrent", "agent_count": 3, "roles": ["analyst", "collector", "evaluator"]}

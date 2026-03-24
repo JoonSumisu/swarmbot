@@ -9,7 +9,7 @@ from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
-from ..memory.cold_memory import ColdMemory
+from ..memory.memory_manager import MemoryManager
 from .base import BaseInferenceTool, InferenceResult
 from .skill_registry import SkillRegistry
 
@@ -24,11 +24,12 @@ class SupervisedInferenceTool(BaseInferenceTool):
 
     def _initialize(self):
         self.whiteboard = Whiteboard()
-        self.cold_memory = ColdMemory()
+        self.memory_manager = MemoryManager.get_instance()
         self.skill_registry = SkillRegistry()
 
-        self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=12000) or ""
-        self.soul = load_boot_markdown("SOUL.md", "inference_loop", max_chars=5000) or ""
+        self.inference_boot = load_boot_markdown("inference/inference_boot.md", "inference_loop", max_chars=3000) or ""
+        self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=6000) or ""
+        self.soul = load_boot_markdown("SOUL.md", "inference_loop", max_chars=3000) or ""
 
         self.llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
 
@@ -176,7 +177,7 @@ class SupervisedInferenceTool(BaseInferenceTool):
             role=role,
             skills=skills
         )
-        return CoreAgent(ctx, self.llm, self.cold_memory, enable_tools=enable_tools)
+        return CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=enable_tools)
 
     def _step_analysis(self, user_input: str) -> Dict[str, Any]:
         prompt = f"""你是分析 Agent。请分析用户输入的意图和需求。
