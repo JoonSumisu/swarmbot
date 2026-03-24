@@ -127,10 +127,11 @@ swarmbot/
 │   ├── inference_swarms.py   # Multi-worker inference
 │   └── skill_registry.py     # Skill registry
 ├── memory/                   # Memory system
-│   ├── whiteboard.py         # L1: Session-level temporary
-│   ├── hot_memory.py         # L2: Short-term persistent
+│   ├── whiteboard.py         # L1: Temporary workspace
+│   ├── session_memory.py     # L1.5: Session context (8-turn sliding window)
+│   ├── hot_memory.py        # L2: Important info (max 20 entries)
 │   ├── warm_memory.py        # L3: Daily logs
-│   └── cold_memory.py        # L4: Semantic vector DB
+│   └── cold_memory.py        # L4: Semantic vector DB (QMD)
 ├── autonomous/               # Autonomous engine
 │   └── engine.py            # BundleGovernor + self-optimization
 ├── skill_pool.py            # SkillPool (能力固化池)
@@ -149,7 +150,49 @@ swarmbot/
 
 ---
 
-## 4. Architecture (v2.0.2)
+## 4. Architecture (v2.2.0)
+
+### Memory System (记忆系统)
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  记忆层架构                                                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  L1 Whiteboard     → 单次推理内的临时工作区，Loop 完成后清除        │
+│                                                                      │
+│  L1.5 Session      → 会话级上下文，保留最近8轮完整对话               │
+│     (自动compact)     超过8轮 → 提取关键信息写入 Hot                │
+│                                                                      │
+│  L2 Hot Memory    → 重要信息/待办/计划，有容量限制(20条)            │
+│     (持续更新)        超过20条 → 删除最旧条目                        │
+│                                                                      │
+│  L3 Warm Memory   → 每日自动保存的会话日志                          │
+│     (每日归档)        被 Autonomous 整理后清除 (>30天)               │
+│                                                                      │
+│  L4 Cold Memory   → 语义知识库 (QMD)                                 │
+│     (永久存储)        由 Autonomous memory_foundation 整理写入       │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+记忆流转流程:
+```
+用户输入
+    │
+    ▼
+MasterAgent (simple_direct / 推理模式)
+    ├── 读取: Session + Hot + Cold
+    ├── 处理请求
+    └── 写入 Session + Warm
+
+会话 > 8 轮 → Compact 触发
+    ├── 保留最近8轮完整对话结果
+    └── 调用 MasterAgent 提取 → 写入 Hot (最多20条)
+
+Autonomous memory_foundation (定时)
+    ├── 读取 Hot + Warm
+    ├── 压缩写入 Cold (QMD)
+    └── 清理 Warm 文件 (>30天)
+```
 
 ### Core Flow
 ```
