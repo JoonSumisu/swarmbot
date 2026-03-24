@@ -53,3 +53,10 @@ daemon.pid
 # Test artifacts
 tests/*.log
 tests/*_report.md
+
+# Local test data (not for version control)
+data/
+reports/
+*.md.bak
+hot_memory.md
+swarmboot.md
