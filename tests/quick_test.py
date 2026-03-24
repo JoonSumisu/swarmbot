@@ -30,27 +30,45 @@ async def quick_test():
         result = await adapter.add_episode("John lives in Tokyo. He works at Google.")
         print(f"   ✅ Added: {result}")
         
-        print("4. Getting stats...")
+        print("4. Adding more complex episode...")
+        result = await adapter.add_episode(
+            "Alice created a new project called SwarmBot. "
+            "Bob likes Python. Charlie works at OpenAI."
+        )
+        print(f"   ✅ Added: {result}")
+        
+        print("5. Getting stats...")
         stats = adapter.get_stats()
         print(f"   ✅ Stats: {stats}")
         
-        print("5. Searching...")
+        print("6. Searching...")
         results = await adapter.search("Python", limit=3)
         print(f"   ✅ Found: {len(results)} results")
         for r in results:
             print(f"      - {r['name']}: {r['content'][:50]}...")
         
-        print("6. Searching entities...")
+        print("7. Searching entities...")
         results = await adapter.search("John", limit=3)
         print(f"   ✅ Found: {len(results)} results")
         for r in results:
             print(f"      - {r['name']}: {r['content'][:50]}...")
         
-        print("7. Getting related entities...")
+        print("8. Getting related entities...")
         related = await adapter.get_related_entities("John", limit=3)
         print(f"   ✅ Related: {len(related)} entities")
         for r in related:
             print(f"      - {r['name']} ({r['relation']})")
+        
+        print("9. Batch add...")
+        batch_result = await adapter.batch_add([
+            {"content": "David is a developer", "metadata": {"source": "test"}},
+            {"content": "Eve works at Microsoft", "metadata": {"source": "test"}},
+        ])
+        print(f"   ✅ Batch added: {batch_result}")
+        
+        print("10. Final stats...")
+        stats = adapter.get_stats()
+        print(f"   ✅ Final stats: {stats}")
         
         await adapter.close()
         print("\n✅ Test complete!")
