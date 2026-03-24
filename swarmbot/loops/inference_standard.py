@@ -246,11 +246,9 @@ Persona (Soul): {self.soul[:1000]}
             return "任务已完成。"
 
     def _step_organization(self, session_id: str, user_input: str, response: str):
-        try:
-            self.warm_memory.add_event(session_id, user_input, {"role": "user", "type": "standard"})
-            self.warm_memory.add_event(session_id, response, {"role": "assistant", "type": "standard"})
-        except Exception as e:
-            print(f"[StandardInferenceTool] Organization error: {e}")
+        # 不再写入 Warm Memory - 由 MasterAgent 通过 compact 统一处理写入 Warm
+        # Session Memory 已在 MasterAgent 层面写入
+        pass
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         import re

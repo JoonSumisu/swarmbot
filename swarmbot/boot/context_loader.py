@@ -6,6 +6,7 @@ from typing import Dict, List
 _ALLOWED: Dict[str, List[str]] = {
     "swarm_manager": ["swarmboot.md", "masteragentboot.md", "SOUL.md"],
     "inference_loop": ["swarmboot.md", "SOUL.md"],
+    "master_agent": ["SOUL.md", "IDENTITY.md", "USER.md", "masteragentboot.md", "BOOT_INDEX.md"],
 }
 
 

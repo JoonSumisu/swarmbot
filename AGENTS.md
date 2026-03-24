@@ -1,4 +1,4 @@
-# AGENTS.md - Swarmbot Development Guide (v2.0.2)
+# AGENTS.md - Swarmbot Development Guide (v2.2.0)
 
 This document provides guidelines for agents working on the Swarmbot codebase.
 

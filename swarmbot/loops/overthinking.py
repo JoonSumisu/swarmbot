@@ -100,7 +100,37 @@ class OverthinkingLoop:
                 print(f"[Overthinking] No JSON found in response: {res[:100]}...")
         except Exception as e:
             print(f"[Overthinking] Failed to parse compression result: {e}")
+        
+        # 4. Clean up old Warm Memory files (older than 30 days)
+        self._cleanup_old_warm_files()
+        
         self._run_external_checks()
+
+    def _cleanup_old_warm_files(self, keep_days: int = 30):
+        """Delete warm memory files older than keep_days"""
+        try:
+            from datetime import datetime, timedelta
+            cutoff = datetime.now() - timedelta(days=keep_days)
+            
+            warm_files = self.warm_memory.list_files()
+            deleted_count = 0
+            
+            for f in warm_files:
+                # Parse date from filename (YYYY-MM-DD.md)
+                try:
+                    date_str = f.stem  # filename without extension
+                    file_date = datetime.strptime(date_str, "%Y-%m-%d")
+                    if file_date < cutoff:
+                        f.unlink()
+                        deleted_count += 1
+                except ValueError:
+                    # Not a date format, skip
+                    continue
+            
+            if deleted_count > 0:
+                print(f"[Overthinking] Cleaned up {deleted_count} old warm memory files")
+        except Exception as e:
+            print(f"[Overthinking] Failed to cleanup warm files: {e}")
 
     def _load_ext_state(self) -> dict:
         try:

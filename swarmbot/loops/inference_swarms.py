@@ -169,12 +169,8 @@ Persona (Soul): {self.soul[:1000]}
             return str(swarm_result.get("result", ""))
 
     def _step_organization(self, session_id: str, user_input: str, response: str):
-        """写入记忆"""
-        try:
-            self.warm_memory.add_event(session_id, user_input, {"role": "user", "type": "swarms"})
-            self.warm_memory.add_event(session_id, response, {"role": "assistant", "type": "swarms"})
-        except Exception as e:
-            print(f"[SwarmsInferenceTool] Organization error: {e}")
+        # 不再写入 Warm Memory - 由 MasterAgent 通过 compact 统一处理写入 Warm
+        pass
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         import re

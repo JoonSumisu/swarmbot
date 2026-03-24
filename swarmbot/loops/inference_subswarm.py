@@ -203,12 +203,8 @@ class SubSwarmInferenceTool(BaseInferenceTool):
             return "任务完成。"
 
     def _step_organization(self, session_id: str, user_input: str, response: str):
-        """写入记忆"""
-        try:
-            self.warm_memory.add_event(session_id, user_input, {"role": "user", "type": "subswarm"})
-            self.warm_memory.add_event(session_id, response, {"role": "assistant", "type": "subswarm"})
-        except Exception as e:
-            print(f"[SubSwarmInferenceTool] Organization error: {e}")
+        # 不再写入 Warm Memory - 由 MasterAgent 通过 compact 统一处理写入 Warm
+        pass
 
     def _extract_json(self, text: str) -> Any:
         import re

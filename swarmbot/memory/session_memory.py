@@ -269,24 +269,54 @@ class SessionMemory:
         if chat_id in self._cache:
             del self._cache[chat_id]
 
-    def compact_session(self, chat_id: str, keep_turns: int = 3) -> None:
-        """Compact session memory - keep only recent turns"""
+    def compact_session(self, chat_id: str, keep_turns: int = 8) -> Dict[str, Any]:
+        """
+        Compact session memory - keep only recent turns.
+        Returns archived turns for MasterAgent to process and write to warm.
+        Only keeps the final translated results, not reasoning process.
+        """
         session = self._load_session(chat_id)
 
         old_turns = session["dialogue_history"]
-        if len(old_turns) > keep_turns:
-            old_turns_to_archive = old_turns[:-keep_turns]
-            session["dialogue_history"] = old_turns[-keep_turns:]
+        if len(old_turns) <= keep_turns:
+            return {"archived": [], "kept": len(old_turns)}
 
-            if old_turns_to_archive:
-                last_archived = old_turns_to_archive[-1]
-                summary = f"之前完成了：{last_archived.get('user_input', '')[:50]}"
-                if summary not in session["key_facts"]:
-                    session["key_facts"].append(summary)
+        # Separate archived from kept
+        archived_turns = old_turns[:-keep_turns]
+        kept_turns = old_turns[-keep_turns:]
 
-            session["metadata"]["last_access"] = time.time()
-            session["metadata"]["turn_count"] = len(session["dialogue_history"])
-            self._save_session(chat_id, session)
+        # Extract only final results (not reasoning process)
+        archived_results = []
+        for turn in archived_turns:
+            archived_results.append({
+                "user_input": turn.get("user_input", ""),
+                "assistant_response": turn.get("assistant_response", ""),
+                "timestamp": turn.get("timestamp", 0)
+            })
+
+        # Update session to keep only recent turns
+        session["dialogue_history"] = kept_turns
+        session["metadata"]["last_access"] = time.time()
+        session["metadata"]["turn_count"] = len(kept_turns)
+        self._save_session(chat_id, session)
+
+        return {
+            "archived": archived_results,
+            "kept": len(kept_turns),
+            "chat_id": chat_id
+        }
+
+    def auto_compact_if_needed(self, chat_id: str, threshold: int = 8) -> Dict[str, Any]:
+        """
+        Auto compact if turn count exceeds threshold.
+        Returns compact result if triggered, otherwise empty dict.
+        """
+        session = self._load_session(chat_id)
+        turn_count = session["metadata"].get("turn_count", 0)
+        
+        if turn_count > threshold:
+            return self.compact_session(chat_id, keep_turns=threshold)
+        return {}
 
     def list_sessions(self) -> List[Dict[str, Any]]:
         """List all active sessions with metadata"""
