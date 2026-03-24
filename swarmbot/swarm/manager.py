@@ -9,8 +9,7 @@ from typing import Any, Dict, List, Literal, Optional
 from ..config import SwarmConfig
 from ..config_manager import SwarmbotConfig
 from ..llm_client import OpenAICompatibleClient
-from ..memory.qmd import QMDMemoryStore
-from ..memory.hot_memory import HotMemory
+from ..memory.memory_manager import MemoryManager
 from ..core.agent import AgentContext, CoreAgent
 from ..loops.skill_registry import SkillRegistry
 from ..boot.context_loader import load_boot_markdown
@@ -31,15 +30,7 @@ class SwarmSession:
         self.session_id = session_id
         self.config = config
         self.llm = llm_client
-        self.memory = QMDMemoryStore()
-        # Initialize Hot Memory (Global/Shared for now per user instruction "Global unique")
-        # But we pass workspace path from somewhere. config has it?
-        # SwarmConfig usually doesn't have workspace_path, SwarmbotConfig does.
-        # We'll assume default workspace or try to find it.
-        # Actually SwarmConfig doesn't have workspace_path in definition usually.
-        # Let's check config object.
-        workspace = getattr(config, "workspace_path", os.path.expanduser("~/.swarmbot/workspace"))
-        self.hot_memory = HotMemory(workspace)
+        self.memory = MemoryManager.get_instance()
         self.skill_registry = SkillRegistry()
         
         self.agents: List[SwarmAgentSlot] = []
@@ -52,13 +43,11 @@ class SwarmSession:
         agent_slot.agent.ctx.skills = self.skill_registry.get_skills(role)
 
     def _init_default_agents(self) -> None:
-        # Default initialization based on count
         roles = ["planner", "coder", "critic", "summarizer", "researcher", "analyst", "writer", "reviewer"]
         for idx in range(self.config.max_agents):
             role = roles[idx] if idx < len(roles) else f"worker-{idx+1}"
             ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
-            # Agents share the session's memory store
-            agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory, hot_memory=self.hot_memory)
+            agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
             slot = SwarmAgentSlot(agent=agent, weight=1.0)
             self._apply_skills(slot, role)
             self.agents.append(slot)
@@ -69,12 +58,8 @@ class SwarmSession:
             for i in range(current_count, target_count):
                 role = f"worker-{i+1}"
                 ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
-                agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory, hot_memory=self.hot_memory)
+                agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
                 slot = SwarmAgentSlot(agent=agent, weight=1.0)
-                # Apply default skills for workers? Workers might be generic.
-                # If role is generic 'worker', maybe give them basic tools?
-                # For now, let them be tool-less unless assigned specific role later.
-                # Or give them python_exec by default?
                 self.agents.append(slot)
         elif target_count < current_count:
             self.agents = self.agents[:target_count]

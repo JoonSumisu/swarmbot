@@ -34,10 +34,12 @@ class InferenceResult:
 
 
 class BaseInferenceTool(ABC):
-    def __init__(self, config, workspace_path: str, session_memory=None):
+    def __init__(self, config, workspace_path: str, session_memory=None, hub=None, memory_manager=None):
         self.config = config
         self.workspace_path = workspace_path
         self.session_memory = session_memory
+        self.hub = hub
+        self.memory_manager = memory_manager
         self._initialize()
 
     def _initialize(self):

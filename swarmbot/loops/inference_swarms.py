@@ -9,8 +9,6 @@ from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
-from ..memory.hot_memory import HotMemory
-from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
 from ..swarm.manager import SwarmManager
 from .base import BaseInferenceTool, InferenceResult
@@ -20,20 +18,19 @@ from .skill_registry import SkillRegistry
 class SwarmsInferenceTool(BaseInferenceTool):
     """
     多Worker协作推理工具 - 使用Swarm框架进行多角色分析
+    结果通过 Hub 发送，由 MasterAgent 翻译回复
     """
 
     def _initialize(self):
         self.whiteboard = Whiteboard()
-        self.hot_memory = HotMemory(self.workspace_path)
-        self.warm_memory = WarmMemory(self.workspace_path)
         self.cold_memory = ColdMemory()
         self.skill_registry = SkillRegistry()
-        
+
         self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=12000) or ""
         self.soul = load_boot_markdown("SOUL.md", "inference_loop", max_chars=5000) or ""
-        
+
         self.llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
-        
+
         self.completed_stages: set = set()
         self.is_suspended = False
 
@@ -52,28 +49,48 @@ class SwarmsInferenceTool(BaseInferenceTool):
             self.whiteboard.clear()
             self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
             self.whiteboard.update("input_prompt", user_input)
-            
+
             print(f"[SwarmsInferenceTool] Start: {user_input[:50]}...")
-            
+
             # 2. 决策 Swarm 策略
             strategy = self._decide_swarm_strategy(user_input)
             self.whiteboard.update("swarm_strategy", strategy)
-            
+
             # 3. 执行 Swarm
             swarm_result = self._execute_swarm(user_input, strategy)
-            
-            # 4. 整合结果
-            response = self._integrate_results(user_input, swarm_result)
-            
-            # 5. 写入记忆
-            self._step_organization(session_id, user_input, response)
-            
+
+            # 4. 发送结果到 Hub
+            result_content = json.dumps({
+                "strategy": strategy,
+                "swarm_result": swarm_result,
+                "success": swarm_result.get("success", False),
+            }, ensure_ascii=False)
+
+            success = swarm_result.get("success", False)
+
+            if self.hub:
+                self.hub.send_task_result(
+                    result=result_content,
+                    session_id=session_id,
+                    success=success,
+                )
+                print(f"[SwarmsInferenceTool] Result sent to Hub")
+
+            self.whiteboard.clear()
+
             print(f"[SwarmsInferenceTool] Done")
-            
-            return InferenceResult(success=True, content=response)
-            
+
+            return InferenceResult(success=success, content=result_content)
+
         except Exception as e:
             print(f"[SwarmsInferenceTool] Error: {e}")
+            if self.hub:
+                self.hub.send_task_result(
+                    result=str(e),
+                    session_id=session_id,
+                    success=False,
+                    error=str(e),
+                )
             return InferenceResult(success=False, error=str(e))
 
     def _decide_swarm_strategy(self, user_input: str) -> Dict[str, Any]:
@@ -99,8 +116,6 @@ class SwarmsInferenceTool(BaseInferenceTool):
 }}"""
 
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
             ctx = AgentContext(
                 agent_id=f"strategy-{time.time_ns()}",
                 role="planner",
@@ -118,16 +133,15 @@ class SwarmsInferenceTool(BaseInferenceTool):
         """执行 Swarm 多Worker协作"""
         architecture = strategy.get("architecture", "concurrent")
         agent_count = strategy.get("agent_count", 3)
-        
-        # 使用 SwarmManager
+
         try:
             manager = SwarmManager.from_swarmbot_config(self.config)
             session = manager.get_session(f"swarm-{int(time.time())}")
             session.architecture = architecture
             session.resize_swarm(max(1, agent_count))
-            
+
             result = manager.chat(user_input=user_input, session_id=session.session_id)
-            
+
             return {
                 "architecture": architecture,
                 "agent_count": agent_count,
@@ -142,35 +156,6 @@ class SwarmsInferenceTool(BaseInferenceTool):
                 "result": f"Swarm执行失败: {str(e)}",
                 "success": False
             }
-
-    def _integrate_results(self, user_input: str, swarm_result: Dict) -> str:
-        """整合 Swarm 结果"""
-        prompt = f"""你是 Master Agent。多个Worker已经完成了分析，请整合结果。
-
-用户输入: {user_input}
-Swarm结果: {json.dumps(swarm_result, ensure_ascii=False)}
-Persona (Soul): {self.soul[:1000]}
-
-请直接输出整合后的最终回答。"""
-
-        try:
-            from ..core.agent import CoreAgent, AgentContext
-            
-            ctx = AgentContext(
-                agent_id=f"integrate-{time.time_ns()}",
-                role="master",
-                skills={}
-            )
-            worker = CoreAgent(ctx, self.llm, self.cold_memory, enable_tools=False)
-            result = worker.step(prompt)
-            return result or str(swarm_result.get("result", ""))
-        except Exception as e:
-            print(f"[SwarmsInferenceTool] Integration error: {e}")
-            return str(swarm_result.get("result", ""))
-
-    def _step_organization(self, session_id: str, user_input: str, response: str):
-        # 不再写入 Warm Memory - 由 MasterAgent 通过 compact 统一处理写入 Warm
-        pass
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         import re

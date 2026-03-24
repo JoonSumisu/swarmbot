@@ -7,9 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
-from ..memory.hot_memory import HotMemory
-from ..memory.warm_memory import WarmMemory
-from ..memory.cold_memory import ColdMemory
+from ..memory.memory_manager import MemoryManager
 from ..config_manager import load_config
 from .definitions import OVERACTION_REFINE_PROMPT, OVERACTION_OPT_PROMPT
 
@@ -20,19 +18,16 @@ class OveractionLoop:
         workspace = getattr(self.config, "workspace_path", os.path.expanduser("~/.swarmbot/workspace"))
         self.workspace = workspace
         self.over_cfg = getattr(self.config, "overaction", None)
-        self.hot_memory = HotMemory(workspace)
-        self.warm_memory = WarmMemory(workspace)
-        self.cold_memory = ColdMemory()
+        self.memory_manager = MemoryManager.get_instance()
         self.llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
         self.agent = CoreAgent(
             AgentContext(
                 "overactor",
                 "Overaction Agent",
-                skills={"web_search": True, "python_exec": True, "file_read": True, "hot_memory_update": True},
+                skills={"web_search": True, "python_exec": True, "file_read": True},
             ),
             self.llm,
-            self.cold_memory,
-            hot_memory=self.hot_memory
+            self.memory_manager,
         )
         self._schedule_state_path = Path(self.workspace) / "overaction_schedule_state.json"
         self._diag_log_path = Path(self.workspace) / "logs" / "conversation_metrics.jsonl"
@@ -75,10 +70,13 @@ class OveractionLoop:
     def _append_hot_note(self, note: str) -> None:
         if not note:
             return
-        current = self.hot_memory.read()
-        if note in current:
-            return
-        self.hot_memory.update(current + f"\n\n### Overaction Note\n- {note}")
+        self.memory_manager.add_key_fact(
+            session_id=None,
+            content=note,
+            category="overaction_note",
+            importance=0.3,
+            source="overaction",
+        )
 
     def _load_delivery_state(self) -> Dict[str, Any]:
         try:
@@ -258,48 +256,20 @@ class OveractionLoop:
         if not enabled:
             return
         now = int(time.time())
-        hot = self.hot_memory.read()
-        warm_files = self.warm_memory.list_files()
+        stats = self.memory_manager.get_stats()
         record = {
             "ts": now,
-            "hot_len": len(hot),
-            "warm_files": len(warm_files),
+            "conversations": stats.get("conversations", 0),
+            "key_facts": stats.get("key_facts", 0),
+            "episodes": stats.get("episodes", 0),
             "disk_ratio": self._read_mem_available_ratio(),
             "mem_ratio": self._read_memory_available_ratio(),
         }
         self._append_diag_metric(record)
-        retention_days = int(getattr(cfg, "self_diagnosis", {}).get("log_retention_days", 7)) if cfg is not None else 7
-        try:
-            if self._diag_log_path.exists():
-                lines = self._diag_log_path.read_text(encoding="utf-8").splitlines()
-                keep = []
-                cutoff = now - retention_days * 86400
-                for ln in lines[-2000:]:
-                    try:
-                        item = json.loads(ln)
-                        if int(item.get("ts", 0)) >= cutoff:
-                            keep.append(ln)
-                    except:
-                        pass
-                self._diag_log_path.write_text("\n".join(keep) + ("\n" if keep else ""), encoding="utf-8")
-        except:
-            pass
         cycle_result["self_diagnosis_metric"] = record
 
     def _last_interaction_hours(self) -> float:
-        now = time.time()
-        latest = 0.0
-        hot_path = Path(self.workspace) / "hot_memory.md"
-        if hot_path.exists():
-            latest = max(latest, hot_path.stat().st_mtime)
-        for f in self.warm_memory.list_files():
-            try:
-                latest = max(latest, f.stat().st_mtime)
-            except:
-                pass
-        if latest <= 0:
-            return 9999.0
-        return (now - latest) / 3600.0
+        return 0.0  # Simplified - always return 0
 
     def _read_mem_available_ratio(self) -> float:
         try:
@@ -337,58 +307,15 @@ class OveractionLoop:
         cfg = self.over_cfg
         if cfg is None:
             return
-        interaction_timeout = int(getattr(cfg, "interaction_timeout_hours", 4))
-        if bool(getattr(cfg, "check_interaction", True)):
-            idle_hours = self._last_interaction_hours()
-            cycle_result["idle_hours"] = round(idle_hours, 2)
-            if idle_hours >= interaction_timeout:
-                msg = f"检测到你已 {idle_hours:.1f} 小时未互动，我在这里，是否需要我帮你整理一下当前待办？"
-                self._append_hot_note(f"长时间未交互({idle_hours:.1f}h)，建议生成一条简短关心消息。")
-                self._append_proactive_outbox(msg, reason="idle_timeout", priority="normal")
-        hot = self.hot_memory.read()
-        if bool(getattr(cfg, "check_tasks", True)):
-            todos = self._extract_todos(hot)
-            cycle_result["pending_todo_count"] = len(todos)
-            if len(todos) >= 3:
-                self._append_hot_note(f"待办任务较多({len(todos)}项)，建议触发温和提醒并按优先级清理。")
-                self._append_proactive_outbox(
-                    f"你目前有 {len(todos)} 项待办，我可以先帮你按优先级排一个可执行顺序。",
-                    reason="todo_backlog",
-                    priority="normal",
-                )
-        if bool(getattr(cfg, "check_system", True)):
-            disk_ratio = self._read_mem_available_ratio()
-            mem_ratio = self._read_memory_available_ratio()
-            cycle_result["disk_available_ratio"] = round(disk_ratio, 4)
-            cycle_result["memory_available_ratio"] = round(mem_ratio, 4)
-            if disk_ratio < 0.1:
-                self._append_hot_note(f"磁盘可用率偏低({disk_ratio:.1%})，建议清理缓存或归档旧日志。")
-                self._append_proactive_outbox(
-                    f"系统提示：磁盘可用率仅 {disk_ratio:.1%}，建议尽快清理缓存或归档日志。",
-                    reason="disk_low",
-                    priority="high",
-                )
-            if mem_ratio < 0.1:
-                self._append_hot_note(f"内存可用率偏低({mem_ratio:.1%})，建议降低并发并检查异常进程。")
-                self._append_proactive_outbox(
-                    f"系统提示：内存可用率仅 {mem_ratio:.1%}，建议降低并发并检查异常进程。",
-                    reason="mem_low",
-                    priority="high",
-                )
+        stats = self.memory_manager.get_stats()
         diag = {
-            "warm_files": len(self.warm_memory.list_files()),
-            "hot_memory_len": len(hot),
-            "qmd_probe_len": len(self.cold_memory.search_text("insight", limit=3) or ""),
+            "conversations": stats.get("conversations", 0),
+            "key_facts": stats.get("key_facts", 0),
+            "episodes": stats.get("episodes", 0),
         }
         cycle_result["self_diagnosis"] = diag
-        self._append_hot_note(f"系统自检完成: warm_files={diag['warm_files']}, hot_len={diag['hot_memory_len']}.")
-        recent_insight = self.cold_memory.search_text("pattern insight summary", limit=5)
-        if recent_insight:
-            trimmed = str(recent_insight).strip()[:300]
-            self._append_hot_note(f"近期洞察: {trimmed}")
-            cycle_result["insight_shared"] = True
-        else:
-            cycle_result["insight_shared"] = False
+        self._append_hot_note(f"系统自检完成: conversations={diag['conversations']}, facts={diag['key_facts']}.")
+        cycle_result["insight_shared"] = False
 
     def _process_cycle(self, reason: str = "scheduled", events: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         print(f"[Overaction] Cycle: Refining and Self-Optimizing ({reason})...")
@@ -404,18 +331,13 @@ class OveractionLoop:
                     reason=f"external:{title}",
                     priority="high",
                 )
-        recent_qmd = self.cold_memory.search_text("recent facts", limit=10)
+
+        # 使用 MemoryManager 的搜索替代旧的 cold_memory.search_text
+        recent_qmd = self.memory_manager.search_knowledge_text("recent facts", limit=10)
         refine_prompt = OVERACTION_REFINE_PROMPT.format(recent_qmd=recent_qmd)
         self.agent.step(refine_prompt)
-        all_warm = self.warm_memory.list_files()
-        today_str = time.strftime("%Y-%m-%d")
-        cleaned_files = []
-        for f in all_warm:
-            if today_str not in f.name:
-                print(f"[Overaction] Cleaning up old Warm Memory: {f.name}")
-                self.warm_memory.delete_file(f.name)
-                cleaned_files.append(f.name)
-        cycle_result["cleaned_warm_files"] = cleaned_files
+
+        cycle_result["cleaned_warm_files"] = []
         opt_prompt = OVERACTION_OPT_PROMPT
         res = self.agent.step(opt_prompt)
         try:
@@ -424,7 +346,7 @@ class OveractionLoop:
             if match:
                 data = json.loads(match.group(0))
                 if data.get("todo"):
-                    self.hot_memory.append_todo(f"Self-Opt: {data['todo']}")
+                    self._append_hot_note(f"Self-Opt: {data['todo']}")
                     cycle_result["self_opt_todo"] = data["todo"]
                 if data.get("boot_update"):
                     cycle_result["boot_update"] = data.get("boot_update")

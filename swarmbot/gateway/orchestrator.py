@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -11,11 +12,8 @@ from typing import Any, Dict, List, Optional
 from ..boot.context_loader import load_boot_markdown
 from ..config_manager import load_config
 from ..llm_client import OpenAICompatibleClient
-from ..memory.hot_memory import HotMemory
-from ..memory.warm_memory import WarmMemory
-from ..memory.cold_memory import ColdMemory
+from ..memory.memory_manager import MemoryManager
 from ..memory.whiteboard import Whiteboard
-from ..memory.session_memory import SessionMemory
 from .communication_hub import CommunicationHub, HubMessage, MessageSender, MessageType
 from ..loops.base import BaseInferenceTool, InferenceResult
 from ..core.agent import AgentContext, CoreAgent
@@ -36,27 +34,31 @@ class GatewayMasterAgent:
     def __init__(self, workspace_path: str, config=None):
         self.workspace_path = Path(workspace_path)
         self.config = config or load_config()
-        
+
         # Hub 通信
         self.hub = CommunicationHub(workspace_path)
-        
-        # 加载 Boot 和记忆
-        self._load_boot_and_memory()
-        
+
+        # 统一记忆管理器
+        self.memory_manager = MemoryManager(str(self.workspace_path / "memory.sqlite"))
+        self.whiteboard = Whiteboard()
+
+        # 加载 Boot
+        self._load_boot()
+
         # 工具注册表
         self._tools: Dict[str, type[BaseInferenceTool]] = {}
         self._load_tools()
-        
-        # 会话上下文
+
+        # 会话上下文（运行时状态，不持久化）
         self._sessions: Dict[str, Dict[str, Any]] = {}
-        
+
         # LLM 客户端
         self._llm: Optional[OpenAICompatibleClient] = None
 
-    def _load_boot_and_memory(self):
+    def _load_boot(self):
         """加载 MasterAgent 专用 boot 文件"""
         boot_dir = Path(__file__).parent.parent / "boot" / "master"
-        
+
         self.boot_files = {
             "soul": load_boot_markdown("SOUL.md", "master_agent", max_chars=5000) or "",
             "identity": load_boot_markdown("IDENTITY.md", "master_agent", max_chars=2000) or "",
@@ -64,13 +66,6 @@ class GatewayMasterAgent:
             "master_agent_boot": load_boot_markdown("masteragentboot.md", "master_agent", max_chars=3000) or "",
             "boot_index": load_boot_markdown("../BOOT_INDEX.md", "master_agent", max_chars=3000) or "",
         }
-        
-        # 记忆系统
-        self.session_memory = SessionMemory(str(self.workspace_path))
-        self.whiteboard = Whiteboard()
-        self.hot_memory = HotMemory(self.workspace_path)
-        self.warm_memory = WarmMemory(self.workspace_path)
-        self.cold_memory = ColdMemory()
 
     def _load_tools(self):
         """从 inference_tools.md 加载工具配置并动态导入"""
@@ -180,28 +175,12 @@ CLASSIFICATION: [SIMPLE] or CLASSIFICATION: [COMPLEX]"""
             return "complex"
 
     def _build_prompt(self, user_input: str, session_id: str) -> str:
-        """构建 simple_direct 的 prompt，包含上下文"""
-        # 读取 Session 历史
-        session_context = ""
-        try:
-            session_data = self.session_memory.get_context(session_id, max_turns=5)
-            recent = session_data.get("recent_dialogue", [])
-            if recent:
-                turns = []
-                for turn in recent:
-                    turns.append(f"User: {turn.get('user_input', '')}")
-                    turns.append(f"Assistant: {turn.get('assistant_response', '')}")
-                session_context = "\n".join(turns)
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Failed to read session context: {e}")
-        
-        # 读取 Hot Memory
-        hot_context = ""
-        try:
-            hot_context = self.hot_memory.read()[:1000]
-        except Exception as e:
-            pass
-        
+        """构建 prompt，从 MemoryManager 获取上下文"""
+        # 从 memory_manager 获取上下文
+        context = self.memory_manager.get_recent_context(session_id, max_turns=5)
+        facts = self.memory_manager.get_important_facts_text(session_id, limit=5)
+        related = self.memory_manager.search_knowledge_text(user_input, limit=3)
+
         prompt = f"""你是 Master Agent。请直接给用户自然、友好、可执行的回答。
 优先使用正常对话语气，不要工程化术语。
 
@@ -210,14 +189,17 @@ CLASSIFICATION: [SIMPLE] or CLASSIFICATION: [COMPLEX]"""
 用户输入: {user_input}
 
 """
-        if session_context:
-            prompt += f"最近对话:\n{session_context}\n\n"
-        
-        if hot_context:
-            prompt += f"重要记忆:\n{hot_context}\n\n"
-        
+        if context:
+            prompt += f"最近对话:\n{context}\n\n"
+
+        if facts:
+            prompt += f"重要事实:\n{facts}\n\n"
+
+        if related:
+            prompt += f"相关知识:\n{related}\n\n"
+
         prompt += f"Persona (Soul): {self.boot_files.get('soul', '')}\n"
-        
+
         return prompt
 
     def _select_tool(self, user_input: str) -> str:
@@ -272,33 +254,30 @@ REASON: brief reason"""
                 role="master",
                 skills={},
             )
-            agent = CoreAgent(ctx, self._get_llm(), self.cold_memory, hot_memory=self.hot_memory, enable_tools=False, quiet=True)
+            agent = CoreAgent(ctx, self._get_llm(), self.memory_manager, enable_tools=False, quiet=True)
             result = agent.step(prompt)
-            
+
             response = result or "好的，我明白了。"
-            
-            # 写入 Session Memory
-            self.session_memory.add_turn(session_id, user_input, response)
-            
-            # 写入 Warm Memory (每日日志)
-            self.warm_memory.add_event(
-                session_id,
-                user_input,
-                {"role": "user", "type": "simple"}
-            )
-            self.warm_memory.add_event(
-                session_id,
-                response,
-                {"role": "assistant", "type": "simple"}
-            )
-            
-            # 检查并触发 auto compact
-            compact_result = self.session_memory.auto_compact_if_needed(session_id)
-            if compact_result.get("archived"):
-                self._process_compact_archive(compact_result, session_id)
-            
+
+            # 实时写入 MemoryManager
+            self.memory_manager.add_turn(session_id, "user", user_input, tool_used="simple")
+            self.memory_manager.add_turn(session_id, "assistant", response, tool_used="simple")
+
+            # 异步提取事实（后台线程）
+            threading.Thread(
+                target=self.memory_manager.extract_facts_from_turn,
+                args=(session_id, user_input, response),
+                daemon=True,
+            ).start()
+
+            # Compact 检查（每 30 轮触发）
+            turn_count = self.memory_manager._get_turn_count(session_id)
+            if turn_count >= 30:
+                self.memory_manager.compact(session_id, keep_turns=10)
+
             return response
         except Exception as e:
+            print(f"[GatewayMasterAgent] Simple direct error: {e}")
             return f"好的，这是我的回答：{user_input}"
 
     def _interpret_result(self, raw_result: str, user_input: str) -> str:
@@ -312,14 +291,12 @@ Persona (Soul): {self.boot_files.get('soul', '')}
 请直接输出加工后的回答，不需要提及推理过程。"""
 
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
             ctx = AgentContext(
                 agent_id=f"master-interpret-{time.time_ns()}",
                 role="master",
                 skills={},
             )
-            agent = CoreAgent(ctx, self._get_llm(), self.cold_memory, hot_memory=self.hot_memory, enable_tools=False)
+            agent = CoreAgent(ctx, self._get_llm(), self.memory_manager, enable_tools=False)
             result = agent.step(prompt)
             return result or raw_result
         except Exception as e:
@@ -370,49 +347,64 @@ Persona (Soul): {self.boot_files.get('soul', '')}
         return self._run_inference_tool(tool_id, user_input, session_id)
     
     def _run_inference_tool(self, tool_id: str, user_input: str, session_id: str) -> str:
-        """直接运行推理工具"""
+        """通过 Hub 运行推理工具"""
         tool_class = self._tools.get(tool_id)
         if not tool_class:
             print(f"[GatewayMasterAgent] Tool {tool_id} not found. Available tools: {list(self._tools.keys())}")
             return f"工具 {tool_id} 不存在"
-        
+
         try:
+            # 传入 hub 和 memory_manager
             tool = tool_class(
-                self.config, 
+                self.config,
                 str(self.workspace_path),
-                session_memory=self.session_memory
+                hub=self.hub,
+                memory_manager=self.memory_manager,
             )
-            result = tool.run(user_input, session_id=session_id)
-            
-            if result:
-                raw_content = result.content if hasattr(result, 'content') else str(result)
-                
+
+            # 异步启动推理工具
+            thread = threading.Thread(
+                target=tool.run,
+                args=(user_input, session_id),
+                daemon=True,
+            )
+            thread.start()
+
+            # 从 Hub 等待结果
+            result_msg = self.hub.recv(
+                recipient=MessageSender.MASTER_AGENT,
+                session_id=session_id,
+                blocking=True,
+                timeout=120,
+            )
+
+            if result_msg:
+                raw_content = result_msg.content
+
                 # 演绎结果
                 interpreted = self._interpret_result(raw_content, user_input)
-                
-                # 写入 Session Memory
-                self.session_memory.add_turn(session_id, user_input, interpreted)
-                
-                # 写入 Warm Memory (每日日志)
-                self.warm_memory.add_event(
-                    session_id,
-                    user_input,
-                    {"role": "user", "type": "inference"}
-                )
-                self.warm_memory.add_event(
-                    session_id,
-                    interpreted,
-                    {"role": "assistant", "type": "inference"}
-                )
-                
-                # 检查并触发 auto compact
-                compact_result = self.session_memory.auto_compact_if_needed(session_id)
-                if compact_result.get("archived"):
-                    self._process_compact_archive(compact_result, session_id)
-                
+
+                # 实时写入 MemoryManager
+                self.memory_manager.add_turn(session_id, "user", user_input, tool_used=tool_id)
+                self.memory_manager.add_turn(session_id, "assistant", interpreted, tool_used=tool_id)
+
+                # 异步提取事实
+                threading.Thread(
+                    target=self.memory_manager.extract_facts_from_turn,
+                    args=(session_id, user_input, interpreted),
+                    daemon=True,
+                ).start()
+
+                # Compact 检查
+                turn_count = self.memory_manager._get_turn_count(session_id)
+                if turn_count >= 30:
+                    self.memory_manager.compact(session_id, keep_turns=10)
+
                 return interpreted
-            return "工具执行返回为空"
+
+            return "工具执行超时"
         except Exception as e:
+            print(f"[GatewayMasterAgent] Inference tool error: {e}")
             return f"工具执行失败: {e}"
 
     def _handle_human_in_loop(self, suspend_msg: HubMessage, session_id: str) -> str:
@@ -478,64 +470,16 @@ Persona (Soul): {self.boot_files.get('soul', '')}
     def _write_to_memory(self, user_input: str, response: str, session_id: str):
         """写入记忆"""
         try:
-            # 写入 Warm Memory (for simple_direct mode)
-            self.warm_memory.add_event(
-                session_id,
-                user_input,
-                {"role": "user", "content": user_input, "type": "inference"}
-            )
-            self.warm_memory.add_event(
-                session_id,
-                response,
-                {"role": "assistant", "content": response, "type": "inference"}
-            )
+            self.memory_manager.add_turn(session_id, "user", user_input, tool_used="inference")
+            self.memory_manager.add_turn(session_id, "assistant", response, tool_used="inference")
         except Exception as e:
             print(f"[GatewayMasterAgent] Write to memory failed: {e}")
 
-    def _process_compact_archive(self, compact_result: Dict[str, Any], session_id: str):
-        """处理 compact 归档，调用 MasterAgent 提取关键信息写入 warm"""
-        archived = compact_result.get("archived", [])
-        if not archived:
-            return
-        
-        # 调用 MasterAgent 提取关键信息
-        prompt = f"""你是记忆整理专家。请从以下已归档的对话中提取关键信息，并决定哪些值得写入长期记忆(Warm Memory)。
-
-已归档对话:
-{json.dumps(archived, ensure_ascii=False, indent=2)}
-
-请分析并输出 JSON 格式:
-{{
-    "entries": [
-        {{"content": "关键信息描述", "type": "fact/experience/todo"}}
-    ]
-}}
-
-只输出 JSON，不要其他内容。"""
-
-        try:
-            from ..core.agent import CoreAgent, AgentContext
-            
-            ctx = AgentContext(
-                agent_id=f"memory-compactor-{session_id}",
-                role="master",
-                skills={},
-            )
-            agent = CoreAgent(ctx, self._get_llm(), self.cold_memory, hot_memory=self.hot_memory, enable_tools=False)
-            result = agent.step(prompt)
-            
-            # 解析并写入 Hot (重要信息，有容量限制)
-            import re
-            match = re.search(r'\{[\s\S]*\}', result)
-            if match:
-                data = json.loads(match.group())
-                for entry in data.get("entries", []):
-                    content = entry.get("content", "")
-                    if content:
-                        self.hot_memory.add_important(content, entry.get("type", "fact"))
-                print(f"[GatewayMasterAgent] Compact archive processed: {len(data.get('entries', []))} entries written to hot")
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Compact archive processing failed: {e}")
+    def _process_compact_archive(self, session_id: str):
+        """处理 compact 归档"""
+        result = self.memory_manager.compact(session_id, keep_turns=10)
+        if result.get("compact"):
+            print(f"[GatewayMasterAgent] Compact done: {result}")
 
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
         """获取会话上下文"""
@@ -544,30 +488,11 @@ Persona (Soul): {self.boot_files.get('soul', '')}
     def read_memory(self, session_id: str, query: str = "") -> Dict[str, Any]:
         """读取记忆"""
         results = {
-            "hot": [],
-            "warm": [],
-            "cold": [],
-            "whiteboard": dict(self.whiteboard.get_all()),
+            "context": self.memory_manager.get_recent_context(session_id, max_turns=5),
+            "facts": self.memory_manager.get_important_facts(session_id, limit=5),
+            "knowledge": self.memory_manager.search_knowledge(query or session_id, limit=5),
+            "stats": self.memory_manager.get_stats(),
         }
-        
-        try:
-            if self.hot_memory:
-                results["hot"] = self.hot_memory.search(query or session_id, limit=5)
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Read hot memory failed: {e}")
-        
-        try:
-            if self.warm_memory:
-                results["warm"] = self.warm_memory.search(query or session_id, limit=5)
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Read warm memory failed: {e}")
-        
-        try:
-            if self.cold_memory:
-                results["cold"] = self.cold_memory.search(query or session_id, limit=5)
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Read cold memory failed: {e}")
-        
         return results
 
     def check_autonomous_messages(self) -> List[HubMessage]:
@@ -682,14 +607,12 @@ SubSwarm 结果数量: {len(results)}
 请整合这些结果，给出连贯、有条理的最终回答。"""
 
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
             ctx = AgentContext(
                 agent_id=f"coordinator-{swarm_id}",
                 role="coordinator",
                 skills={},
             )
-            agent = CoreAgent(ctx, self._get_llm(), self.cold_memory, hot_memory=self.hot_memory, enable_tools=False)
+            agent = CoreAgent(ctx, self._get_llm(), self.memory_manager, enable_tools=False)
             result = agent.step(prompt)
             return result
         except Exception as e:

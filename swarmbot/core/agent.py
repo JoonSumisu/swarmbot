@@ -4,9 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..llm_client import OpenAICompatibleClient
-from ..memory.base import MemoryStore
-from ..memory.hot_memory import HotMemory
-from ..memory.session_memory import SessionMemory
 from ..tools.adapter import ToolAdapter
 import json
 
@@ -23,9 +20,9 @@ class CoreAgent:
         self,
         ctx: AgentContext,
         llm: OpenAICompatibleClient,
-        memory: MemoryStore,
-        hot_memory: Optional[HotMemory] = None,
-        session_memory: Optional[SessionMemory] = None,
+        memory: Any,
+        hot_memory: Any = None,
+        session_memory: Any = None,
         enable_tools: bool = True,
         quiet: bool = False,
     ) -> None:
@@ -37,15 +34,6 @@ class CoreAgent:
         self.enable_tools = enable_tools
         self.quiet = quiet
         self._tool_adapter = ToolAdapter()
-        
-        if hasattr(memory, "whiteboard"):
-            self._tool_adapter.whiteboard = memory.whiteboard
-        
-        if hot_memory:
-            self._tool_adapter.hot_memory = hot_memory
-        
-        if session_memory:
-            self._tool_adapter.session_memory = session_memory
 
     def _message_to_dict(self, message: Any) -> Dict[str, Any]:
         role = getattr(message, "role", "assistant")

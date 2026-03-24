@@ -233,10 +233,10 @@ def cmd_run() -> None:
     - GatewayMasterAgent handles all routing and tool selection
     - InferenceLoop tools (Standard/Supervised/SwarmsWorker) are called by MasterAgent
     """
-    from .memory.session_memory import SessionMemory
+    from .memory.memory_manager import MemoryManager
     from .gateway.orchestrator import GatewayMasterAgent
 
-    session_memory = SessionMemory(WORKSPACE_PATH)
+    memory_manager = MemoryManager.get_instance(str(os.path.join(WORKSPACE_PATH, "memory.sqlite")))
     session_id = "cli-session"
 
     print("Swarmbot run 模式已启动 (v2.0)，Ctrl+C 退出。")
@@ -261,24 +261,27 @@ def cmd_run() -> None:
             break
 
         if user_input == "/clear":
-            session_memory.clear_session(session_id)
+            # 清除当前会话的对话记录
+            import sqlite3
+            conn = sqlite3.connect(memory_manager.db_path)
+            conn.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+            conn.commit()
+            conn.close()
             print("已清除当前会话状态和记忆。")
             turn = 0
             continue
 
         if user_input == "/compact":
-            session_memory.compact_session(session_id, keep_turns=3)
+            memory_manager.compact(session_id, keep_turns=3)
             print("已压缩会话历史，保留最近 3 轮对话。")
             continue
 
         if user_input == "/status":
-            session_data = session_memory.get_context(session_id, max_turns=1)
-            turn_count = session_data.get("turn_count", 0)
-            last_access = session_data.get("last_access", 0)
-            from time import strftime, localtime
+            turn_count = memory_manager._get_turn_count(session_id)
+            stats = memory_manager.get_stats()
             print(f"会话状态:")
             print(f"  - 对话轮数：{turn_count}")
-            print(f"  - 最后活动：{strftime('%Y-%m-%d %H:%M:%S', localtime(last_access)) if last_access else '无'}")
+            print(f"  - 记忆统计：{stats}")
             continue
 
         class MessageWrapper:
@@ -291,13 +294,6 @@ def cmd_run() -> None:
         reply = orchestrator.handle_user_message_sync(message)
 
         print(f"\nSwarmbot:\n{reply}")
-
-        session_memory.add_turn(
-            chat_id=session_id,
-            user_input=user_input,
-            assistant_response=reply,
-            metadata={"master_response": reply}
-        )
 
         turn += 1
 

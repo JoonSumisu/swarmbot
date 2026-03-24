@@ -12,9 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from ..config_manager import ProviderConfig, WORKSPACE_PATH, load_config
-from ..loops.overthinking import OverthinkingLoop
-from ..loops.overaction import OveractionLoop
-from ..memory.cold_memory import ColdMemory
+from ..memory.memory_manager import MemoryManager
 from ..swarm.manager import SwarmManager
 
 
@@ -310,7 +308,7 @@ class AutonomousEngine:
         self.stop_event = stop_event
         self.config = load_config()
         self.workspace = WORKSPACE_PATH
-        self.cold = ColdMemory()
+        self.cold = MemoryManager.get_instance()
         queues_cfg = getattr(self.config.autonomous, "queues", {}) or {}
         self.monitor_queue = deque(maxlen=max(50, int(queues_cfg.get("monitor_queue_size", 1000))))
         self._action_capacity = max(20, int(queues_cfg.get("action_queue_size", 500)))

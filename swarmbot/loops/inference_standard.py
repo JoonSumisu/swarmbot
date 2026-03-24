@@ -10,8 +10,6 @@ from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
-from ..memory.hot_memory import HotMemory
-from ..memory.warm_memory import WarmMemory
 from ..memory.cold_memory import ColdMemory
 from ..memory.evidence_store import EvidenceStore
 from .base import BaseInferenceTool, InferenceResult
@@ -20,22 +18,21 @@ from .skill_registry import SkillRegistry
 
 class StandardInferenceTool(BaseInferenceTool):
     """
-    标准 8 步推理工具 (无人在回路)
+    标准 7 步推理工具 (无人在回路)
+    结果通过 Hub 发送，由 MasterAgent 翻译回复
     """
 
     def _initialize(self):
         self.whiteboard = Whiteboard()
-        self.hot_memory = HotMemory(self.workspace_path)
-        self.warm_memory = WarmMemory(self.workspace_path)
         self.cold_memory = ColdMemory()
         self.evidence_store = EvidenceStore()
         self.skill_registry = SkillRegistry()
-        
+
         self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=12000) or ""
         self.soul = load_boot_markdown("SOUL.md", "inference_loop", max_chars=5000) or ""
-        
+
         self.llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
-        
+
         self.completed_stages: set = set()
         self.is_suspended = False
 
@@ -54,57 +51,80 @@ class StandardInferenceTool(BaseInferenceTool):
             self.whiteboard.clear()
             self.whiteboard.update("metadata", {"session_id": session_id, "loop_id": str(int(time.time()))})
             self.whiteboard.update("input_prompt", user_input)
-            
+
             print(f"[StandardInferenceTool] Start: {user_input[:50]}...")
-            
+
             # 2. Analysis
             analysis = self._step_analysis(user_input)
             self.completed_stages.add("ANALYSIS")
-            
+
             # 3. Collection
             collection = self._step_collection(user_input)
             self.completed_stages.add("COLLECTION")
-            
+
             # 4. Planning
             plan = self._step_planning(user_input, analysis, collection)
             self.completed_stages.add("PLANNING")
-            
+
             # 5. Execution
             execution = self._step_execution(plan)
             self.completed_stages.add("EXECUTION")
-            
+
             # 6. Evaluation
             evaluation = self._step_evaluation(execution)
             self.completed_stages.add("EVALUATION")
-            
-            # 7. Translation
-            response = self._step_translation(user_input, execution, evaluation)
-            self.completed_stages.add("TRANSLATION")
-            
-            # 8. Organization
-            self._step_organization(session_id, user_input, response)
-            self.completed_stages.add("ORGANIZATION")
-            
+
+            # 7. 发送结果到 Hub（由 MasterAgent 负责翻译回复）
+            result_content = json.dumps({
+                "analysis": analysis,
+                "collection": collection,
+                "plan": plan,
+                "execution": execution,
+                "evaluation": evaluation,
+            }, ensure_ascii=False)
+
+            success = evaluation.get("passed", False)
+
+            if self.hub:
+                self.hub.send_task_result(
+                    result=result_content,
+                    session_id=session_id,
+                    success=success,
+                )
+                print(f"[StandardInferenceTool] Result sent to Hub")
+
+            self.completed_stages.add("HUB_SEND")
+
+            # 清理 Whiteboard
+            self.whiteboard.clear()
+
             print(f"[StandardInferenceTool] Done")
-            
-            return InferenceResult(success=True, content=response)
-            
+
+            return InferenceResult(success=success, content=result_content)
+
         except Exception as e:
             print(f"[StandardInferenceTool] Error: {e}")
+            if self.hub:
+                self.hub.send_task_result(
+                    result=str(e),
+                    session_id=session_id,
+                    success=False,
+                    error=str(e),
+                )
             return InferenceResult(success=False, error=str(e))
 
     def _create_worker(self, role: str, enable_tools: bool = True, allowed_tools: List[str] = None) -> CoreAgent:
         skills = self.skill_registry.get_skills_for_task(role, task_desc="", required_skills=None)
         if allowed_tools:
-            allowed = set(allowed_tools) | {"whiteboard_update", "hot_memory_update"}
+            allowed = set(allowed_tools) | {"whiteboard_update"}
             skills = {k: v for k, v in skills.items() if k in allowed}
-        
+
         ctx = AgentContext(
             agent_id=f"worker-{role}-{time.time_ns()}",
             role=role,
             skills=skills
         )
-        return CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=enable_tools)
+        return CoreAgent(ctx, self.llm, self.cold_memory, enable_tools=enable_tools)
 
     def _step_analysis(self, user_input: str) -> Dict[str, Any]:
         prompt = f"""你是分析 Agent。请分析用户输入的意图和需求。
@@ -217,38 +237,15 @@ SWARMBOT: {self.swarmboot[:2000]}
         results = execution.get("results", [])
         completed = execution.get("completed", 0)
         total = execution.get("total", 0)
-        
+
         passed = completed >= total * 0.7
-        
+
         return {
             "passed": passed,
             "completed": completed,
             "total": total,
             "quality": "good" if passed else "needs_improvement"
         }
-
-    def _step_translation(self, user_input: str, execution: Dict, evaluation: Dict) -> str:
-        prompt = f"""你是 Master Agent。请基于执行结果生成最终回答。
-
-用户输入: {user_input}
-执行结果: {json.dumps(execution, ensure_ascii=False)}
-评估结果: {json.dumps(evaluation, ensure_ascii=False)}
-Persona (Soul): {self.soul[:1000]}
-
-请直接输出最终回答。"""
-
-        try:
-            worker = self._create_worker("master", enable_tools=False)
-            result = worker.step(prompt)
-            return result or "任务已完成。"
-        except Exception as e:
-            print(f"[StandardInferenceTool] Translation error: {e}")
-            return "任务已完成。"
-
-    def _step_organization(self, session_id: str, user_input: str, response: str):
-        # 不再写入 Warm Memory - 由 MasterAgent 通过 compact 统一处理写入 Warm
-        # Session Memory 已在 MasterAgent 层面写入
-        pass
 
     def _extract_json(self, text: str) -> Dict[str, Any]:
         import re
