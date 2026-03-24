@@ -19,6 +19,12 @@ from .communication_hub import CommunicationHub, HubMessage, MessageSender, Mess
 from ..loops.base import BaseInferenceTool, InferenceResult
 from ..core.agent import AgentContext, CoreAgent
 
+try:
+    from ..agents import MasterAgent as NewMasterAgent
+    HAS_NEW_AGENTS = True
+except ImportError:
+    HAS_NEW_AGENTS = False
+
 
 class GatewayMasterAgent:
     """
@@ -90,19 +96,48 @@ class GatewayMasterAgent:
             self._llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
         return self._llm
 
-    def _think_then_decide(self, user_input: str) -> str:
+    def _think_then_decide(self, user_input: str, session_id: str = None) -> str:
         """
-        LLM 浅思考路由决策 - 判断走 simple_direct 还是推理工具
+        LLM 浅思考路由决策 - 先读上下文，再判断走 simple_direct 还是推理工具
+        
+        流程:
+        1. before_think: 读取 session 上下文 (whiteboard/hot_memory)
+        2. 根据 [上下文 + 问题] 送给 LLM 判断
         """
-        prompt = f"""You are a dialog classifier. Classify the user input into SIMPLE or COMPLEX.
+        # === before_think: 读取上下文 ===
+        context = ""
+        try:
+            if session_id and session_id in self._sessions:
+                session = self._sessions[session_id]
+                history = session.get("history", [])
+                if history:
+                    # 获取最近5条历史
+                    recent = history[-5:] if len(history) > 5 else history
+                    context = "\n".join([
+                        f"{r.get('role', 'user')}: {r.get('content', '')[:100]}" 
+                        for r in recent
+                    ])
+        except Exception as e:
+            print(f"[GatewayMasterAgent] Failed to read context: {e}")
+        
+        has_context = bool(context and len(context) > 10)
+        
+        # === 路由决策 ===
+        # 构建 prompt，包含上下文
+        context_section = f"\n\nRecent conversation:\n{context}\n\n" if has_context else "\n\n(No previous conversation context)\n\n"
+        
+        prompt = f"""You are a dialog classifier. Classify the user input based on the conversation context.
 
+{context_section}
 User input: {user_input}
 
 Classification rules:
-- SIMPLE: greetings (你好，hi), thanks (谢谢), farewells (再见，拜拜), confirmations (好的), short self-intro requests (介绍一下你自己，你是谁), short identity Q&A, small talk (最近怎么样), VERY SHORT questions that don't need tools
-- COMPLEX: concept explanations (什么是...), how-to questions (如何...), analysis requests (分析), coding tasks (写代码，创建，解释代码), problem solving (怎么办，如何解决), LONG/DETAILED identity requests, deployment (部署), tasks requiring research or tools
+- SIMPLE: greetings (你好，hi，嗨), thanks (谢谢), farewells (再见，拜拜), confirmations (好的，嗯), short self-intro requests (介绍一下你自己，你是谁), short identity Q&A, small talk (最近怎么样，明天见), VERY SHORT concept questions (什么是Python？ API是什么？), questions that don't need tools or deep reasoning
+- COMPLEX: concept explanations that need details, how-to questions (如何..., 怎么做...), analysis requests (分析), coding tasks (写代码，创建，解释代码), problem solving (怎么办，如何解决), LONG identity requests, deployment (部署), tasks requiring research or tools, questions that need previous context to answer
 
-First, think briefly about the classification. Then output your final answer in this format:
+Important: If the question references previous conversation (like "继续", "之前", "刚才") but there IS previous context, classify as COMPLEX.
+
+First, think briefly about the classification. Then output your final answer:
 CLASSIFICATION: [SIMPLE] or CLASSIFICATION: [COMPLEX]"""
 
         try:
@@ -248,8 +283,8 @@ Persona (Soul): {self.boot_files.get('soul', '')}
         # 1. 更新会话上下文
         self._update_session(session_id, user_input)
         
-        # 2. 路由决策
-        route = self._think_then_decide(user_input)
+        # 2. 路由决策 - 先读上下文再判断
+        route = self._think_then_decide(user_input, session_id)
         
         if route == "simple":
             return self._simple_direct(user_input, session_id)

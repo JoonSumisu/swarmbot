@@ -1,0 +1,2602 @@
+[
+  {
+    "question": "你好！",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 0.00021409988403320312,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "您好",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 9.059906005859375e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "hi",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 6.198883056640625e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "再见！",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 9.965896606445312e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "bye",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 5.0067901611328125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "谢谢",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.601478576660156e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "好的",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 6.699562072753906e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "没问题",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 2.6702880859375e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "嗯嗯",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.291534423828125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "明天见",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 3.4809112548828125e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "早啊",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 2.9179673194885254,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "晚上好",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.7206907272338867,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "最近怎么样",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 1.8835067749023438e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "你是谁",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 9.298324584960938e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "介绍一下你自己",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 7.152557373046875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "什么是Python？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 5.245208740234375e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "API是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 5.245208740234375e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Docker是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.291534423828125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Git是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.5299530029296875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "HTTP是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.76837158203125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "数据库是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.291534423828125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "云计算是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.291534423828125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "什么是深度学习？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 5.0067901611328125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "大数据是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.5299530029296875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "物联网是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.76837158203125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "5G是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.5299530029296875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "CI/CD是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.76837158203125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "微服务是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 5.0067901611328125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Serverless是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.5299530029296875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "什么是区块链？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.5299530029296875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "人工智能是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.76837158203125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "K8s是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.291534423828125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "MQ是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 5.0067901611328125e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Redis是什么？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 4.5299530029296875e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Docker和K8s区别？",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5829241275787354,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "React vs Vue区别？",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.483703374862671,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "SQL vs NoSQL区别？",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3266258239746094,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "同步 vs 异步区别？",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3427245616912842,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "TCP vs UDP区别？",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3270714282989502,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "什么是微服务架构？",
+    "expected": "simple_direct",
+    "selected": "simple_direct",
+    "correct": true,
+    "duration": 2.0503997802734375e-05,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我写一个快速排序",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3542487621307373,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "写一个斐波那契函数",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4401047229766846,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "生成一个Flask应用",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3887405395507812,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我写爬虫代码",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3338618278503418,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "写一个二分查找",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4264140129089355,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我写快速排序",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.485100269317627,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "生成RESTful API",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.6089751720428467,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "写单元测试代码",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 0.12466883659362793,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "创建贪吃蛇游戏",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5653328895568848,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我写排序算法",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.411562204360962,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "生成JWT认证示例",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3855857849121094,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "写Redis缓存封装",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.463021993637085,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我写状态机",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5203540325164795,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "生成WebSocket示例",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.6276471614837646,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "写Python装饰器",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4541056156158447,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "调研AI发展趋势",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2391846179962158,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "分析React vs Vue",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3267712593078613,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "对比MySQL和PostgreSQL",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4119651317596436,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我分析代码性能",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3590643405914307,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "研究K8s核心特性",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.311983585357666,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "分析微服务架构",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4186089038848877,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "对比云计算平台",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.349003791809082,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "调研大模型技术",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1686339378356934,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "分析TypeScript vs JS",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2605702877044678,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "研究向量数据库",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4659252166748047,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "确认删除所有文件",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 2.5510787963867188e-05,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "批准代码合并",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 8.821487426757812e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "删除所有数据",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 7.152557373046875e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "确认执行迁移",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 5.9604644775390625e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "批准产品发布",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 5.4836273193359375e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "清空生产缓存",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 5.7220458984375e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "确认关闭服务",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 5.7220458984375e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "批准权限变更",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 1.6450881958007812e-05,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "删除过期日志",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 1.5735626220703125e-05,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "确认回滚部署",
+    "expected": "supervised",
+    "selected": "supervised",
+    "correct": true,
+    "duration": 6.67572021484375e-06,
+    "skill_calls": 1,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "组织产品评审会议",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.5497207641601562e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "模拟技术评审讨论",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.33514404296875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "组织代码审查",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.239776611328125e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "模拟PM和开发者对话",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.1444091796875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "帮我组织头脑风暴",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.2874603271484375e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "组织团队讨论",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.049041748046875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "模拟多方会议",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.0967254638671875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "组织专家评审",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.049041748046875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "模拟辩论讨论",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.0967254638671875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "组织跨部门会议",
+    "expected": "swarms",
+    "selected": "swarms",
+    "correct": true,
+    "duration": 1.0967254638671875e-05,
+    "skill_calls": 4,
+    "tool_calls": 3,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "我叫张三，请记住",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.6072392463684082,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "你记得我叫什么吗？",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.662708044052124,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "继续刚才的话题",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 3.814697265625e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "我刚才说的第一个问题是什么？",
+    "expected": "standard",
+    "selected": "simple_direct",
+    "correct": false,
+    "duration": 8.58306884765625e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "我们讨论的主题是什么？",
+    "expected": "standard",
+    "selected": "simple_direct",
+    "correct": false,
+    "duration": 6.67572021484375e-06,
+    "skill_calls": 0,
+    "tool_calls": 0,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "还记得之前的内容吗？",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.7881393432617188e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "刚才的问题你还记得吗？",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.6927719116210938e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "把之前的结果整理一下",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5974044799804688e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "这个和之前说的有什么关系？",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5497207641601562e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "继续上次的分析",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5020370483398438e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "昨天讨论的内容总结一下",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4543533325195312e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "上次写的代码还在吗？",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.4781951904296875e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "能不能找到之前的对话记录？",
+    "expected": "simple_direct",
+    "selected": "standard",
+    "correct": false,
+    "duration": 1.430511474609375e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "基于之前的分析继续",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.430511474609375e-05,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "总结一下我们讨论的要点",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5952632427215576,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the symbol of the Saints from the headquarters location of Ten High's manufacturer called?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2198553085327148,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "In what league did Jose Miranda's team compete?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2171313762664795,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the host of Who Wants to be a Millionaire in the country that MacGruder and Loud's creator is from?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": -0.2166581153869629,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What kind of recognition did the actor who played the game maker in hunger games receive?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.8033802509307861,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "There is a state A where Storm of the Century was filmed based on the book by the author who wrote a short story featuring the author of This Is My God. What is the population of state A?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2710955142974854,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What treaty ceded territory to the US extending west to body of water by the city where the Lots More Blues, Rags and Hollers performer was formed?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.37904953956604,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When was the Palau de la Generalitat in the city where Martin of the region where Urries is located constructed?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3461711406707764,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the child of the Italian navigator who explored the eastern coast of the continent César Gaytan was born in for the English?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4008264541625977,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What record label does the spouse of Heart Like Mine's performer belong to?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4062576293945312,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What does seal stand for in the operator of list of destroyer classes of the operator of the USS Kajeruna seals?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.129988431930542,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who married the actor from Terminator?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3686628341674805,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What record label does the spouse of the performer of Somethin' Bad belong to?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.0657763481140137,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who founded the organisation that owns Defective by Design?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1586413383483887,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When was the star to which Solgränd is named after discovered to be the center of the solar system?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1092472076416016,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the maker of Acura Legend, the biggest automobile company in the world, and Nissan open US assembly plants?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.502934455871582,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where was the person who acted in the film Sous les pieds des femmes born?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4392127990722656,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the headquarters city of Kentucky Tavern's manufacturer elect its first black mayor?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1906187534332275,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "The largest city in the state where WEKL broadcasts had an historic battle that was fought when?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.334123134613037,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the spouse of the child of Peter Andreas Heiberg?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.236471176147461,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What percentage of Eritrea adheres to the religion widely practiced where suicides by females are more common in young than old?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2476611137390137,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What date did the Japanese get to the city where New Plaza Stadium is located, and the rest of the Guangdong province?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.224473476409912,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who won the Indy Car Race in the largest populated city of the state where the performer of Mingus Three is from?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4467999935150146,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who was the artist that was featured in Beyonce's first solo album's lead single talking about in the song \"Cry\"?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2225329875946045,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was the name of the spouse of the first convert to the most prevalent religion in Jordan?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.6128127574920654,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who was second pick in the 1999 draft of the league that has a competition where they give out the MLB MVP award after it?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4182634353637695,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the mouth of watercourse for the body of water where Bartram's Covered Bridge is located?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3019733428955078,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What line by a cast member of Doing His Bit is believed to have started the archie nickname?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": -0.3185427188873291,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who has the most hits in the league whose member team has the most wins of the championship series which proceeds the MVP award?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.437269687652588,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Into what harbour does the river Lennox Bridge in Parramatta crosses flow?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.296271562576294,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When was \"Slavs\" used in the national anthem of the country whose military having the Air Defense Artillery was unprepared for the invasion of the country conquered by the Pact?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3985567092895508,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What mountains can you see from Portland, in the state with the county where McCauley Mountain is located?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4159996509552002,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What treaty ceded territory to the US extending west to the body of water by the city Astronautalis is from?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5974717140197754,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where did the star of Dark Hazard study?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3581273555755615,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What record label is the performer who released All Your Faded Things on?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1612679958343506,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who did the actor in Advernture's End play in True Grit?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2382609844207764,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "MV Miralda's owner announced it was in the process of doing what in April 2010?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3158807754516602,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What season was the performer of Blue Skies on?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4063584804534912,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the winner of the Battle between Poras and Sikander die?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1085264682769775,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was the wettest year in the city that shares the same county as the ghost town Allen?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.339559555053711,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the majority party in the body which approves members of the Cabinet gain control of the House?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2760941982269287,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is Mohamed Atta's car, manufactured by the company that includes Datsun, an instance of?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4211316108703613,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What gun was used by Pollack's director in Westworld?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2021453380584717,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What record label does the spouse of Heart Like Mine's performer belong to?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1713793277740479,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where did the author of The Canon of Medicine think Venus was in relation to the sun?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1781549453735352,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the state that Frozen Run is located in reinstate the death penalty?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3621094226837158,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the maximum load drawn by the device that was designed to standardize connection of computer peripherals?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3239777088165283,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where was Popper's academic appointment in the country near the country of citizenship of the person who wrote The Book Thief?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.6010048389434814,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When was the most recent Bicycle Friendly Community Award given to the city where the only group larger than the record label of Desde El Principio is headquartered?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5026564598083496,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the city where Greenwood Laboratory School is located become capitol of the state where the screenwriter of The Poor Boob was born?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4210553169250488,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who was the first person to control a spacecraft, from the country the top-ranking Warsaw Pact operatives came from, despite it being headquartered in the country called the nobilities commonwealth?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4591097831726074,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the French and Indian War end on the continent where London Broil comes from?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": -0.1331939697265625,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What company resulted from a merger in 1961 involving the builder of the Martin BM?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3788375854492188,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What's the place of birth of the former member of The Sunnyboys?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1697394847869873,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was the percentage that the Dow Jones fell when the US had the highest unemployment rate?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1289775371551514,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the maker of the Acura Legend, the company that built Daihatsu Boon, and Nissan open US assembly plants?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3162002563476562,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was Nintendo's limit on games per developer per year on the system which had a three letter abbreviation and was also the platform for Pictionary?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4431118965148926,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Which opera company is based in the city where the Yongle Emperor greeted the leader that the edict was addressed to?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2608850002288818,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What worldwide ranking is held by Mario Pani's alma mater?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.6978442668914795,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the name of the castle in the city where the performers of Born A Lion was formed?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2044003009796143,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where is the newspaper that originated the term Baby Boomer based?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1631433963775635,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the name of the castle in the city where the performers of Spirit If.. became a band?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1544814109802246,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When was the position of Governor ended in the city that houses the head of Catholicism, and the basilica of the saint holding a knife in the Last Supper?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.370060682296753,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where is the origin of the river that Kraai River is a tributary of?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.477933645248413,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What undertaking included the person who discovered that the number of protons in each element's atoms is unique?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3097007274627686,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the federal leader of the party that Pierre-Hugues Boisvenu is a member of?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.439378023147583,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the employer of the person Mach's principle was named after?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3186438083648682,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who won the All-Star MVP for the league that the team that Jim Wilson plays for is a part of?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2645649909973145,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Why did Roncalli leave the place where the composer of Al gran sole carico d'amore worked?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4076223373413086,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "How many places of higher learning are in the city where the Yongle emperor greeted the person to whom the edict was addressed?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.242375135421753,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where was the actor who plays Kurt in Daddy's Home 2 educated?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2138762474060059,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What record label does the spouse of the performer of Somethin' Bad belong to?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.348083734512329,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What day is the Feast in the city where the headquarters of the only group larger than Desde El Principio's record label held on?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.193530797958374,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the meaning of the name of the city where the Yongle emperor greeted the person to whom the edict was addressed?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4091300964355469,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the date of birth for the performer of Beat Hotel?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.233384132385254,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What administrative territorial entity includes the arrondissement that contains the Digne Cathedral?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1320140361785889,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the child of the Italian navigator who sailed for England and explored the eastern coast of the continent Francisco Bojado's birthplace is located?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": -0.23981142044067383,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Which season was the runner up of the third season of American Idol on?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3723962306976318,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was Nintendo's limit on games per developer per year on the platform that plays Drac's Night Out?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.326899528503418,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the spouse of the actress who played the fairy god mother in Shrek 2?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3906283378601074,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the name of the famous bridge in the birthplace of Bajazet's composer?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.6620793342590332,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What does dell call the feature letting the interface replacing FireWire in later iterations of the iPod drives to remain powered when the computer is off?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2858881950378418,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What league does the team that occupies the Rabat Ajax Football Ground belong to?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1828763484954834,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who founded the publisher of The Final Testament of the Holy Bible?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3208956718444824,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What company is the label responsible for Don't Let Me Wait Too Long a part of?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1888539791107178,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was the story of the character from The Bourne Ultimatum based on?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3698883056640625,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the place of birth of who does the voice of stan on the series that Insecurity is part of?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4531378746032715,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "The beautiful country used as a backdrop for the movie The Lord of the Rings was founded on what date?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4260468482971191,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What does SEAL stand for in the branch of military that operates USS Mahan?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4436016082763672,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the spouse of the actress who plays Scarlett in Gone With the Wind?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3964753150939941,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "When did the invader of the Archaemenid Empire in 334BC die?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2961719036102295,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who is the spouse of the longest reigning British monarch?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.5166864395141602,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Which war did the operator of Finnish coastal defence ship Väinämöinen serve in?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.2051010131835938,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Who founded the publisher of The Final Testament of the Holy Bible?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.3708677291870117,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What was the wettest year in the second largest city of the state where the Oh Yeah performer is from?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.258288860321045,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What city is the actress in Signora Enrica from?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1561806201934814,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "How deep is the Riverwalk in San Antonio in the state that still uses electric chair?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.081721305847168,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "The top ballet company in the top bauxite producing country is what?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1650586128234863,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where did William Beckford's child die?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.4052507877349854,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "What is the median household income for people today of the same country as the witness to the Blitz?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.1983556747436523,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  },
+  {
+    "question": "Where is the river that the engine pumped water from located in the world?",
+    "expected": "standard",
+    "selected": "standard",
+    "correct": true,
+    "duration": 1.168034553527832,
+    "skill_calls": 4,
+    "tool_calls": 2,
+    "conflicts": {
+      "skill_conflicts": [],
+      "memory_conflicts": []
+    }
+  }
+]

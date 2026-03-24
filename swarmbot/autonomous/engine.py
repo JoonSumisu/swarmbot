@@ -86,16 +86,65 @@ class BundleEvaluationResult:
 
 
 class _Bundle:
-    def __init__(self, bundle_id: str, interval_seconds: int):
+    def __init__(self, bundle_id: str, interval_seconds: int, anti_over_opt: Dict[str, Any] | None = None):
         self.bundle_id = bundle_id
         self.interval_seconds = max(10, interval_seconds)
         self.last_run = 0
+        self.anti_over_opt = anti_over_opt or {}
+        self.last_optimization_ts = 0
+        self.optimization_count_this_hour = 0
+        self.hourly_reset_ts = int(time.time()) // 3600
+        self.smoothing_window = int(self.anti_over_opt.get("smoothing_window", 5))
+        self.stability_threshold = float(self.anti_over_opt.get("stability_threshold", 0.2))
+        self.pause_on_instability = bool(self.anti_over_opt.get("pause_on_instability", False))
+        self.recent_efficiencies: List[float] = []
 
     def due(self, now_ts: int) -> bool:
         return now_ts - self.last_run >= self.interval_seconds
 
     def mark(self, now_ts: int):
         self.last_run = now_ts
+
+    def _check_optimization_cooldown(self, now_ts: int) -> bool:
+        min_interval = int(self.anti_over_opt.get("min_optimization_interval", 0))
+        if min_interval > 0 and now_ts - self.last_optimization_ts < min_interval:
+            return False
+        return True
+
+    def _check_hourly_limit(self, now_ts: int) -> bool:
+        max_per_hour = int(self.anti_over_opt.get("max_optimization_per_hour", 999))
+        current_hour = now_ts // 3600
+        if current_hour > self.hourly_reset_ts:
+            self.optimization_count_this_hour = 0
+            self.hourly_reset_ts = current_hour
+        return self.optimization_count_this_hour < max_per_hour
+
+    def _check_stability(self) -> bool:
+        if not self.pause_on_instability or len(self.recent_efficiencies) < self.smoothing_window:
+            return True
+        values = self.recent_efficiencies[-self.smoothing_window:]
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / len(values)
+        cv = (variance ** 0.5) / mean if mean > 0 else 0
+        return cv <= self.stability_threshold
+
+    def should_optimize(self, now_ts: int) -> bool:
+        if not self._check_optimization_cooldown(now_ts):
+            return False
+        if not self._check_hourly_limit(now_ts):
+            return False
+        if not self._check_stability():
+            return False
+        return True
+
+    def record_optimization(self, now_ts: int):
+        self.last_optimization_ts = now_ts
+        self.optimization_count_this_hour += 1
+
+    def record_efficiency(self, efficiency: float):
+        self.recent_efficiencies.append(efficiency)
+        if len(self.recent_efficiencies) > self.smoothing_window * 3:
+            self.recent_efficiencies = self.recent_efficiencies[-self.smoothing_window * 2:]
 
     def check(self, now_ts: int) -> MonitorQueueItem | None:
         return None
@@ -106,6 +155,17 @@ class _MemoryFoundationBundle(_Bundle):
         if not self.due(now_ts):
             return None
         self.mark(now_ts)
+        evidence = {"reason": "periodic_memory_foundation"}
+        if self.should_optimize(now_ts):
+            evidence["optimization_eligible"] = True
+        else:
+            evidence["optimization_eligible"] = False
+            if not self._check_optimization_cooldown(now_ts):
+                evidence["optimization_blocked"] = "cooldown"
+            elif not self._check_hourly_limit(now_ts):
+                evidence["optimization_blocked"] = "hourly_limit"
+            elif not self._check_stability():
+                evidence["optimization_blocked"] = "instability"
         eid = str(uuid.uuid4())
         return MonitorQueueItem(
             event_id=eid,
@@ -114,7 +174,7 @@ class _MemoryFoundationBundle(_Bundle):
             kind="memory_foundation",
             severity="medium",
             detected_at=now_ts,
-            evidence={"reason": "periodic_memory_foundation"},
+            evidence=evidence,
             idempotency_key=f"{self.bundle_id}:{now_ts}",
         )
 
@@ -124,6 +184,16 @@ class _BootOptimizerBundle(_Bundle):
         if not self.due(now_ts):
             return None
         self.mark(now_ts)
+        evidence = {"reason": "periodic_boot_optimize"}
+        if self.should_optimize(now_ts):
+            evidence["optimization_eligible"] = True
+            evidence["require_validation"] = bool(self.anti_over_opt.get("require_improvement_validation", False))
+        else:
+            evidence["optimization_eligible"] = False
+            if not self._check_optimization_cooldown(now_ts):
+                evidence["optimization_blocked"] = "cooldown"
+            elif not self._check_hourly_limit(now_ts):
+                evidence["optimization_blocked"] = "hourly_limit"
         eid = str(uuid.uuid4())
         return MonitorQueueItem(
             event_id=eid,
@@ -132,7 +202,7 @@ class _BootOptimizerBundle(_Bundle):
             kind="boot_optimize",
             severity="low",
             detected_at=now_ts,
-            evidence={"reason": "periodic_boot_optimize"},
+            evidence=evidence,
             idempotency_key=f"{self.bundle_id}:{now_ts}",
         )
 
@@ -173,9 +243,11 @@ class _SystemHygieneBundle(_Bundle):
 
 
 class _BundleGovernorBundle(_Bundle):
-    def __init__(self, bundle_id: str, interval_seconds: int, index_file: str):
-        super().__init__(bundle_id, interval_seconds)
+    def __init__(self, bundle_id: str, interval_seconds: int, index_file: str, anti_over_opt: Dict[str, Any] | None = None):
+        super().__init__(bundle_id, interval_seconds, anti_over_opt)
         self.index_file = Path(os.path.expanduser(index_file))
+        self.max_consecutive = int(self.anti_over_opt.get("max_consecutive_optimizations", 999)) if self.anti_over_opt else 999
+        self.consecutive_optimizations = 0
 
     def check(self, now_ts: int) -> MonitorQueueItem | None:
         if not self.due(now_ts):
@@ -252,6 +324,22 @@ class AutonomousEngine:
         self.bundles = self._build_bundles()
         self._max_retry = 1
 
+    def _load_bundle_config(self, bundle_id: str) -> Dict[str, Any]:
+        bundle_path = Path.home() / ".swarmbot" / "bundles" / bundle_id / "bundle.json"
+        if bundle_path.exists():
+            try:
+                with open(bundle_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
+    def _get_anti_over_opt_params(self, bundle_config: Dict[str, Any]) -> Dict[str, Any]:
+        targets = bundle_config.get("optimization_targets", [])
+        if targets and isinstance(targets, list):
+            return {k: v for k, v in targets[0].items() if k not in ["target_id", "metric_name", "current_threshold", "direction", "feedback_source"]}
+        return {}
+
     def _build_bundles(self) -> List[_Bundle]:
         monitor = getattr(self.config.autonomous, "monitor", {}) or {}
         registry = getattr(self.config.autonomous, "bundle_registry", {}) or {}
@@ -259,8 +347,15 @@ class AutonomousEngine:
         mem_cfg = monitor.get("memory_organizer", {}) if isinstance(monitor, dict) else {}
         boot_cfg = monitor.get("long_task_reporter", {}) if isinstance(monitor, dict) else {}
         sys_cfg = monitor.get("system_health", {}) if isinstance(monitor, dict) else {}
-        bundles.append(_MemoryFoundationBundle("core.memory_foundation", int(mem_cfg.get("interval_minutes", 30)) * 60))
-        bundles.append(_BootOptimizerBundle("core.boot_optimizer", int(boot_cfg.get("interval_minutes", 20)) * 60))
+
+        mem_bundle_config = self._load_bundle_config("core.memory_foundation")
+        mem_anti_opt = self._get_anti_over_opt_params(mem_bundle_config)
+        bundles.append(_MemoryFoundationBundle("core.memory_foundation", int(mem_cfg.get("interval_minutes", 30)) * 60, mem_anti_opt))
+
+        boot_bundle_config = self._load_bundle_config("core.boot_optimizer")
+        boot_anti_opt = self._get_anti_over_opt_params(boot_bundle_config)
+        bundles.append(_BootOptimizerBundle("core.boot_optimizer", int(boot_cfg.get("interval_minutes", 20)) * 60, boot_anti_opt))
+
         bundles.append(
             _SystemHygieneBundle(
                 "core.system_hygiene",
@@ -269,11 +364,15 @@ class AutonomousEngine:
                 float(sys_cfg.get("mem_free_ratio_threshold", 0.1)),
             )
         )
+
+        gov_bundle_config = self._load_bundle_config("core.bundle_governor")
+        gov_anti_opt = self._get_anti_over_opt_params(gov_bundle_config)
         bundles.append(
             _BundleGovernorBundle(
                 "core.bundle_governor",
                 max(60, int(boot_cfg.get("interval_minutes", 5)) * 60),
                 str(registry.get("index_file", "~/.swarmbot/bundles/_registry/bundles_index.jsonl")),
+                gov_anti_opt,
             )
         )
         return bundles

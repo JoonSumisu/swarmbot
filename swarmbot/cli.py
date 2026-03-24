@@ -362,6 +362,79 @@ def cmd_cron(args: argparse.Namespace) -> None:
     print("Cron 管理功能当前已禁用（nanobot 依赖已移除）。")
 
 
+def cmd_autonomous(args: argparse.Namespace) -> None:
+    """Autonomous Engine 命令"""
+    from .config_manager import CONFIG_HOME
+    import signal
+    import threading
+
+    pid_file = os.path.join(CONFIG_HOME, "autonomous.pid")
+
+    if args.action == "start":
+        # 检查是否已经在运行
+        if os.path.exists(pid_file):
+            try:
+                with open(pid_file, "r") as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)
+                print(f"Autonomous Engine 已在运行 (PID={pid})")
+                return
+            except (ProcessLookupError, ValueError):
+                os.remove(pid_file)
+
+        # 启动
+        stop_event = threading.Event()
+
+        def signal_handler(signum, frame):
+            stop_event.set()
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        try:
+            from .agents.autonomous import create_autonomous_engine
+            engine = create_autonomous_engine(stop_event)
+            engine.start()
+
+            # 保存 PID
+            with open(pid_file, "w") as f:
+                f.write(str(os.getpid()))
+
+            print("Autonomous Engine 已启动")
+            print("按 Ctrl+C 或发送 SIGTERM 停止")
+
+            while not stop_event.is_set():
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            print("\n正在停止 Autonomous Engine...")
+        finally:
+            stop_event.set()
+            try:
+                os.remove(pid_file)
+            except:
+                pass
+            print("Autonomous Engine 已停止")
+
+    elif args.action == "stop":
+        if not os.path.exists(pid_file):
+            print("Autonomous Engine 未在运行")
+            return
+
+        try:
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, signal.SIGTERM)
+            print(f"已发送停止信号 (PID={pid})")
+            time.sleep(1)
+            os.remove(pid_file)
+        except ProcessLookupError:
+            print("进程不存在，清理 PID 文件")
+            os.remove(pid_file)
+        except Exception as e:
+            print(f"停止失败: {e}")
+
+
 def cmd_status() -> None:
     cfg = load_config()
     print("Swarmbot 状态:")
@@ -649,6 +722,11 @@ def main() -> None:
     daemon_sub.add_parser("start", help="启动守护进程")
     daemon_sub.add_parser("shutdown", help="关闭守护进程")
 
+    autonomous_parser = subparsers.add_parser("autonomous", help="启动 Autonomous Engine")
+    autonomous_sub = autonomous_parser.add_subparsers(dest="action", required=True)
+    autonomous_sub.add_parser("start", help="启动 Autonomous Engine")
+    autonomous_sub.add_parser("stop", help="停止 Autonomous Engine")
+
     subparsers.add_parser("update", help="更新 Swarmbot 核心代码（保留配置）")
 
     args, _ = parser.parse_known_args()
@@ -684,6 +762,8 @@ def main() -> None:
         print("技能管理请通过对话中的 skill_summary / skill_load 工具完成。")
     elif args.command == "daemon":
         cmd_daemon(args)
+    elif args.command == "autonomous":
+        cmd_autonomous(args)
 
 if __name__ == "__main__":
     main()

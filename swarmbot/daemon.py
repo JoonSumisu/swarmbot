@@ -309,6 +309,7 @@ def main() -> None:
         health_interval = 60
     manage_gateway = bool(cfg.get("manage_gateway", True))
     manage_overthinking = bool(cfg.get("manage_overthinking", True))
+    manage_autonomous = bool(cfg.get("manage_autonomous", True))
     services: dict = {}
     last_backup = 0.0
     last_health = 0.0
@@ -328,6 +329,13 @@ def main() -> None:
                 manage_overthinking,
                 [sys.executable, "-m", "swarmbot.cli", "overthinking", "start"],
                 int(cfg.get("overthinking_restart_delay_seconds", 10)),
+            )
+            _ensure_service(
+                "autonomous",
+                services,
+                manage_autonomous,
+                [sys.executable, "-m", "swarmbot.cli", "autonomous", "start"],
+                int(cfg.get("autonomous_restart_delay_seconds", 30)),
             )
             if now - last_backup >= backup_interval:
                 state = _perform_backup_if_changed(state)
@@ -350,6 +358,27 @@ def main() -> None:
             if _shutdown:
                 break
             time.sleep(1)
+
+    # Shutdown all services gracefully
+    print("[Daemon] Shutting down all services...")
+    for name, svc in services.items():
+        proc = svc.get("proc")
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                print(f"[Daemon] Sent SIGTERM to {name} (PID={proc.pid})")
+                # Wait for graceful shutdown
+                for _ in range(50):
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                # Force kill if still running
+                if proc.poll() is None:
+                    proc.kill()
+                    print(f"[Daemon] Force killed {name}")
+            except Exception as e:
+                print(f"[Daemon] Error stopping {name}: {e}")
+
     try:
         if os.path.exists(PID_FILE):
             with open(PID_FILE, "r", encoding="utf-8") as f:

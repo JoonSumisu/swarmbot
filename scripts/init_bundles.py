@@ -149,37 +149,7 @@ BUNDLES = {
             "via": "gateway"
         },
     },
-    "core.memory_foundation": {
-        "interval_seconds": 1800,  # 30 min
-        "objective": "高效整理记忆，提升知识复用率",
-        "success_metrics": {
-            "compression_rate": {"target": 0.5, "direction": "minimize"},
-            "retrieval_accuracy": {"target": 0.8, "direction": "maximize"}
-        },
-        "constraints": [
-            "不影响主会话响应时间",
-            "压缩过程不可阻塞主线程",
-            "需使用移动平均计算效率",
-            "波动大于 20% 时暂停优化"
-        ],
-        "optimization_targets": [
-            {
-                "target_id": "t1",
-                "metric_name": "compression_rate",
-                "current_threshold": 0.5,
-                "direction": "minimize",
-                "feedback_source": "both",
-                "smoothing_window": 5,  # 移动平均窗口
-                "stability_threshold": 0.2,  # 波动阈值
-                "pause_on_instability": True
-            }
-        ],
-        "feedback_loop": {
-            "enabled": True,
-            "trigger": "on_eval_fail",
-            "via": "gateway"
-        },
-    },
+}
 
 
 def create_bundle_json(bundle_id: str, bundle_config: Dict[str, Any]) -> Dict[str, Any]:
