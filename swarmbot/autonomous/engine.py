@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Set
 from ..config_manager import ProviderConfig, WORKSPACE_PATH, load_config
 from ..loops.overaction import OveractionLoop
 from ..swarm.manager import SwarmManager
-from ..memory.graphiti_adapter import GraphitiMemoryAdapter
+from ..memory.graphiti_adapter import SimpleMemoryAdapter
 
 
 @dataclass
@@ -309,7 +309,7 @@ class AutonomousEngine:
         self.stop_event = stop_event
         self.config = load_config()
         self.workspace = WORKSPACE_PATH
-        self.graphiti_memory: GraphitiMemoryAdapter | None = None
+        self.graphiti_memory: SimpleMemoryAdapter | None = None
         queues_cfg = getattr(self.config.autonomous, "queues", {}) or {}
         self.monitor_queue = deque(maxlen=max(50, int(queues_cfg.get("monitor_queue_size", 1000))))
         self._action_capacity = max(20, int(queues_cfg.get("action_queue_size", 500)))
@@ -397,9 +397,9 @@ class AutonomousEngine:
 
         try:
             import asyncio
-            self.graphiti_memory = GraphitiMemoryAdapter(provider_config=self.config.providers[0] if self.config.providers else None)
+            self.graphiti_memory = SimpleMemoryAdapter()
             asyncio.get_event_loop().run_until_complete(self.graphiti_memory.initialize())
-            print("[Autonomous] Graphiti memory initialized.")
+            print("[Autonomous] Memory initialized.")
         except Exception as e:
             print(f"[Autonomous] Warning: Failed to initialize Graphiti memory: {e}")
             self.graphiti_memory = None
