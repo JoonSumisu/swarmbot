@@ -18,7 +18,6 @@ from .config_manager import (
     WORKSPACE_PATH,
 )
 from .swarm.manager import SwarmManager
-from .loops.inference import InferenceLoop
 import shutil
 
 

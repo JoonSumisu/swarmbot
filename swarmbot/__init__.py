@@ -4,7 +4,6 @@ __all__ = [
     "CoreAgent",
     "SwarmManager",
     "MemoryStore",
-    "QMDMemoryStore",
 ]
 
 import importlib
@@ -18,4 +17,3 @@ except Exception:
 from .core.agent import CoreAgent
 from .swarm.manager import SwarmManager
 from .memory.base import MemoryStore
-from .memory.qmd import QMDMemoryStore

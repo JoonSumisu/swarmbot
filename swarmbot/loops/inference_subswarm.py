@@ -9,9 +9,7 @@ from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
-from ..memory.hot_memory import HotMemory
-from ..memory.warm_memory import WarmMemory
-from ..memory.cold_memory import ColdMemory
+from ..memory.memory_manager import MemoryManager
 from .base import BaseInferenceTool, InferenceResult
 from .skill_registry import SkillRegistry
 
@@ -24,9 +22,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
 
     def _initialize(self):
         self.whiteboard = Whiteboard()
-        self.hot_memory = HotMemory(self.workspace_path)
-        self.warm_memory = WarmMemory(self.workspace_path)
-        self.cold_memory = ColdMemory()
+        self.memory_manager = MemoryManager.get_instance()
         self.skill_registry = SkillRegistry()
         
         self.swarmboot = load_boot_markdown("swarmboot.md", "inference_loop", max_chars=12000) or ""
@@ -100,7 +96,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
                 role="planner",
                 skills={}
             )
-            worker = CoreAgent(ctx, self.llm, self.cold_memory, enable_tools=False)
+            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=False)
             result = worker.step(prompt)
             
             tasks = self._extract_json(result)
@@ -170,7 +166,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
                 role="worker",
                 skills={}
             )
-            worker = CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=True)
+            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=True)
             result = worker.step(prompt)
             return result
         except Exception as e:
@@ -195,7 +191,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
                 role="master",
                 skills={}
             )
-            worker = CoreAgent(ctx, self.llm, self.cold_memory, hot_memory=self.hot_memory, enable_tools=False)
+            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=False)
             result = worker.step(prompt)
             return result
         except Exception as e:
