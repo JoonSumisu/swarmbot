@@ -64,7 +64,7 @@ class GatewayMasterAgent:
             "identity": load_boot_markdown("IDENTITY.md", "master_agent", max_chars=2000) or "",
             "user": load_boot_markdown("USER.md", "master_agent", max_chars=2000) or "",
             "master_agent_boot": load_boot_markdown("masteragentboot.md", "master_agent", max_chars=3000) or "",
-            "boot_index": load_boot_markdown("../BOOT_INDEX.md", "master_agent", max_chars=3000) or "",
+            "boot_index": load_boot_markdown("BOOT_INDEX.md", "master_agent", max_chars=3000) or "",
         }
 
     def _load_tools(self):

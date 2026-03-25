@@ -115,6 +115,22 @@ class AutonomousConfig:
     )
 
 @dataclass
+class OverthinkingConfig:
+    enabled: bool = True
+    interval_minutes: int = 30
+    max_steps: int = 5
+
+
+@dataclass
+class OveractionConfig:
+    enabled: bool = True
+    interval_minutes: int = 60
+    interaction_timeout_hours: int = 4
+    scheduled_tasks: List[Dict[str, Any]] = field(default_factory=list)
+    self_diagnosis: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class SwarmbotConfig:
     providers: List[ProviderConfig] = field(default_factory=lambda: [
         ProviderConfig(name="primary"),
@@ -126,6 +142,21 @@ class SwarmbotConfig:
     channels: Dict[str, ChannelConfig] = field(default_factory=dict)
     daemon: DaemonConfig = field(default_factory=DaemonConfig)
     autonomous: AutonomousConfig = field(default_factory=AutonomousConfig)
+    overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
+    overaction: OveractionConfig = field(default_factory=OveractionConfig)
+    # No more hardcoded paths here, rely on constants
+    providers: List[ProviderConfig] = field(default_factory=lambda: [
+        ProviderConfig(name="primary"),
+        ProviderConfig(name="backup")
+    ])
+    # Deprecated 'provider' field removed to avoid confusion/conflicts
+    swarm: SwarmSettings = field(default_factory=SwarmSettings)
+    tools: ToolConfig = field(default_factory=ToolConfig)
+    channels: Dict[str, ChannelConfig] = field(default_factory=dict)
+    daemon: DaemonConfig = field(default_factory=DaemonConfig)
+    autonomous: AutonomousConfig = field(default_factory=AutonomousConfig)
+    overthinking: OverthinkingConfig = field(default_factory=OverthinkingConfig)
+    overaction: OveractionConfig = field(default_factory=OveractionConfig)
     # No more hardcoded paths here, rely on constants
 
 def ensure_dirs() -> None:
@@ -231,6 +262,20 @@ def load_config() -> SwarmbotConfig:
                 if k == "provider": continue
                 if hasattr(cfg.autonomous, k):
                     setattr(cfg.autonomous, k, v)
+
+        # 7. Load Overthinking
+        if "overthinking" in data:
+            ot_data = data["overthinking"]
+            for k, v in ot_data.items():
+                if hasattr(cfg.overthinking, k):
+                    setattr(cfg.overthinking, k, v)
+
+        # 8. Load Overaction
+        if "overaction" in data:
+            oa_data = data["overaction"]
+            for k, v in oa_data.items():
+                if hasattr(cfg.overaction, k):
+                    setattr(cfg.overaction, k, v)
 
         # Sync environment variables from primary provider
         if cfg.providers:

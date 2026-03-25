@@ -10,6 +10,7 @@ from ..config import SwarmConfig
 from ..config_manager import SwarmbotConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.memory_manager import MemoryManager
+from ..memory.whiteboard import Whiteboard
 from ..core.agent import AgentContext, CoreAgent
 from ..loops.skill_registry import SkillRegistry
 from ..boot.context_loader import load_boot_markdown
@@ -31,6 +32,7 @@ class SwarmSession:
         self.config = config
         self.llm = llm_client
         self.memory = MemoryManager.get_instance()
+        self.whiteboard = Whiteboard()  # Per-session whiteboard for swarm operations
         self.skill_registry = SkillRegistry()
         
         self.agents: List[SwarmAgentSlot] = []
@@ -60,6 +62,7 @@ class SwarmSession:
                 ctx = AgentContext(agent_id=f"agent-{role}-{self.session_id[:8]}", role=role)
                 agent = CoreAgent(ctx=ctx, llm=self.llm, memory=self.memory)
                 slot = SwarmAgentSlot(agent=agent, weight=1.0)
+                self._apply_skills(slot, role)
                 self.agents.append(slot)
         elif target_count < current_count:
             self.agents = self.agents[:target_count]
@@ -166,15 +169,10 @@ class SwarmManager:
         self._persist_log(session, user_input, swarm_result)
 
         try:
-            if hasattr(session.memory.whiteboard, "clear"):
-                # Clear all except core keys if needed, but optimization plan says "Clear after loop"
-                # "类似一个缓存，讨论的时候用的白板" -> So we should clear it mostly.
-                # But we might want to keep it if the conversation continues in same session?
-                # User said: "Whiteboard只用于loop推理当中，结束后会被清除"
-                # So we clear it.
-                session.memory.whiteboard.clear()
-            elif isinstance(session.memory.whiteboard, dict):
-                session.memory.whiteboard.clear()
+            # Use session's whiteboard
+            wb = session.whiteboard
+            if hasattr(wb, "clear"):
+                wb.clear()
         except:
             pass
 
@@ -192,52 +190,13 @@ class SwarmManager:
     def _boot_swarm_context(self, session: SwarmSession, user_input: str) -> None:
         self._log("--- Phase 1: Swarm Boot (Memory Retrieval & Context Injection) ---")
         
-        # 生命周期管理：循环开始时恢复 / 初始化 Whiteboard 核心结构与循环计数
+        # Clear whiteboard for fresh context
         try:
-            if hasattr(session.memory, "whiteboard"):
-                wb = session.memory.whiteboard
-                if hasattr(wb, "ensure_task_frame"):
-                    wb.ensure_task_frame()
-                # 检查点恢复
-                try:
-                    cache_root = session.memory.local_cache.root
-                    ckpt_path = os.path.join(cache_root, f"checkpoint_{session.session_id}.json")
-                    if os.path.exists(ckpt_path):
-                        with open(ckpt_path, "r", encoding="utf-8") as f:
-                            ckpt_data = json.load(f)
-                        if isinstance(ckpt_data, dict):
-                            for k, v in ckpt_data.items():
-                                wb.update(k, v)
-                except Exception:
-                    pass
-                # 更新循环计数
-                loop_counter = wb.get("loop_counter") or 0
-                wb.update("loop_counter", int(loop_counter) + 1)
-                wb.update("current_state", "PLANNING")
-        except:
-            pass
-        
-        if self._swarmboot_cache is not None:
-            swarmboot_content = self._swarmboot_cache
-        else:
-            swarmboot_content = load_boot_markdown("swarmboot.md", "swarm_manager", max_chars=8000)
-            self._swarmboot_cache = swarmboot_content
-
-        # Clear events (short term volatile)
-        try:
-            session.memory._events.clear()
+            session.whiteboard.clear()
         except:
             pass
 
-        # --- Inject Hot Memory (L2) ---
-        hot_mem_content = ""
-        try:
-            raw_hot = session.hot_memory.read()
-            if raw_hot and len(raw_hot.strip()) > 10:
-                hot_mem_content = f"\n\n[HOT MEMORY (L2) - Short-term Context & Todo]\n{raw_hot}\n"
-        except Exception as e:
-            self._log(f"Failed to read hot memory: {e}")
-
+        # Search memory for context
         qmd_context = ""
         try:
             q_len = len(user_input or "")
@@ -247,7 +206,7 @@ class SwarmManager:
                 q_limit = 5
             else:
                 q_limit = 10
-            results = session.memory.search(user_input, limit=q_limit)
+            results = session.memory.search_knowledge(user_input, limit=q_limit)
             if results:
                 parts = []
                 for r in results:
@@ -261,76 +220,22 @@ class SwarmManager:
         except:
             pass
 
+        # Get recent conversation context
         md_excerpt = ""
         try:
-            date_str = time.strftime("%Y-%m-%d")
-            log_file = f"chat_log_{session.session_id}_{date_str}.md"
-            md_text = session.memory.local_cache.read(log_file)
-            if md_text:
-                segments = md_text.split("\n## Loop ")
-                if len(segments) > 1:
-                    loops = []
-                    base = segments[0]
-                    for seg in segments[1:]:
-                        loops.append("## Loop " + seg)
-                    def _extract_terms(text: str) -> list[str]:
-                        terms: list[str] = []
-                        if not text:
-                            return terms
-                        for w in text.split():
-                            if len(w) >= 3:
-                                terms.append(w)
-                        buf = []
-                        for ch in text:
-                            if "\u4e00" <= ch <= "\u9fff":
-                                buf.append(ch)
-                            else:
-                                if len(buf) >= 2:
-                                    terms.append("".join(buf))
-                                buf = []
-                        if len(buf) >= 2:
-                            terms.append("".join(buf))
-                        return list(dict.fromkeys(terms))
-                    query_terms = _extract_terms(user_input or "")
-                    def score_loop(text: str) -> int:
-                        if not query_terms:
-                            return 0
-                        s = 0
-                        for t in query_terms:
-                            if t and t in text:
-                                s += 1
-                        return s
-                    scored = []
-                    for idx, lp in enumerate(loops):
-                        s = score_loop(lp)
-                        scored.append((s, idx, lp))
-                    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
-                    top = [lp for s, i, lp in scored[:5] if s > 0]
-                    if not top and not query_terms:
-                        top = loops[-3:]
-                    # Strict filtering: if query terms exist but no matches found, 
-                    # do NOT fallback to last 3. Keep top empty.
-                    # This avoids context pollution from irrelevant previous sessions.
-                    
-                    def _shrink_loop(text: str) -> str:
-                        start = text.find("### Input")
-                        if start == -1:
-                            return text
-                        end = text.find("### Whiteboard Snapshot")
-                        if end == -1:
-                            end = len(text)
-                        return text[start:end].strip()
-                    shrunk = []
-                    for lp in top:
-                        s = _shrink_loop(lp)
-                        shrunk.append(s)
-                    md_excerpt = "\n".join(shrunk)
-                    if len(md_excerpt) > 4000:
-                        md_excerpt = md_excerpt[:4000] + "\n...[local history truncated]\n"
-                else:
-                    md_excerpt = md_text[-2000:]
+            recent_context = session.memory.get_recent_context(session.session_id, max_turns=5)
+            if recent_context:
+                md_excerpt = recent_context
+                if len(md_excerpt) > 4000:
+                    md_excerpt = md_excerpt[:4000] + "\n...[local history truncated]\n"
         except:
             pass
+        
+        if self._swarmboot_cache is not None:
+            swarmboot_content = self._swarmboot_cache
+        else:
+            swarmboot_content = load_boot_markdown("swarmboot.md", "swarm_manager", max_chars=8000)
+            self._swarmboot_cache = swarmboot_content
 
         system_caps = {}
         try:
@@ -346,7 +251,7 @@ class SwarmManager:
                 "daemon": {
                     "state_file": str(daemon_state),
                     "config_section": "daemon",
-                    "services": ["gateway", "overthinking", "backup", "health"],
+                    "services": ["gateway", "autonomous", "backup", "health"],
                 },
                 "cron": {
                     "store_path": str(cron_store),
@@ -373,108 +278,51 @@ class SwarmManager:
             "session_id": session.session_id,
             "system_capabilities": system_caps
         }
-        session.memory.whiteboard.update("current_task_context", structured_context)
+        session.whiteboard.update("current_task_context", structured_context)
 
     def _persist_log(self, session: SwarmSession, user_input: str, result: str) -> None:
         try:
-            date_str = time.strftime("%Y-%m-%d")
-            # Log file per session to avoid mixing chats
-            log_file = f"chat_log_{session.session_id}_{date_str}.md"
+            # Save swarm results as episode in memory
+            snippet = result[:2000] if result else ""
             
+            # Get whiteboard data
             whiteboard_data = {}
             try:
-                if hasattr(session.memory.whiteboard, "_data"):
-                     whiteboard_data = session.memory.whiteboard._data.copy()
-                elif isinstance(session.memory.whiteboard, dict):
-                     whiteboard_data = session.memory.whiteboard.copy()
+                if hasattr(session.whiteboard, "_data"):
+                    whiteboard_data = session.whiteboard._data.copy()
+                elif isinstance(session.whiteboard, dict):
+                    whiteboard_data = session.whiteboard.copy()
             except:
                 pass
             
-            whiteboard_dump = json.dumps(whiteboard_data, ensure_ascii=False, indent=2)
-            snippet = result[:1200] if result else ""
-
-            # 结构化 Loop 记录
+            # Store key facts from whiteboard
             loop_counter = 0
-            current_state = whiteboard_data.get("current_state") or "UNKNOWN"
             try:
                 loop_counter = int(whiteboard_data.get("loop_counter") or 0)
-            except Exception:
-                loop_counter = 0
-
-            timestamp = time.strftime("%H:%M:%S")
-
-            loop_entry = (
-                f"\n## Loop {loop_counter} [{timestamp}] - State: {current_state}\n\n"
-                f"### Input\n\n{user_input}\n\n"
-                f"### Result (snippet)\n\n{snippet}\n\n"
-                f"### Whiteboard Snapshot\n\n```json\n{whiteboard_dump}\n```\n"
-            )
-
-            # 若文件不存在，则先写入前置信息头，再追加 Loop 记录
-            cache = session.memory.local_cache
-            from os import path as _path
-            full_path = _path.join(cache.root, log_file)
-
-            if not _path.exists(full_path):
-                header = (
-                    "---\n"
-                    f"session_id: {session.session_id}\n"
-                    f"date: {date_str}\n"
-                    "task_type: general\n"
-                    "loops: 0\n"
-                    "final_status: running\n"
-                    "---\n"
+            except:
+                pass
+            
+            if snippet.strip():
+                session.memory.add_episode(
+                    content=f"[Swarm {session.session_id}] Loop {loop_counter}: {snippet}",
+                    metadata={"source": "swarm", "session_id": session.session_id, "loop": loop_counter}
                 )
-                cache.write(log_file, header + loop_entry)
-            else:
-                cache.append(log_file, loop_entry)
-
-            # QMD 写入流：处理 qmd_candidates
-            try:
-                candidates = whiteboard_data.get("qmd_candidates") or []
-                if isinstance(candidates, list):
-                    for item in candidates:
-                        if not isinstance(item, dict):
-                            continue
+            
+            # Store important facts from whiteboard if any
+            qmd_candidates = whiteboard_data.get("qmd_candidates") or []
+            if isinstance(qmd_candidates, list):
+                for item in qmd_candidates:
+                    if isinstance(item, dict):
                         content = item.get("content") or ""
-                        if not str(content).strip():
-                            continue
                         score = float(item.get("confidence_score") or 0)
-                        status = str(item.get("verification_status") or "").lower()
-                        if score <= 0.7 or status == "pending":
-                            continue
-                        collection = item.get("collection") or "core_memory"
-                        meta = {}
-                        for k, v in item.items():
-                            if k != "content":
-                                meta[k] = v
-                        session.memory.persist_to_qmd(str(content), collection=collection)
-            except:
-                pass
-
-            # 检查点数据持久化
-            try:
-                core_keys = [
-                    "task_specification",
-                    "execution_plan",
-                    "current_state",
-                    "loop_counter",
-                    "completed_subtasks",
-                    "pending_subtasks",
-                    "intermediate_results",
-                    "content_registry",
-                    "checkpoint_data",
-                ]
-                checkpoint = {}
-                for k in core_keys:
-                    if k in whiteboard_data:
-                        checkpoint[k] = whiteboard_data[k]
-                cache_root = cache.root
-                ckpt_path = _path.join(cache_root, f"checkpoint_{session.session_id}.json")
-                with open(ckpt_path, "w", encoding="utf-8") as f:
-                    json.dump(checkpoint, f, ensure_ascii=False)
-            except:
-                pass
+                        if content.strip() and score > 0.7:
+                            session.memory.add_key_fact(
+                                session_id=session.session_id,
+                                content=str(content),
+                                category="swarm_finding",
+                                importance=min(1.0, score),
+                                source="swarm"
+                            )
         except:
             pass
 
@@ -544,7 +392,7 @@ class SwarmManager:
                         f"\n\nOriginal Request: {user_input}\nRefine or expand."
                     )
                 result = slot.agent.step(prompt)
-                session.memory.whiteboard.update(f"result_{slot.agent.ctx.role}_r{r}", result)
+                session.whiteboard.update(f"result_{slot.agent.ctx.role}_r{r}", result)
                 return f"[{slot.agent.ctx.role}]\n{result}"
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(session.agents), 2)) as executor:
