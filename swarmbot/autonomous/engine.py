@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set
 from ..config_manager import ProviderConfig, WORKSPACE_PATH, load_config
 from ..memory.memory_manager import MemoryManager
 from ..swarm.manager import SwarmManager
+from .reflection import ReflectionEngine
 
 
 @dataclass
@@ -289,6 +290,33 @@ class _BundleGovernorBundle(_Bundle):
         return issues
 
 
+class _ReflectionBundle(_Bundle):
+    """反思 Bundle - 每小时随机探索一小段记忆"""
+    def __init__(self, bundle_id: str, interval_seconds: int, anti_over_opt: Dict[str, Any] | None = None):
+        super().__init__(bundle_id, interval_seconds, anti_over_opt)
+        self.reflection_engine = None  # 在运行时初始化
+
+    def check(self, now_ts: int) -> MonitorQueueItem | None:
+        if not self.due(now_ts):
+            return None
+        if self.reflection_engine is None:
+            return None
+        if not self.reflection_engine.is_due():
+            return None
+        self.mark(now_ts)
+        eid = str(uuid.uuid4())
+        return MonitorQueueItem(
+            event_id=eid,
+            bundle_id=self.bundle_id,
+            source="core",
+            kind="reflection",
+            severity="low",
+            detected_at=now_ts,
+            evidence={"reason": "periodic_reflection"},
+            idempotency_key=f"{self.bundle_id}:{now_ts}",
+        )
+
+
 class _ActionRunner:
     def __init__(self, stop_event: threading.Event, max_workers: int = 3):
         self.stop_event = stop_event
@@ -373,9 +401,33 @@ class AutonomousEngine:
                 gov_anti_opt,
             )
         )
+
+        # Reflection Bundle - 每小时随机探索记忆
+        ref_cfg = monitor.get("reflection", {}) if isinstance(monitor, dict) else {}
+        ref_bundle_config = self._load_bundle_config("core.reflection")
+        ref_anti_opt = self._get_anti_over_opt_params(ref_bundle_config)
+        self._reflection_bundle = _ReflectionBundle(
+            "core.reflection",
+            int(ref_cfg.get("interval_minutes", 60)) * 60,
+            ref_anti_opt,
+        )
+        bundles.append(self._reflection_bundle)
+
         return bundles
 
     def start(self):
+        # Initialize ReflectionEngine
+        from ..llm_client import OpenAICompatibleClient
+        llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
+        reflection_engine = ReflectionEngine(
+            memory_manager=self.cold,
+            llm=llm,
+            config=self.config,
+        )
+        # Connect to reflection bundle
+        if hasattr(self, '_reflection_bundle'):
+            self._reflection_bundle.reflection_engine = reflection_engine
+        
         t = threading.Thread(target=self._loop, daemon=True)
         t.start()
         print("[Autonomous] Engine started.")
@@ -480,6 +532,18 @@ class AutonomousEngine:
                     "priority": "medium",
                     "depends_on": [],
                     "required_capability": "prompt.optimize",
+                    "status": "pending",
+                }
+            ]
+        if item.kind == "reflection":
+            return [
+                {
+                    "task_id": f"{item.event_id}-t1",
+                    "title": "随机探索记忆并判断推展性",
+                    "acceptance": "输出反思结果和行动建议",
+                    "priority": "low",
+                    "depends_on": [],
+                    "required_capability": "memory.reflect",
                     "status": "pending",
                 }
             ]
@@ -629,6 +693,11 @@ class AutonomousEngine:
             return {"ok": True, "summary": "boot_optimize_done", "result": result}
         if action.kind == "bundle_governance":
             return self._run_bundle_governance()
+        if action.kind == "reflection":
+            if hasattr(self, '_reflection_bundle') and self._reflection_bundle.reflection_engine:
+                result = self._reflection_bundle.reflection_engine.reflect()
+                return {"ok": True, "summary": "reflection_done", "result": result}
+            return {"ok": False, "summary": "reflection_engine_not_initialized"}
         return {"ok": False, "summary": "unknown_kind"}
 
     def _run_action(self, action: ActionQueueItem) -> Dict[str, Any]:
