@@ -112,6 +112,10 @@ swarmbot status
 ```
 swarmbot/
 ├── boot/                     # Boot files (SOUL.md, inference_tools.md, etc.)
+│   ├── master/              # MasterAgent boot files
+│   ├── inference/           # Inference tool boot files
+│   ├── autonomous/          # Autonomous engine boot files
+│   └── shared/              # Shared boot files
 ├── cli.py                    # CLI entry point
 ├── config_manager.py         # Configuration loading
 ├── llm_client.py             # LLM client wrapper
@@ -122,19 +126,17 @@ swarmbot/
 │   └── communication_hub.py  # Shared message queue (chatroom)
 ├── loops/                    # Inference tools
 │   ├── base.py               # BaseInferenceTool abstract class
-│   ├── inference_standard.py # Standard 8-step inference
+│   ├── inference_standard.py # Standard inference (4 steps)
 │   ├── inference_supervised.py # Human-in-the-loop inference
 │   ├── inference_swarms.py   # Multi-worker inference
 │   └── skill_registry.py     # Skill registry
 ├── memory/                   # Memory system
-│   ├── whiteboard.py         # L1: Temporary workspace
-│   ├── session_memory.py     # L1.5: Session context (8-turn sliding window)
-│   ├── hot_memory.py        # L2: Important info (max 20 entries)
-│   ├── warm_memory.py        # L3: Daily logs
-│   └── cold_memory.py        # L4: Semantic vector DB (QMD)
+│   ├── memory_manager.py    # Unified SQLite memory manager
+│   ├── whiteboard.py        # Temporary workspace for inference
+│   └── cold_memory.py       # Cold memory interface
 ├── autonomous/               # Autonomous engine
-│   └── engine.py            # BundleGovernor + self-optimization
-├── skill_pool.py            # SkillPool (能力固化池)
+│   ├── engine.py            # BundleGovernor + self-optimization
+│   └── reflection.py        # Reflection engine
 └── nanobot/                  # Channel integrations
 ```
 
@@ -144,54 +146,35 @@ swarmbot/
 |-----------|------|-------------|
 | GatewayMasterAgent | `gateway/orchestrator.py` | 路由、演绎、人在回路 |
 | CommunicationHub | `gateway/communication_hub.py` | FIFO 消息队列 |
-| SkillPool | `skill_pool.py` | 能力固化池 |
-| BundleGovernor | `autonomous/engine.py` | Bundle 生命周期管理 |
-| SessionMemory | `memory/session_memory.py` | L1.5 会话记忆 |
+| MemoryManager | `memory/memory_manager.py` | 统一 SQLite 记忆管理 |
+| ReflectionEngine | `autonomous/reflection.py` | 自主反思引擎 |
+| AutonomousEngine | `autonomous/engine.py` | Bundle 自主引擎 |
 
 ---
 
 ## 4. Architecture (v2.2.0)
 
-### Memory System (记忆系统)
+### Memory System (统一 SQLite 记忆系统)
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  记忆层架构                                                          │
+│  MemoryManager (SQLite 单例)                                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
-│  L1 Whiteboard     → 单次推理内的临时工作区，Loop 完成后清除        │
+│  conversations  → 对话记录，实时写入每轮对话                         │
 │                                                                      │
-│  L1.5 Session      → 会话级上下文，保留最近8轮完整对话               │
-│     (自动compact)     超过8轮 → 提取关键信息写入 Hot                │
+│  key_facts      → 关键事实，LLM 提取的重要信息                       │
 │                                                                      │
-│  L2 Hot Memory    → 重要信息/待办/计划，有容量限制(20条)            │
-│     (持续更新)        超过20条 → 删除最旧条目                        │
+│  episodes       → 知识片段，包含归档数据和冷记忆                     │
 │                                                                      │
-│  L3 Warm Memory   → 每日自动保存的会话日志                          │
-│     (每日归档)        被 Autonomous 整理后清除 (>30天)               │
+│  entities       → 实体追踪，用户信息、技术栈等                       │
 │                                                                      │
-│  L4 Cold Memory   → 语义知识库 (QMD)                                 │
-│     (永久存储)        由 Autonomous memory_foundation 整理写入       │
+│  relations      → 实体关系，实体间的关联                             │
+│                                                                      │
+│  autonomous_actions → 自主动作记录                                   │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 
-记忆流转流程:
-```
-用户输入
-    │
-    ▼
-MasterAgent (simple_direct / 推理模式)
-    ├── 读取: Session + Hot + Cold
-    ├── 处理请求
-    └── 写入 Session + Warm
-
-会话 > 8 轮 → Compact 触发
-    ├── 保留最近8轮完整对话结果
-    └── 调用 MasterAgent 提取 → 写入 Hot (最多20条)
-
-Autonomous memory_foundation (定时)
-    ├── 读取 Hot + Warm
-    ├── 压缩写入 Cold (QMD)
-    └── 清理 Warm 文件 (>30天)
+Whiteboard → 单次推理内的临时工作区，Loop 完成后清除
 ```
 
 ### Core Flow
@@ -209,7 +192,7 @@ GatewayServer
     │                    │                     │
     ▼                    ▼                     ▼
 MasterAgent          InferenceTools        Autonomous
-(路由+演绎+转发)    (standard/supervised)  (Bundle)
+(路由+演绎+转发)    (standard/supervised)  (Bundle + Reflection)
 ```
 
 ### GatewayMasterAgent Responsibilities
@@ -218,27 +201,36 @@ MasterAgent          InferenceTools        Autonomous
 3. **结果演绎**: 推理工具结果经过 MasterAgent 加工
 4. **人在回路转发**: 推理工具暂停时转发给用户确认
 5. **连续对话**: 读取上下文
-6. **记忆读取**: Whiteboard / Hot / Warm / QMD
+6. **记忆读写**: MemoryManager (conversations + key_facts + episodes)
 
 ### Inference Tools
 | Tool | 说明 | 人在回路 |
 |------|------|----------|
-| `standard` | 标准8步推理 | 否 |
+| `standard` | 标准推理 (4步: 分析/规划/执行/评估) | 否 |
 | `supervised` | 人在回路推理 | 是 (ANALYSIS_REVIEW, PLAN_REVIEW) |
 | `swarms` | 多Worker协作 | 否 |
 | `subswarm` | 异步子任务编排 | 可选 |
 
-### CommunicationHub Message Types
-- `TASK_REQUEST` / `TASK_RESULT`: MasterAgent ↔ InferenceTool
-- `SUSPEND_REQUEST` / `RESUME_REQUEST`: 人在回路
-- `AUTONOMOUS_REQUEST` / `AUTONOMOUS_STATUS`: MasterAgent ↔ Autonomous
-- `HUMAN_IN_LOOP_REQUEST` / `RESPONSE`: 转发用户确认
+### AutonomousEngine Bundles
+| Bundle | 间隔 | 用途 |
+|--------|------|------|
+| `core.memory_foundation` | 30分钟 | 记忆整理 |
+| `core.boot_optimizer` | 20分钟 | Boot 优化 |
+| `core.system_hygiene` | 10分钟 | 磁盘/内存检查 |
+| `core.bundle_governor` | 5分钟 | Bundle 冲突检测 |
+| `core.reflection` | 60分钟 | 自主反思 |
+
+### ReflectionEngine
+- 每小时随机获取记忆起点
+- 时间线探索（最多5次追问）
+- LLM 判断推展性
+- 30% 概率行动（整理/学习/提议）
 
 ---
 
 ## 5. Testing Guidelines
 
-### Smoke Test Checklist (11项)
+### Smoke Test Checklist (8项)
 
 | # | 验证项 | 测试方法 |
 |---|--------|----------|
@@ -248,11 +240,8 @@ MasterAgent          InferenceTools        Autonomous
 | 4 | 连续对话 | 多轮对话验证上下文 |
 | 5 | 推理工具执行 | 发送复杂问题 |
 | 6 | MasterAgent 演绎结果 | 检查结果是否经过加工 |
-| 7 | 推理工具使用记忆 | 检查 Whiteboard/Hot/Warm/QMD 读写 |
-| 8 | 推理工具使用 Skill/Tool | 验证技能调用 |
-| 9 | 人在回路 | 发送需要确认的复杂任务 |
-| 10 | Autonomous Bundle 设计 | 发送需要自主研究的任务 |
-| 11 | Bundle 自我优化 | 验证优化效果 |
+| 7 | 记忆持久化 | 检查 MemoryManager 记录 |
+| 8 | Compact 功能 | 验证 30 轮触发 compact |
 
 ---
 
