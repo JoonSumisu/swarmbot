@@ -12,6 +12,28 @@ BOOT_CONFIG_PATH = os.path.join(CONFIG_HOME, "boot")
 
 
 @dataclass
+class LLMConfig:
+    """LLM 配置 - 兼容旧接口"""
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    timeout: float = 120.0
+    max_tokens: int = 4096
+    temperature: float = 0.6
+
+
+@dataclass
+class SwarmConfig:
+    """Swarm 配置 - 兼容旧接口"""
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    max_agents: int = 8
+    max_turns: int = 32
+
+
+DEFAULT_CONFIG = SwarmConfig()
+
+
+@dataclass
 class ProviderConfig:
     name: str = "custom"
     base_url: str = ""

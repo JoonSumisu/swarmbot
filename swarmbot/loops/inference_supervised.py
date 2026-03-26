@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
+from ..core.agent_config import CoreAgentConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
 from ..memory.memory_manager import MemoryManager
@@ -17,7 +18,7 @@ from .skill_registry import SkillRegistry
 class SupervisedInferenceTool(BaseInferenceTool):
     """
     人在回路推理工具 - 在关键步骤暂停等待用户确认
-    结果通过 Hub 发送，由 MasterAgent 翻译回复
+    使用 CoreAgent 循环，结果通过 Hub 发送给 MasterAgent
     """
 
     BREAKPOINTS = ["ANALYSIS_REVIEW", "PLAN_REVIEW"]
@@ -167,19 +168,33 @@ class SupervisedInferenceTool(BaseInferenceTool):
         return self.run("", self.whiteboard.get("metadata", {}).get("session_id", ""))
 
     def _create_worker(self, role: str, enable_tools: bool = True, allowed_tools: List[str] = None) -> CoreAgent:
+        """创建 CoreAgent 实例，加载 inference boot"""
         skills = self.skill_registry.get_skills_for_task(role, task_desc="", required_skills=None)
         if allowed_tools:
             allowed = set(allowed_tools) | {"whiteboard_update"}
             skills = {k: v for k, v in skills.items() if k in allowed}
 
-        ctx = AgentContext(
+        config = CoreAgentConfig(
             agent_id=f"worker-{role}-{time.time_ns()}",
+            role=role,
+            boot_mode="inference",
+            enable_tools=enable_tools,
+            allowed_tools=allowed_tools,
+            verbose=False,
+            log_assessment=False,
+            max_iterations=10,
+        )
+
+        ctx = AgentContext(
+            agent_id=config.agent_id,
             role=role,
             skills=skills
         )
-        return CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=enable_tools)
+        
+        return CoreAgent(ctx, self.llm, self.memory_manager, config=config)
 
     def _step_analysis(self, user_input: str) -> Dict[str, Any]:
+        """分析步骤 - 使用 CoreAgent"""
         prompt = f"""你是分析 Agent。请分析用户输入的意图和需求。
 
 用户输入: {user_input}
@@ -205,6 +220,7 @@ SWARMBOT: {self.swarmboot[:2000]}
             return {"intent": user_input, "domain": "general", "complexity": "medium"}
 
     def _step_collection(self, user_input: str) -> Dict[str, Any]:
+        """收集步骤 - 使用 CoreAgent"""
         prompt = f"""你是收集 Agent。请收集相关的上下文信息。
 
 用户输入: {user_input}
@@ -221,6 +237,7 @@ SWARMBOT: {self.swarmboot[:2000]}
             return {"context": "", "sources": []}
 
     def _step_planning(self, user_input: str) -> Dict[str, Any]:
+        """规划步骤 - 使用 CoreAgent"""
         prompt = f"""你是规划 Agent。请生成行动计划。
 
 用户输入: {user_input}
@@ -237,9 +254,11 @@ SWARMBOT: {self.swarmboot[:2000]}
             return {"objective": user_input, "tasks": []}
 
     def _step_execution(self) -> Dict[str, Any]:
+        """执行步骤"""
         return {"results": [], "completed": 0, "total": 0}
 
     def _step_evaluation(self) -> Dict[str, Any]:
+        """评估步骤"""
         return {"passed": True, "quality": "good"}
 
     def _extract_json(self, text: str) -> Dict[str, Any]:

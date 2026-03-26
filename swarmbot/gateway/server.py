@@ -26,9 +26,9 @@ from loguru import logger
 
 # --- Imports ---
 from swarmbot.config_manager import load_config, SwarmbotConfig, WORKSPACE_PATH
-from nanobot.bus.queue import MessageBus, InboundMessage, OutboundMessage
-from nanobot.channels.feishu import FeishuChannel
-from nanobot.config.schema import FeishuConfig
+from swarmbot.bus.queue import MessageBus, InboundMessage, OutboundMessage
+from swarmbot.channels.feishu import FeishuChannel
+from swarmbot.config.schema import FeishuConfig
 
 from swarmbot.autonomous import AutonomousEngine
 from swarmbot.gateway.orchestrator import GatewayMasterAgent

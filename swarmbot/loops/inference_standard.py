@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
+from ..core.agent_config import CoreAgentConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
 from ..memory.memory_manager import MemoryManager
@@ -17,8 +18,8 @@ from .skill_registry import SkillRegistry
 
 class StandardInferenceTool(BaseInferenceTool):
     """
-    标准 7 步推理工具 (无人在回路)
-    结果通过 Hub 发送，由 MasterAgent 翻译回复
+    标准推理工具 (无人在回路)
+    使用 CoreAgent 循环，结果通过 Hub 发送给 MasterAgent
     """
 
     def _initialize(self):
@@ -56,44 +57,22 @@ class StandardInferenceTool(BaseInferenceTool):
             context = self.memory_manager.get_recent_context(session_id, max_turns=5)
             facts = self.memory_manager.get_important_facts_text(session_id, limit=3)
 
-            # 1. Analysis（合并分析+收集，减少步数）
-            analysis = self._step_analysis(user_input, context, facts)
-            self.completed_stages.add("ANALYSIS")
-
-            # 2. Planning
-            plan = self._step_planning(user_input, analysis)
-            self.completed_stages.add("PLANNING")
-
-            # 3. Execution
-            execution = self._step_execution(plan)
-            self.completed_stages.add("EXECUTION")
-
-            # 4. Evaluation
-            evaluation = self._step_evaluation(execution)
-            self.completed_stages.add("EVALUATION")
-
-            # 5. 发送结果到 Hub
-            result_content = json.dumps({
-                "analysis": analysis,
-                "plan": plan,
-                "execution": execution,
-                "evaluation": evaluation,
-            }, ensure_ascii=False)
-
-            success = evaluation.get("passed", False)
-
+            # 使用 CoreAgent 循环执行任务
+            result = self._run_with_core_agent(user_input, context, facts)
+            
+            # 发送结果到 Hub
             if self.hub:
                 self.hub.send_task_result(
-                    result=result_content,
+                    result=result["content"],
                     session_id=session_id,
-                    success=success,
+                    success=result["success"],
                 )
                 print(f"[StandardInferenceTool] Result sent to Hub")
 
             self.whiteboard.clear()
             print(f"[StandardInferenceTool] Done")
 
-            return InferenceResult(success=success, content=result_content)
+            return InferenceResult(success=result["success"], content=result["content"])
 
         except Exception as e:
             print(f"[StandardInferenceTool] Error: {e}")
@@ -107,19 +86,57 @@ class StandardInferenceTool(BaseInferenceTool):
             return InferenceResult(success=False, error=str(e))
 
     def _create_worker(self, role: str, enable_tools: bool = True, allowed_tools: List[str] = None) -> CoreAgent:
+        """创建 CoreAgent 实例，加载 inference boot"""
         skills = self.skill_registry.get_skills_for_task(role, task_desc="", required_skills=None)
         if allowed_tools:
             allowed = set(allowed_tools) | {"whiteboard_update"}
             skills = {k: v for k, v in skills.items() if k in allowed}
 
-        ctx = AgentContext(
+        config = CoreAgentConfig(
             agent_id=f"worker-{role}-{time.time_ns()}",
+            role=role,
+            boot_mode="inference",
+            enable_tools=enable_tools,
+            allowed_tools=allowed_tools,
+            verbose=False,
+            log_assessment=False,
+            max_iterations=10,
+        )
+
+        ctx = AgentContext(
+            agent_id=config.agent_id,
             role=role,
             skills=skills
         )
-        return CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=enable_tools)
+        
+        return CoreAgent(ctx, self.llm, self.memory_manager, config=config)
+
+    def _run_with_core_agent(self, user_input: str, context: str, facts: str) -> Dict[str, Any]:
+        """使用 CoreAgent 循环执行任务"""
+        # 构建完整任务描述
+        task = f"""你需要完成以下任务：
+
+{user_input}
+
+最近对话: {context[:500] if context else '无'}
+重要事实: {facts[:300] if facts else '无'}
+
+请使用可用工具来完成任务，然后给出最终结果。"""
+
+        # 创建 CoreAgent 实例
+        agent = self._create_worker("analyst", enable_tools=True, allowed_tools=self.get_required_tools())
+        
+        # 使用 CoreAgent 循环
+        result = agent.run(task)
+        
+        return {
+            "success": result.assessment.complete if result.assessment else True,
+            "content": result.content,
+            "iterations": result.iterations,
+        }
 
     def _step_analysis(self, user_input: str, context: str, facts: str) -> Dict[str, Any]:
+        """分析步骤 - 使用 CoreAgent"""
         prompt = f"""分析用户意图并输出 JSON。
 
 用户输入: {user_input}
@@ -140,6 +157,7 @@ class StandardInferenceTool(BaseInferenceTool):
             return {"intent": user_input, "domain": "general", "complexity": "medium"}
 
     def _step_planning(self, user_input: str, analysis: Dict) -> Dict[str, Any]:
+        """规划步骤 - 使用 CoreAgent"""
         prompt = f"""生成行动计划。
 
 用户输入: {user_input}
@@ -159,6 +177,7 @@ class StandardInferenceTool(BaseInferenceTool):
             return {"objective": user_input, "tasks": [], "estimated_steps": 1}
 
     def _step_execution(self, plan: Dict) -> Dict[str, Any]:
+        """执行步骤 - 使用 CoreAgent"""
         tasks = plan.get("tasks", [])
         if not tasks:
             return {"results": [], "completed": 0}
@@ -172,6 +191,7 @@ class StandardInferenceTool(BaseInferenceTool):
         return {"results": results, "completed": completed, "total": len(results)}
 
     def _execute_task(self, task: Dict) -> Dict[str, Any]:
+        """执行单个任务 - 使用 CoreAgent"""
         task_desc = task.get("desc", "")
         tools = task.get("tools", [])
 
@@ -183,6 +203,7 @@ class StandardInferenceTool(BaseInferenceTool):
             return {"success": False, "error": str(e), "task_id": task.get("id")}
 
     def _step_evaluation(self, execution: Dict) -> Dict[str, Any]:
+        """评估步骤"""
         results = execution.get("results", [])
         completed = execution.get("completed", 0)
         total = execution.get("total", 0)

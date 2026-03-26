@@ -549,22 +549,6 @@ class ToolAdapter:
         else:
             return f"Unknown action: {action}. Valid actions: start, stop, status, configure, trigger"
 
-    def get_tool_definitions(self) -> List[Dict[str, Any]]:
-        """Return OpenAI-compatible tool definitions."""
-        tools = []
-        # Use registry schemas if available, otherwise fallback to local skills
-        # But to ensure full compatibility with existing code that might rely on self.skills:
-        for name, tool in self.skills.items():
-            tools.append({
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": tool.description,
-                    "parameters": tool.parameters
-                }
-            })
-        return tools
-
     def execute(self, tool_name: str, arguments: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> str:
         """
         Execute a skill.

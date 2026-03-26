@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from ..config_manager import ProviderConfig, WORKSPACE_PATH, load_config
+from ..core.agent import CoreAgent, AgentContext
+from ..core.agent_config import CoreAgentConfig
+from ..llm_client import OpenAICompatibleClient
 from ..memory.memory_manager import MemoryManager
 from ..swarm.manager import SwarmManager
 from .reflection import ReflectionEngine
@@ -472,348 +475,80 @@ class AutonomousEngine:
         return self._swarm_manager
 
     def _collect_monitor_events(self, now_ts: int):
+        """收集监控事件 - Bundle 主动触发"""
         for b in self.bundles:
+            # 检查 Bundle 是否到期
+            if not b.due(now_ts):
+                continue
+            
+            # Bundle 到期，检查并触发事件
             item = b.check(now_ts)
             if item is not None:
+                # 主动触发事件到 Hub
+                self._trigger_bundle_event(b, item)
                 self.monitor_queue.append(item)
 
-    def _build_task_list(self, item: MonitorQueueItem) -> List[Dict[str, Any]]:
-        if item.kind == "memory_foundation":
-            return [
-                {
-                    "task_id": f"{item.event_id}-t1",
-                    "title": "整理近期记忆并提炼事实经验理论",
-                    "acceptance": "写入Warm/QMD并产出可追溯摘要",
-                    "priority": "high",
-                    "depends_on": [],
-                    "required_capability": "memory.compact",
-                    "status": "pending",
-                }
-            ]
-        if item.kind == "system_hygiene":
-            return [
-                {
-                    "task_id": f"{item.event_id}-t1",
-                    "title": "执行系统健康诊断",
-                    "acceptance": "输出关键资源诊断结论",
-                    "priority": "high",
-                    "depends_on": [],
-                    "required_capability": "system.diagnose",
-                    "status": "pending",
-                },
-                {
-                    "task_id": f"{item.event_id}-t2",
-                    "title": "生成可执行修复建议",
-                    "acceptance": "建议可直接转成后续动作",
-                    "priority": "medium",
-                    "depends_on": [f"{item.event_id}-t1"],
-                    "required_capability": "analysis.plan",
-                    "status": "pending",
-                },
-            ]
-        if item.kind == "bundle_governance":
-            return [
-                {
-                    "task_id": f"{item.event_id}-t1",
-                    "title": "检测Bundle重复冲突并给出合并建议",
-                    "acceptance": "输出保留合并冻结待审建议",
-                    "priority": "high",
-                    "depends_on": [],
-                    "required_capability": "bundle.govern",
-                    "status": "pending",
-                }
-            ]
-        if item.kind == "boot_optimize":
-            return [
-                {
-                    "task_id": f"{item.event_id}-t1",
-                    "title": "评估并优化boot提示词",
-                    "acceptance": "输出更新建议与风险评估",
-                    "priority": "medium",
-                    "depends_on": [],
-                    "required_capability": "prompt.optimize",
-                    "status": "pending",
-                }
-            ]
-        if item.kind == "reflection":
-            return [
-                {
-                    "task_id": f"{item.event_id}-t1",
-                    "title": "随机探索记忆并判断推展性",
-                    "acceptance": "输出反思结果和行动建议",
-                    "priority": "low",
-                    "depends_on": [],
-                    "required_capability": "memory.reflect",
-                    "status": "pending",
-                }
-            ]
-        return [
-            {
-                "task_id": f"{item.event_id}-t1",
-                "title": "执行通用自治任务",
-                "acceptance": "生成可验证结果",
-                "priority": "medium",
-                "depends_on": [],
-                "required_capability": "general.execute",
-                "status": "pending",
-            }
-        ]
-
-    def _choose_swarm_mode(self, task_list: List[Dict[str, Any]], severity: str) -> str:
-        if severity in ["high", "critical"] or len(task_list) > 1:
-            return "swarms"
-        return "single_agent"
-
-    def _select_architecture(self, mode: str, task_list: List[Dict[str, Any]]) -> str:
-        if mode != "swarms":
-            return "auto"
-        if len(task_list) >= 3:
-            return "tree"
-        if len(task_list) == 2:
-            return "pipeline"
-        return "auto"
-
-    def _swarm_profile(self, mode: str, task_list: List[Dict[str, Any]]) -> Dict[str, Any]:
-        se = getattr(self.config.autonomous, "swarm_execution", {}) or {}
-        mn = int(se.get("worker_min", 1))
-        mx = int(se.get("worker_max", 10))
-        workers = 1 if mode == "single_agent" else min(mx, max(mn, len(task_list) + 1))
-        return {
-            "mode": mode,
-            "workers": max(1, min(10, workers)),
-            "architecture": self._select_architecture(mode, task_list),
-            "max_turns": 16,
-            "role_selection_mode": "self_select_by_tasklist",
-        }
-
-    def _to_action_type(self, kind: str) -> str:
-        if kind in ["bundle_governance"]:
-            return "update_bundle"
-        if kind in ["memory_foundation", "boot_optimize"]:
-            return "loop_optimize"
-        return "execute_task"
-
-    def _enqueue_action(self, item: ActionQueueItem):
-        if item.plan_id in self.action_queue:
-            return
-        while len(self._action_order) >= self._action_capacity:
-            drop_id = self._action_order.popleft()
-            self.action_queue.pop(drop_id, None)
-        self._action_order.append(item.plan_id)
-        self.action_queue[item.plan_id] = item
-
-    def _decision_from_monitor(self):
-        while self.monitor_queue:
-            m = self.monitor_queue.popleft()
-            task_list = self._build_task_list(m)
-            mode = self._choose_swarm_mode(task_list, m.severity)
-            profile = self._swarm_profile(mode, task_list)
-            plan_id = str(uuid.uuid4())
-            aq = ActionQueueItem(
-                plan_id=plan_id,
-                event_id=m.event_id,
-                bundle_id=m.bundle_id,
-                kind=m.kind,
-                action_type=self._to_action_type(m.kind),
-                task_list=task_list,
-                swarm_profile=profile,
-                risk_level="L2" if m.severity in ["high", "critical"] else "L1",
-                budget={"max_seconds": 600, "max_retry": self._max_retry},
-                deadline_ts=int(time.time()) + 1200,
-                retry_policy={"max_retries": self._max_retry},
-                approval_required=m.severity in ["critical"],
-                idempotency_key=m.idempotency_key,
-            )
-            self._enqueue_action(aq)
-
-    def _roles_from_task_list(self, task_list: List[Dict[str, Any]]) -> List[str]:
-        roles: List[str] = []
-        for t in task_list:
-            cap = str(t.get("required_capability", "general")).lower()
-            if "memory" in cap:
-                roles.append("memory_analyst")
-            elif "diagnose" in cap or "system" in cap:
-                roles.append("ops_diagnoser")
-            elif "bundle" in cap:
-                roles.append("governance_auditor")
-            elif "prompt" in cap:
-                roles.append("prompt_optimizer")
-            elif "analysis" in cap:
-                roles.append("analyst")
-            else:
-                roles.append("executor")
-        uniq = []
-        for r in roles:
-            if r not in uniq:
-                uniq.append(r)
-        return uniq or ["executor"]
-
-    def _swarm_arch_map(self, arch: str) -> str:
-        m = {"auto": "auto", "tree": "hierarchical", "mesh": "group_chat", "pipeline": "sequential"}
-        return m.get(arch, "auto")
-
-    def _build_swarms_prompt(self, action: ActionQueueItem) -> str:
-        return (
-            "你是Autonomous Action执行集群。请基于任务清单执行并返回结构化结果。\n"
-            f"kind={action.kind}\n"
-            f"action_type={action.action_type}\n"
-            f"task_list={json.dumps(action.task_list, ensure_ascii=False)}\n"
-            f"evidence={json.dumps(action.action_result.get('trigger', {}), ensure_ascii=False)}\n"
-            "输出JSON: {\"ok\":true,\"summary\":\"...\",\"details\":\"...\",\"next_suggestion\":\"...\"}"
-        )
-
-    def _execute_with_swarms(self, action: ActionQueueItem) -> Dict[str, Any]:
-        mgr = self._get_swarm_manager()
-        sid = f"autonomous-{action.plan_id[:8]}"
-        session = mgr.get_session(sid)
-        session.architecture = self._swarm_arch_map(str(action.swarm_profile.get("architecture", "auto")))
-        session.resize_swarm(int(action.swarm_profile.get("workers", 1)))
-        session.reassign_roles(self._roles_from_task_list(action.task_list))
-        prompt = self._build_swarms_prompt(action)
-        response = mgr.chat(prompt, session_id=sid)
-        return {"ok": bool(str(response).strip()), "summary": "swarms_executed", "details": str(response)}
-
-    def _run_bundle_governance(self) -> Dict[str, Any]:
-        for b in self.bundles:
-            if isinstance(b, _BundleGovernorBundle):
-                issues = b._scan_issues()
-                return {"ok": True, "summary": "bundle_governance_scanned", "issues": issues[:30], "issue_count": len(issues)}
-        return {"ok": True, "summary": "bundle_governance_no_bundle", "issues": [], "issue_count": 0}
-
-    def _execute_single(self, action: ActionQueueItem) -> Dict[str, Any]:
-        if action.kind == "memory_foundation":
-            OverthinkingLoop(threading.Event())._process_cycle()
-            return {"ok": True, "summary": "memory_foundation_done"}
-        if action.kind == "system_hygiene":
-            payload = {"title": "system-hygiene", "summary": json.dumps(action.action_result.get("trigger", {}), ensure_ascii=False)}
-            result = OveractionLoop(threading.Event()).trigger(reason="autonomous_system_hygiene", events=[payload])
-            return {"ok": True, "summary": "system_hygiene_done", "result": result}
-        if action.kind == "boot_optimize":
-            result = OveractionLoop(threading.Event()).trigger(reason="autonomous_boot_optimize", events=[{"title": "boot-optimize", "summary": "optimize boot prompts"}])
-            return {"ok": True, "summary": "boot_optimize_done", "result": result}
-        if action.kind == "bundle_governance":
-            return self._run_bundle_governance()
-        if action.kind == "reflection":
-            if hasattr(self, '_reflection_bundle') and self._reflection_bundle.reflection_engine:
-                result = self._reflection_bundle.reflection_engine.reflect()
-                return {"ok": True, "summary": "reflection_done", "result": result}
-            return {"ok": False, "summary": "reflection_engine_not_initialized"}
-        return {"ok": False, "summary": "unknown_kind"}
-
-    def _run_action(self, action: ActionQueueItem) -> Dict[str, Any]:
-        started = int(time.time())
-        progress = [{"ts": started, "event": "running.stage_changed", "stage": "start"}]
-        if action.action_type == "gateway_report":
-            msg = {
-                "ts": int(time.time()),
-                "plan_id": action.plan_id,
-                "bundle_id": action.bundle_id,
-                "content": action.action_result.get("report", ""),
-            }
-            self._append_gateway_report(msg)
-            progress.append({"ts": int(time.time()), "event": "completed", "stage": "gateway_report"})
-            return {
-                "state": "succeeded",
-                "action_result": {"ok": True, "summary": "gateway_report_done", "message": msg},
-                "eval_result": {"pass": True, "reason": "reported"},
-                "progress_events": progress,
-                "reported_to_gateway": True,
-                "finished_at": int(time.time()),
-            }
+    def _trigger_bundle_event(self, bundle: _Bundle, item: MonitorQueueItem):
+        """Bundle 主动触发事件到 Hub"""
         try:
-            if str(action.swarm_profile.get("mode")) == "swarms":
-                res = self._execute_with_swarms(action)
-            else:
-                res = self._execute_single(action)
-            ok = bool(res.get("ok"))
-            progress.append({"ts": int(time.time()), "event": "completed" if ok else "failed", "stage": "execution"})
-            return {
-                "state": "succeeded" if ok else "failed",
-                "action_result": res,
-                "eval_result": {"pass": ok, "reason": "ok" if ok else "execution_failed"},
-                "progress_events": progress,
-                "reported_to_gateway": False,
-                "finished_at": int(time.time()),
-            }
+            # 记录事件到记忆
+            self.cold.add(
+                content=f"bundle_triggered bundle={bundle.bundle_id} kind={item.kind} severity={item.severity}",
+                meta={"source": "autonomous", "event": "bundle_triggered"},
+            )
+            
+            # 发送事件通知（如果有 Hub）
+            if hasattr(self, 'hub') and self.hub:
+                from ..gateway.communication_hub import MessageSender, MessageType
+                self.hub.send(
+                    msg_type=MessageType.SYSTEM_STATUS,
+                    content=f"[Bundle 事件] {bundle.bundle_id}: {item.kind} ({item.severity})",
+                    sender=MessageSender.AUTONOMOUS,
+                    recipient=MessageSender.MASTER_AGENT,
+                    metadata={
+                        "event_id": item.event_id,
+                        "bundle_id": bundle.bundle_id,
+                        "kind": item.kind,
+                        "severity": item.severity,
+                    }
+                )
         except Exception as e:
-            progress.append({"ts": int(time.time()), "event": "failed", "stage": "exception"})
-            return {
-                "state": "failed",
-                "action_result": {"ok": False, "summary": str(e)},
-                "eval_result": {"pass": False, "reason": "exception"},
-                "progress_events": progress,
-                "reported_to_gateway": False,
-                "finished_at": int(time.time()),
-            }
+            print(f"[Autonomous] Bundle event trigger error: {e}")
 
-    def _decide_feedback(self, action: ActionQueueItem) -> Dict[str, Any]:
-        retry_count = int(action.decision_feedback.get("retry_count", 0))
-        if action.state == "succeeded":
-            if action.action_type == "gateway_report":
-                return {"next_action": "complete", "reason": "gateway_report_done", "retry_count": retry_count, "new_plan_required": False, "archive_required": True}
-            return {"next_action": "complete", "reason": "task_done", "retry_count": retry_count, "new_plan_required": False, "archive_required": True}
-        if retry_count < int(action.retry_policy.get("max_retries", self._max_retry)):
-            return {"next_action": "retry", "reason": "retry_within_budget", "retry_count": retry_count + 1, "new_plan_required": False, "archive_required": False}
-        return {"next_action": "escalate", "reason": "retry_exhausted", "retry_count": retry_count, "new_plan_required": True, "archive_required": True}
+    def _loop(self):
+        """主循环 - 支持 Bundle 主动触发"""
+        tick = max(5, int(getattr(self.config.autonomous, "tick_seconds", 30)))
+        
+        while not self.stop_event.is_set():
+            try:
+                self._reload_config_if_needed()
+                now_ts = int(time.time())
+                
+                # 1. 处理已完成的任务
+                self._flush_done()
+                
+                # 2. 收集 Bundle 事件（主动触发）
+                self._collect_monitor_events(now_ts)
+                
+                # 3. 决策并创建任务
+                self._decision_from_monitor()
+                
+                # 4. 分发执行
+                self._dispatch_actions()
+                
+                # 5. 处理 Hub 消息（如果有）
+                self._process_hub_messages()
+                
+            except Exception as e:
+                print(f"[Autonomous] Loop error: {e}")
+            
+            if self.stop_event.wait(tick):
+                break
 
-    def _enqueue_gateway_report(self, action: ActionQueueItem):
-        summary = action.action_result.get("summary") or action.eval_result.get("reason") or "action_done"
-        plan_id = str(uuid.uuid4())
-        report = ActionQueueItem(
-            plan_id=plan_id,
-            event_id=action.event_id,
-            bundle_id=action.bundle_id,
-            kind=action.kind,
-            action_type="gateway_report",
-            task_list=[],
-            swarm_profile={"mode": "single_agent", "workers": 1, "architecture": "auto", "max_turns": 1, "role_selection_mode": "self_select_by_tasklist"},
-            risk_level="L0",
-            budget={"max_seconds": 60},
-            deadline_ts=int(time.time()) + 120,
-            retry_policy={"max_retries": 0},
-            approval_required=False,
-            idempotency_key=f"gateway_report:{action.plan_id}",
-            action_result={"report": f"[Autonomous] bundle={action.bundle_id} kind={action.kind} summary={summary}"},
-        )
-        self._enqueue_action(report)
-
-    def _on_action_done(self, plan_id: str, result: Dict[str, Any]):
-        action = self.action_queue.get(plan_id)
-        if action is None:
-            return
-        action.state = str(result.get("state", "failed"))
-        action.action_result = dict(result.get("action_result") or {})
-        action.eval_result = dict(result.get("eval_result") or {})
-        action.progress_events = list(result.get("progress_events") or [])
-        action.reported_to_gateway = bool(result.get("reported_to_gateway", False))
-        action.decision_feedback = self._decide_feedback(action)
-        row = {
-            "ts": int(time.time()),
-            "plan_id": action.plan_id,
-            "bundle_id": action.bundle_id,
-            "kind": action.kind,
-            "action_type": action.action_type,
-            "state": action.state,
-            "next_action": action.decision_feedback.get("next_action"),
-            "summary": action.action_result.get("summary", ""),
-        }
-        self._log_diag(row)
-        self.cold.add(
-            content=f"autonomous_action plan={action.plan_id} bundle={action.bundle_id} kind={action.kind} type={action.action_type} state={action.state} next={action.decision_feedback.get('next_action')}",
-            meta={"source": "autonomous_engine", "collection": "autonomous"},
-        )
-        nxt = action.decision_feedback.get("next_action")
-        if nxt == "retry":
-            retry_item = copy.deepcopy(action)
-            retry_item.plan_id = str(uuid.uuid4())
-            retry_item.state = "planned"
-            retry_item.progress_events = []
-            retry_item.action_result = {}
-            retry_item.eval_result = {}
-            retry_item.decision_feedback = {"retry_count": int(action.decision_feedback.get("retry_count", 0))}
-            self._enqueue_action(retry_item)
-        elif nxt == "complete" and action.action_type != "gateway_report":
-            self._enqueue_gateway_report(action)
+    def _process_hub_messages(self):
+        """处理 Hub 消息（Bundle 主动触发的事件）"""
+        # 未来实现：监听 Hub 消息，处理外部触发的事件
+        pass
 
     def _dispatch_actions(self):
         cap = int(getattr(self.config.autonomous, "max_concurrent_actions", 3))
@@ -851,19 +586,6 @@ class AutonomousEngine:
 
     def _reload_config_if_needed(self):
         self.config = load_config()
-
-    def _loop(self):
-        tick = max(5, int(getattr(self.config.autonomous, "tick_seconds", 30)))
-        while not self.stop_event.is_set():
-            self._reload_config_if_needed()
-            now_ts = int(time.time())
-            self._flush_done()
-            self._collect_monitor_events(now_ts)
-            self._decision_from_monitor()
-            self._dispatch_actions()
-            if self.stop_event.wait(tick):
-                break
-
 
 class BundleGovernor:
     """

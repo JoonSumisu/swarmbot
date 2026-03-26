@@ -481,3 +481,291 @@ class MemoryManager:
         if hasattr(self._local, "conn") and self._local.conn:
             self._local.conn.close()
             self._local.conn = None
+
+    # ========================================================================
+    # 图遍历能力 - 使用 SQLite 递归 CTE
+    # ========================================================================
+
+    def traverse_graph(
+        self,
+        start_entity: str,
+        relation_types: List[str] = None,
+        max_depth: int = 5,
+        direction: str = "both"  # "outgoing", "incoming", "both"
+    ) -> List[Dict[str, Any]]:
+        """
+        图遍历 - 使用 SQLite 递归 CTE
+
+        参数：
+            start_entity: 起始实体名称
+            relation_types: 只遍历指定的关系类型
+            max_depth: 最大遍历深度
+            direction: 遍历方向 (outgoing/incoming/both)
+
+        返回：
+            遍历到的所有节点和路径
+        """
+        conn = self._get_conn()
+
+        # 根据方向构建查询
+        if direction == "outgoing":
+            where_clause = "r.source_entity = gt.entity"
+            select_next = "r.target_entity"
+        elif direction == "incoming":
+            where_clause = "r.target_entity = gt.entity"
+            select_next = "r.source_entity"
+        else:  # both
+            where_clause = "(r.source_entity = gt.entity OR r.target_entity = gt.entity)"
+            select_next = """CASE 
+                WHEN r.source_entity = gt.entity THEN r.target_entity
+                ELSE r.source_entity
+            END"""
+
+        # 关系类型过滤
+        type_filter = ""
+        if relation_types:
+            placeholders = ",".join(["?"] * len(relation_types))
+            type_filter = f"AND r.relation_type IN ({placeholders})"
+
+        query = f"""
+        WITH RECURSIVE graph_traverse(entity, depth, path) AS (
+            -- 初始节点
+            SELECT ?, 1, ?
+            
+            UNION ALL
+            
+            -- 递归遍历
+            SELECT 
+                {select_next},
+                gt.depth + 1,
+                gt.path || ' -> ' || {select_next}
+            FROM relations r, graph_traverse gt
+            WHERE {where_clause}
+            AND gt.depth < ?
+            {type_filter}
+        )
+        SELECT DISTINCT entity, MIN(depth) as depth, path FROM graph_traverse
+        WHERE depth <= ?
+        GROUP BY entity
+        ORDER BY depth
+        """
+
+        # 执行查询
+        params = [start_entity, start_entity, max_depth]
+        if relation_types:
+            params.extend(relation_types)
+        params.append(max_depth)
+
+        try:
+            rows = conn.execute(query, params).fetchall()
+
+            return [
+                {
+                    "entity": row["entity"],
+                    "depth": row["depth"],
+                    "path": row["path"]
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"[MemoryManager] Graph traversal error: {e}")
+            return []
+
+    def find_shortest_path(
+        self,
+        start_entity: str,
+        end_entity: str,
+        max_depth: int = 10
+    ) -> Optional[List[str]]:
+        """
+        查找两个实体之间的最短路径
+
+        参数：
+            start_entity: 起始实体
+            end_entity: 目标实体
+            max_depth: 最大搜索深度
+
+        返回：
+            最短路径（实体列表），如果不存在返回 None
+        """
+        conn = self._get_conn()
+
+        query = """
+        WITH RECURSIVE path_finder(current_entity, path, depth) AS (
+            -- 起始节点
+            SELECT ?, ?, 1
+            
+            UNION ALL
+            
+            -- 递归扩展
+            SELECT 
+                CASE 
+                    WHEN r.source_entity = pf.current_entity THEN r.target_entity
+                    ELSE r.source_entity
+                END,
+                pf.path || ' -> ' || 
+                CASE 
+                    WHEN r.source_entity = pf.current_entity THEN r.target_entity
+                    ELSE r.source_entity
+                END,
+                pf.depth + 1
+            FROM relations r, path_finder pf
+            WHERE (r.source_entity = pf.current_entity OR r.target_entity = pf.current_entity)
+            AND pf.depth < ?
+            AND pf.path NOT LIKE '%' || 
+                CASE 
+                    WHEN r.source_entity = pf.current_entity THEN r.target_entity
+                    ELSE r.source_entity
+                END || '%'
+        )
+        SELECT path, depth FROM path_finder
+        WHERE current_entity = ?
+        ORDER BY depth
+        LIMIT 1
+        """
+
+        try:
+            row = conn.execute(query, [start_entity, start_entity, max_depth, end_entity]).fetchone()
+
+            if row:
+                return row["path"].split(" -> ")
+            return None
+        except Exception as e:
+            print(f"[MemoryManager] Find shortest path error: {e}")
+            return None
+
+    def get_entity_neighbors(
+        self,
+        entity: str,
+        relation_type: str = None,
+        direction: str = "both",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        获取实体的邻居节点
+
+        参数：
+            entity: 实体名称
+            relation_type: 只返回指定的关系类型
+            direction: 遍历方向
+            limit: 返回数量限制
+
+        返回：
+            邻居节点列表
+        """
+        conn = self._get_conn()
+
+        if direction == "outgoing":
+            where_clause = "r.source_entity = ?"
+            neighbor_select = "r.target_entity as neighbor"
+        elif direction == "incoming":
+            where_clause = "r.target_entity = ?"
+            neighbor_select = "r.source_entity as neighbor"
+        else:
+            where_clause = "(r.source_entity = ? OR r.target_entity = ?)"
+            neighbor_select = """CASE 
+                WHEN r.source_entity = ? THEN r.target_entity
+                ELSE r.source_entity
+            END as neighbor"""
+
+        type_filter = ""
+        if relation_type:
+            type_filter = "AND r.relation_type = ?"
+
+        query = f"""
+        SELECT DISTINCT {neighbor_select}, r.relation_type, r.fact
+        FROM relations r
+        WHERE {where_clause}
+        {type_filter}
+        AND neighbor != ?
+        LIMIT ?
+        """
+
+        try:
+            params = []
+            if direction == "both":
+                params.extend([entity, entity, entity])
+            else:
+                params.append(entity)
+            if relation_type:
+                params.append(relation_type)
+            params.extend([entity, limit])
+
+            rows = conn.execute(query, params).fetchall()
+
+            return [
+                {
+                    "entity": row["neighbor"],
+                    "relation_type": row["relation_type"],
+                    "fact": row["fact"]
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"[MemoryManager] Get neighbors error: {e}")
+            return []
+
+    def add_relation(
+        self,
+        source_entity: str,
+        target_entity: str,
+        relation_type: str,
+        fact: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        添加实体关系
+
+        参数：
+            source_entity: 源实体
+            target_entity: 目标实体
+            relation_type: 关系类型
+            fact: 关系描述
+            metadata: 元数据
+
+        返回：
+            新关系的 ID
+        """
+        conn = self._get_conn()
+        cur = conn.execute(
+            "INSERT INTO relations (source_entity, target_entity, relation_type, fact, metadata) VALUES (?, ?, ?, ?, ?)",
+            (source_entity, target_entity, relation_type, fact, json.dumps(metadata) if metadata else None),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+    def search_entities_by_content(
+        self,
+        query: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        按内容搜索实体
+
+        参数：
+            query: 搜索关键词
+            limit: 返回数量限制
+
+        返回：
+            匹配的实体列表
+        """
+        conn = self._get_conn()
+
+        try:
+            rows = conn.execute(
+                "SELECT * FROM entities WHERE name LIKE ? OR summary LIKE ? ORDER BY last_updated DESC LIMIT ?",
+                (f"%{query}%", f"%{query}%", limit),
+            ).fetchall()
+
+            return [
+                {
+                    "name": row["name"],
+                    "summary": row["summary"],
+                    "last_updated": row["last_updated"],
+                    "metadata": json.loads(row["metadata"]) if row["metadata"] else {}
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            print(f"[MemoryManager] Search entities error: {e}")
+            return []

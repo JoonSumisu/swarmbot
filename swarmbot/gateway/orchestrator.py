@@ -16,7 +16,9 @@ from ..memory.memory_manager import MemoryManager
 from ..memory.whiteboard import Whiteboard
 from .communication_hub import CommunicationHub, HubMessage, MessageSender, MessageType
 from ..loops.base import BaseInferenceTool, InferenceResult
-from ..core.agent import AgentContext, CoreAgent
+from ..core.agent import AgentContext, CoreAgent, AgentResult
+from ..core.agent_config import CoreAgentConfig
+from ..core.boot_loader import BootLoader
 
 try:
     from ..agents import MasterAgent as NewMasterAgent
@@ -54,6 +56,9 @@ class GatewayMasterAgent:
 
         # LLM 客户端
         self._llm: Optional[OpenAICompatibleClient] = None
+        
+        # 异步任务管理
+        self._pending_results: Dict[str, Dict[str, Any]] = {}  # session_id -> {tool_id, thread, started_at}
 
     def _load_boot(self):
         """加载 MasterAgent 专用 boot 文件"""
@@ -101,67 +106,6 @@ class GatewayMasterAgent:
             self._llm = OpenAICompatibleClient.from_provider(providers=self.config.providers)
         return self._llm
 
-    def _think_then_decide(self, user_input: str, session_id: str = None) -> str:
-        """
-        路由决策 - 基于规则 + LLM 浅思考
-        """
-        user_lower = user_input.lower().strip()
-        
-        # 规则 1：简单的问候/确认/短消息 → simple
-        simple_patterns = [
-            "你好", "hi", "hello", "嗨", "谢谢", "thanks", "再见", "拜拜",
-            "好的", "嗯", "ok", "yes", "no", "不是", "是的",
-            "你是谁", "介绍一下", "最近怎么样", "怎么样",
-        ]
-        
-        if len(user_input) < 30 and any(p in user_lower for p in simple_patterns):
-            return "simple"
-        
-        # 规则 2：非常短的消息 → simple
-        if len(user_input) < 15:
-            return "simple"
-        
-        # 规则 3：自我介绍/身份信息 → simple
-        identity_patterns = ["我是", "我叫", "我住", "我的名字", "我是一名", "我的职业"]
-        if any(p in user_input for p in identity_patterns):
-            return "simple"
-        
-        # 规则 4：询问之前说过的话 → simple（需要上下文）
-        memory_patterns = ["你还记得", "你还记得吗", "我之前说过", "我刚才说", "我的名字", "我叫什么", "我住在哪里", "我的职业"]
-        if any(p in user_input for p in memory_patterns):
-            return "simple"
-        
-        # 规则 5：简单概念问题 → simple
-        simple_question_patterns = ["什么是", "what is", "怎么", "如何", "为什么"]
-        if any(p in user_lower for p in simple_question_patterns) and len(user_input) < 50:
-            return "simple"
-        
-        # 其他情况用 LLM 判断
-        prompt = f"""Classify as SIMPLE or COMPLEX.
-
-User: {user_input}
-
-SIMPLE: greetings, thanks, short questions, confirmations, identity info, memory recall
-COMPLEX: tasks, analysis, coding, how-to, research, deployment
-
-Output: SIMPLE or COMPLEX"""
-
-        try:
-            llm = self._get_llm()
-            response = llm.completion(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=100,
-            )
-            
-            decision = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            if "SIMPLE" in decision.upper():
-                return "simple"
-            return "complex"
-        except Exception as e:
-            print(f"[GatewayMasterAgent] LLM decision failed: {e}, defaulting to simple")
-            return "simple"
-
     def _build_prompt(self, user_input: str, session_id: str) -> str:
         """构建 prompt，从 MemoryManager 获取上下文"""
         # 从 memory_manager 获取上下文
@@ -190,62 +134,46 @@ Output: SIMPLE or COMPLEX"""
 
         return prompt
 
-    def _select_tool(self, user_input: str) -> str:
-        """选择合适的推理工具"""
-        prompt = f"""Select the appropriate inference tool for this user input.
-
-User input: {user_input}
-
-Available tools:
-- standard: Standard 8-step inference, no human-in-the-loop
-- supervised: Human-in-the-loop, pauses at key steps for user confirmation
-- swarms: Multi-worker collaboration using Swarms framework
-
-Selection rules:
-- Use "supervised" for high-risk tasks (money, legal, security), tasks needing user to confirm analysis direction or execution plan
-- Use "swarms" for multi-role analysis, parallel processing, group chat scenarios
-- Use "standard" for regular complex tasks
-
-Output format:
-TOOL: [standard/supervised/swarms]
-REASON: brief reason"""
-
-        try:
-            llm = self._get_llm()
-            response = llm.completion(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=500,
-            )
-            
-            content = response.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-            
-            tool_match = re.search(r'TOOL:\s*\[?(\w+)\]?', content, re.IGNORECASE)
-            if tool_match:
-                tool_id = tool_match.group(1).lower()
-                if tool_id in self._tools:
-                    return tool_id
-            
-            return "standard"
-        except Exception as e:
-            print(f"[GatewayMasterAgent] Tool selection failed: {e}")
-            return "standard"
+    def _create_core_agent(self, role: str = "master", enable_tools: bool = False) -> CoreAgent:
+        """创建 CoreAgent 实例"""
+        agent_config = CoreAgentConfig(
+            agent_id=f"master-{role}",
+            role=role,
+            boot_mode=role,
+            enable_tools=enable_tools,
+            verbose=False,
+            log_assessment=False,
+            max_iterations=10,
+        )
+        
+        ctx = AgentContext(
+            agent_id=agent_config.agent_id,
+            role=role,
+            skills={},
+        )
+        
+        return CoreAgent(ctx, self._get_llm(), self.memory_manager, config=agent_config)
 
     def _simple_direct(self, user_input: str, session_id: str) -> str:
         """
-        简单直接回复 - 无需复杂推理工具
+        CoreAgent 统一处理 - 包含记忆、技能、工具、自评估
         """
         try:
+            # 构建完整输入（记忆上下文）
             prompt = self._build_prompt(user_input, session_id)
-            ctx = AgentContext(
-                agent_id="master",
-                role="master",
-                skills={},
-            )
-            agent = CoreAgent(ctx, self._get_llm(), self.memory_manager, enable_tools=False, quiet=True)
-            result = agent.step(prompt)
-
-            response = result or "好的，我明白了。"
+            
+            # 创建 CoreAgent（启用工具）
+            agent = self._create_core_agent("master", enable_tools=True)
+            
+            # 使用 CoreAgent 循环（自评估决定是否委托）
+            result: AgentResult = agent.run(prompt)
+            
+            # 检查是否需要委托推理循环
+            if result.should_delegate:
+                print(f"[GatewayMasterAgent] Delegating to inference loop")
+                return self._run_inference_loop(user_input, session_id)
+            
+            response = result.content or "好的，我明白了。"
 
             # 实时写入 MemoryManager
             self.memory_manager.add_turn(session_id, "user", user_input, tool_used="simple")
@@ -268,6 +196,28 @@ REASON: brief reason"""
             print(f"[GatewayMasterAgent] Simple direct error: {e}")
             return f"好的，这是我的回答：{user_input}"
 
+    def _run_inference_loop(self, user_input: str, session_id: str) -> str:
+        """
+        启用推理循环 - CoreAgent 自评估认为需要复杂推理时调用
+        """
+        try:
+            # 默认使用 standard 推理工具
+            tool_id = "standard"
+            
+            # 可选：使用 MasterAgent 决定工具（但不是硬编码规则）
+            # 简单启发式：高风险任务用 supervised，多角色用 swarms
+            if any(kw in user_input for kw in ["删除", "销毁", "转账", "密码", "法律"]):
+                tool_id = "supervised"
+            elif any(kw in user_input for kw in ["讨论", "评审", "会议", "多人"]):
+                tool_id = "swarms"
+            
+            # 演绎结果
+            raw_result = self._run_inference_tool(tool_id, user_input, session_id, async_mode=False)
+            return self._interpret_result(raw_result, user_input)
+        except Exception as e:
+            print(f"[GatewayMasterAgent] Inference loop error: {e}")
+            return f"推理工具执行出错，请重试。"
+
     def _interpret_result(self, raw_result: str, user_input: str) -> str:
         """MasterAgent 演绎推理工具的结果"""
         prompt = f"""你是 Master Agent。推理工具已经完成了任务，请对结果进行演绎加工，使回答更自然、更符合你的 Persona。
@@ -279,12 +229,7 @@ Persona (Soul): {self.boot_files.get('soul', '')}
 请直接输出加工后的回答，不需要提及推理过程。"""
 
         try:
-            ctx = AgentContext(
-                agent_id=f"master-interpret-{time.time_ns()}",
-                role="master",
-                skills={},
-            )
-            agent = CoreAgent(ctx, self._get_llm(), self.memory_manager, enable_tools=False)
+            agent = self._create_core_agent("master", enable_tools=False)
             result = agent.step(prompt)
             return result or raw_result
         except Exception as e:
@@ -317,25 +262,33 @@ Persona (Soul): {self.boot_files.get('soul', '')}
 
     def _handle_message_impl(self, user_input: str, session_id: str) -> str:
         """
-        实际的消息处理逻辑
+        实际的消息处理逻辑 - CoreAgent 统一入口
         """
-        # 1. 更新会话上下文
+        # 1. 检查是否有 pending 的异步结果
+        pending_result = self._check_pending_results(session_id)
+        if pending_result:
+            return pending_result
+        
+        # 2. 更新会话上下文
         self._update_session(session_id, user_input)
         
-        # 2. 路由决策 - 先读上下文再判断
-        route = self._think_then_decide(user_input, session_id)
-        
-        if route == "simple":
-            return self._simple_direct(user_input, session_id)
-        
-        # 3. 选择推理工具
-        tool_id = self._select_tool(user_input)
-        
-        # 4. 直接调用推理工具 (不通过 Hub)
-        return self._run_inference_tool(tool_id, user_input, session_id)
+        # 3. CoreAgent 统一处理（包含路由决策）
+        return self._simple_direct(user_input, session_id)
     
-    def _run_inference_tool(self, tool_id: str, user_input: str, session_id: str) -> str:
-        """通过 Hub 运行推理工具"""
+    def _run_inference_tool(self, tool_id: str, user_input: str, session_id: str, async_mode: bool = False) -> str:
+        """
+        运行推理工具
+        
+        Args:
+            tool_id: 工具 ID
+            user_input: 用户输入
+            session_id: 会话 ID
+            async_mode: 是否异步执行（不等待结果）
+        
+        Returns:
+            如果 async_mode=True，返回「任务已提交」
+            如果 async_mode=False，等待结果并返回
+        """
         tool_class = self._tools.get(tool_id)
         if not tool_class:
             print(f"[GatewayMasterAgent] Tool {tool_id} not found. Available tools: {list(self._tools.keys())}")
@@ -350,50 +303,135 @@ Persona (Soul): {self.boot_files.get('soul', '')}
                 memory_manager=self.memory_manager,
             )
 
-            # 异步启动推理工具
-            thread = threading.Thread(
-                target=tool.run,
-                args=(user_input, session_id),
-                daemon=True,
-            )
-            thread.start()
-
-            # 从 Hub 等待结果
-            result_msg = self.hub.recv(
-                recipient=MessageSender.MASTER_AGENT,
-                session_id=session_id,
-                blocking=True,
-                timeout=120,
-            )
-
-            if result_msg:
-                raw_content = result_msg.content
-
-                # 演绎结果
-                interpreted = self._interpret_result(raw_content, user_input)
-
-                # 实时写入 MemoryManager
-                self.memory_manager.add_turn(session_id, "user", user_input, tool_used=tool_id)
-                self.memory_manager.add_turn(session_id, "assistant", interpreted, tool_used=tool_id)
-
-                # 异步提取事实
-                threading.Thread(
-                    target=self.memory_manager.extract_facts_from_turn,
-                    args=(session_id, user_input, interpreted),
+            if async_mode:
+                # 异步模式：启动后立即返回
+                thread = threading.Thread(
+                    target=self._run_tool_async,
+                    args=(tool, user_input, session_id, tool_id),
                     daemon=True,
-                ).start()
+                )
+                thread.start()
+                
+                self._pending_results[session_id] = {
+                    "tool_id": tool_id,
+                    "thread": thread,
+                    "started_at": time.time(),
+                    "user_input": user_input,
+                }
+                
+                return f"任务已提交，正在后台执行..."
+            else:
+                # 同步模式：等待结果
+                thread = threading.Thread(
+                    target=tool.run,
+                    args=(user_input, session_id),
+                    daemon=True,
+                )
+                thread.start()
 
-                # Compact 检查
-                turn_count = self.memory_manager._get_turn_count(session_id)
-                if turn_count >= 30:
-                    self.memory_manager.compact(session_id, keep_turns=10)
+                # 从 Hub 等待结果
+                result_msg = self.hub.recv(
+                    recipient=MessageSender.MASTER_AGENT,
+                    session_id=session_id,
+                    blocking=True,
+                    timeout=120,
+                )
 
-                return interpreted
+                if result_msg:
+                    raw_content = result_msg.content
 
-            return "工具执行超时"
+                    # 演绎结果
+                    interpreted = self._interpret_result(raw_content, user_input)
+
+                    # 实时写入 MemoryManager
+                    self.memory_manager.add_turn(session_id, "user", user_input, tool_used=tool_id)
+                    self.memory_manager.add_turn(session_id, "assistant", interpreted, tool_used=tool_id)
+
+                    # 异步提取事实
+                    threading.Thread(
+                        target=self.memory_manager.extract_facts_from_turn,
+                        args=(session_id, user_input, interpreted),
+                        daemon=True,
+                    ).start()
+
+                    # Compact 检查
+                    turn_count = self.memory_manager._get_turn_count(session_id)
+                    if turn_count >= 30:
+                        self.memory_manager.compact(session_id, keep_turns=10)
+
+                    return interpreted
+
+                return "工具执行超时"
         except Exception as e:
             print(f"[GatewayMasterAgent] Inference tool error: {e}")
             return f"工具执行失败: {e}"
+
+    def _run_tool_async(self, tool: Any, user_input: str, session_id: str, tool_id: str):
+        """异步执行工具并报告结果"""
+        try:
+            result = tool.run(user_input, session_id)
+            
+            # 通过 Hub 报告结果
+            self.hub.send_task_result(
+                result=result.content if hasattr(result, 'content') else str(result),
+                session_id=session_id,
+                success=result.success if hasattr(result, 'success') else True,
+            )
+            
+            print(f"[GatewayMasterAgent] Async tool {tool_id} completed")
+            
+            # 更新 pending results
+            if session_id in self._pending_results:
+                self._pending_results[session_id]["completed"] = True
+                self._pending_results[session_id]["completed_at"] = time.time()
+        except Exception as e:
+            print(f"[GatewayMasterAgent] Async tool {tool_id} error: {e}")
+            self.hub.send_task_result(
+                result=str(e),
+                session_id=session_id,
+                success=False,
+                error=str(e),
+            )
+
+    def _check_pending_results(self, session_id: str) -> Optional[str]:
+        """检查并处理 pending 的异步结果"""
+        if session_id not in self._pending_results:
+            return None
+        
+        pending = self._pending_results[session_id]
+        
+        # 检查是否超时（5 分钟）
+        if time.time() - pending["started_at"] > 300:
+            del self._pending_results[session_id]
+            return None
+        
+        # 从 Hub 检查结果（非阻塞）
+        result_msg = self.hub.recv(
+            recipient=MessageSender.MASTER_AGENT,
+            session_id=session_id,
+            blocking=False,
+            timeout=1,
+        )
+        
+        if result_msg:
+            # 处理结果
+            tool_id = pending["tool_id"]
+            user_input = pending["user_input"]
+            raw_content = result_msg.content
+            
+            # 演绎结果
+            interpreted = self._interpret_result(raw_content, user_input)
+            
+            # 实时写入 MemoryManager
+            self.memory_manager.add_turn(session_id, "user", user_input, tool_used=tool_id)
+            self.memory_manager.add_turn(session_id, "assistant", interpreted, tool_used=tool_id)
+            
+            # 清除 pending
+            del self._pending_results[session_id]
+            
+            return interpreted
+        
+        return None
 
     def _handle_human_in_loop(self, suspend_msg: HubMessage, session_id: str) -> str:
         """处理人在回路暂停"""
@@ -595,12 +633,7 @@ SubSwarm 结果数量: {len(results)}
 请整合这些结果，给出连贯、有条理的最终回答。"""
 
         try:
-            ctx = AgentContext(
-                agent_id=f"coordinator-{swarm_id}",
-                role="coordinator",
-                skills={},
-            )
-            agent = CoreAgent(ctx, self._get_llm(), self.memory_manager, enable_tools=False)
+            agent = self._create_core_agent("coordinator", enable_tools=False)
             result = agent.step(prompt)
             return result
         except Exception as e:

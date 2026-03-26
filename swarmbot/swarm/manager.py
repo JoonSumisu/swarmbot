@@ -6,8 +6,7 @@ import os
 import time
 from typing import Any, Dict, List, Literal, Optional
 
-from ..config import SwarmConfig
-from ..config_manager import SwarmbotConfig
+from ..config_manager import SwarmConfig, SwarmbotConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.memory_manager import MemoryManager
 from ..memory.whiteboard import Whiteboard

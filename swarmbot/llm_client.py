@@ -6,8 +6,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from litellm import completion as litellm_completion, acompletion as litellm_acompletion
 
-from .config import LLMConfig
-from .config_manager import ProviderConfig, load_config
+from .config_manager import LLMConfig, ProviderConfig, load_config
 
 # Disable LiteLLM logging noise
 litellm_completion.__globals__["litellm"].suppress_debug_info = True

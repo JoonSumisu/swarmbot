@@ -1,18 +1,10 @@
-__version__ = "2.0.2"
+__version__ = "2.4.0"
 
 __all__ = [
     "CoreAgent",
     "SwarmManager",
     "MemoryStore",
 ]
-
-import importlib
-import sys
-
-try:
-    sys.modules["nanobot"] = importlib.import_module("swarmbot.nanobot")
-except Exception:
-    pass
 
 from .core.agent import CoreAgent
 from .swarm.manager import SwarmManager

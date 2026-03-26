@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
+from ..core.agent_config import CoreAgentConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
 from ..memory.memory_manager import MemoryManager
@@ -17,7 +18,7 @@ from .skill_registry import SkillRegistry
 class SubSwarmInferenceTool(BaseInferenceTool):
     """
     SubSwarm 推理工具 - 解耦 MasterAgent 和推理工具
-    异步分发多个子任务，通过 Hub 协调结果
+    使用 CoreAgent 循环，异步分发多个子任务
     """
 
     def _initialize(self):
@@ -70,8 +71,28 @@ class SubSwarmInferenceTool(BaseInferenceTool):
             print(f"[SubSwarmInferenceTool] Error: {e}")
             return InferenceResult(success=False, error=str(e))
 
+    def _create_worker(self, role: str, enable_tools: bool = False) -> CoreAgent:
+        """创建 CoreAgent 实例，加载 inference boot"""
+        config = CoreAgentConfig(
+            agent_id=f"worker-{role}-{time.time_ns()}",
+            role=role,
+            boot_mode="inference",
+            enable_tools=enable_tools,
+            verbose=False,
+            log_assessment=False,
+            max_iterations=10,
+        )
+
+        ctx = AgentContext(
+            agent_id=config.agent_id,
+            role=role,
+            skills={}
+        )
+        
+        return CoreAgent(ctx, self.llm, self.memory_manager, config=config)
+
     def _decompose_tasks(self, user_input: str) -> List[Dict[str, Any]]:
-        """分解任务为多个子任务"""
+        """分解任务为多个子任务 - 使用 CoreAgent"""
         prompt = f"""你是任务分解 Agent。请将用户输入分解为多个独立的子任务。
 
 用户输入: {user_input}
@@ -89,14 +110,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
 ]"""
 
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
-            ctx = AgentContext(
-                agent_id=f"decomposer-{time.time_ns()}",
-                role="planner",
-                skills={}
-            )
-            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=False)
+            worker = self._create_worker("planner", enable_tools=False)
             result = worker.step(prompt)
             
             tasks = self._extract_json(result)
@@ -151,7 +165,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
         ]
 
     def _execute_single_task(self, task_description: str) -> str:
-        """执行单个子任务"""
+        """执行单个子任务 - 使用 CoreAgent"""
         prompt = f"""请执行以下子任务:
 
 {task_description}
@@ -159,21 +173,14 @@ class SubSwarmInferenceTool(BaseInferenceTool):
 请直接输出执行结果。"""
 
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
-            ctx = AgentContext(
-                agent_id=f"worker-{time.time_ns()}",
-                role="worker",
-                skills={}
-            )
-            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=True)
+            worker = self._create_worker("worker", enable_tools=True)
             result = worker.step(prompt)
             return result
         except Exception as e:
             return f"执行失败: {str(e)}"
 
     def _integrate_results(self, user_input: str, results: List[Dict[str, Any]]) -> str:
-        """整合子任务结果"""
+        """整合子任务结果 - 使用 CoreAgent"""
         prompt = f"""你是 Master Agent。多个子任务已经完成，请整合结果。
 
 原始用户输入: {user_input}
@@ -184,14 +191,7 @@ class SubSwarmInferenceTool(BaseInferenceTool):
 请整合这些结果，给出连贯、有条理的最终回答。"""
 
         try:
-            from ..core.agent import CoreAgent, AgentContext
-            
-            ctx = AgentContext(
-                agent_id=f"integrator-{time.time_ns()}",
-                role="master",
-                skills={}
-            )
-            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=False)
+            worker = self._create_worker("master", enable_tools=False)
             result = worker.step(prompt)
             return result
         except Exception as e:

@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from ..boot.context_loader import load_boot_markdown
 from ..core.agent import CoreAgent, AgentContext
+from ..core.agent_config import CoreAgentConfig
 from ..llm_client import OpenAICompatibleClient
 from ..memory.whiteboard import Whiteboard
 from ..memory.memory_manager import MemoryManager
@@ -18,7 +19,7 @@ from .skill_registry import SkillRegistry
 class SwarmsInferenceTool(BaseInferenceTool):
     """
     多Worker协作推理工具 - 使用Swarm框架进行多角色分析
-    结果通过 Hub 发送，由 MasterAgent 翻译回复
+    使用 CoreAgent 循环，结果通过 Hub 发送给 MasterAgent
     """
 
     def _initialize(self):
@@ -94,8 +95,28 @@ class SwarmsInferenceTool(BaseInferenceTool):
                 )
             return InferenceResult(success=False, error=str(e))
 
+    def _create_worker(self, role: str, enable_tools: bool = False) -> CoreAgent:
+        """创建 CoreAgent 实例，加载 inference boot"""
+        config = CoreAgentConfig(
+            agent_id=f"worker-{role}-{time.time_ns()}",
+            role=role,
+            boot_mode="inference",
+            enable_tools=enable_tools,
+            verbose=False,
+            log_assessment=False,
+            max_iterations=10,
+        )
+
+        ctx = AgentContext(
+            agent_id=config.agent_id,
+            role=role,
+            skills={}
+        )
+        
+        return CoreAgent(ctx, self.llm, self.memory_manager, config=config)
+
     def _decide_swarm_strategy(self, user_input: str) -> Dict[str, Any]:
-        """决策使用哪种Swarm架构"""
+        """决策使用哪种Swarm架构 - 使用 CoreAgent"""
         prompt = f"""你是Swarm策略决策器。
 请决定使用哪种架构和Agent数量。
 
@@ -117,12 +138,7 @@ class SwarmsInferenceTool(BaseInferenceTool):
 }}"""
 
         try:
-            ctx = AgentContext(
-                agent_id=f"strategy-{time.time_ns()}",
-                role="planner",
-                skills={}
-            )
-            worker = CoreAgent(ctx, self.llm, self.memory_manager, enable_tools=False)
+            worker = self._create_worker("planner", enable_tools=False)
             result = worker.step(prompt)
             strategy = self._extract_json(result)
             return strategy or {"architecture": "concurrent", "agent_count": 3, "roles": ["analyst", "collector", "evaluator"]}
