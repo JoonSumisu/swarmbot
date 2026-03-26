@@ -20,11 +20,11 @@ class TestNanobotConfigBridge(unittest.TestCase):
         for m in [
             "swarmbot.config_manager",
             "swarmbot",
-            "nanobot",
-            "nanobot.config.loader",
-            "nanobot.config.schema",
-            "nanobot.channels.manager",
-            "nanobot.bus.queue",
+            "swarmbot.config.loader",
+            
+            
+            
+            
         ]:
             if m in sys.modules:
                 del sys.modules[m]
@@ -57,7 +57,7 @@ class TestNanobotConfigBridge(unittest.TestCase):
         cm.save_config(cfg)
 
         import swarmbot
-        import nanobot.config.loader as nl
+        import swarmbot.config.loader as nl
 
         ncfg = nl.load_config()
 
@@ -82,9 +82,9 @@ class TestNanobotConfigBridge(unittest.TestCase):
         cm.save_config(cfg)
 
         import swarmbot
-        import nanobot.config.loader as nl
-        from nanobot.bus.queue import MessageBus
-        from nanobot.channels.manager import ChannelManager
+        import swarmbot.config.loader as nl
+        from swarmbot.bus.queue import MessageBus
+        from swarmbot.channels.manager import ChannelManager
 
         ncfg = nl.load_config()
         manager = ChannelManager(ncfg, MessageBus())
@@ -101,7 +101,7 @@ class TestNanobotConfigBridge(unittest.TestCase):
         cm.save_config(cfg)
 
         import swarmbot
-        import nanobot.config.loader as nl
+        import swarmbot.config.loader as nl
 
         ncfg = nl.load_config()
         ncfg.agents.defaults.model = "new/model"

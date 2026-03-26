@@ -336,7 +336,7 @@ class ToolAdapter:
             workspace_dir = base / "skills"
             if workspace_dir.exists():
                 search_dirs.append(workspace_dir)
-            builtin_dir = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
+            builtin_dir = Path(__file__).resolve().parent.parent / "skills"
             if builtin_dir.exists():
                 search_dirs.append(builtin_dir)
 
@@ -373,7 +373,7 @@ class ToolAdapter:
             workspace_dir = base / "skills"
             if workspace_dir.exists():
                 search_dirs.append(workspace_dir)
-            builtin_dir = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
+            builtin_dir = Path(__file__).resolve().parent.parent / "skills"
             if builtin_dir.exists():
                 search_dirs.append(builtin_dir)
 

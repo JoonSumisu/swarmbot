@@ -245,7 +245,7 @@ class SwarmManager:
             cron_store = workspace / "cron" / "jobs.json"
             daemon_state = os.path.expanduser("~/.swarmbot/daemon_state.json")
             skills_workspace = workspace / "skills"
-            skills_builtin = Path(__file__).resolve().parent.parent / "nanobot" / "skills"
+            skills_builtin = Path(__file__).resolve().parent.parent / "skills"
             system_caps = {
                 "daemon": {
                     "state_file": str(daemon_state),

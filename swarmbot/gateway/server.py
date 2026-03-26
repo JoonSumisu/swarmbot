@@ -15,13 +15,6 @@ CURRENT_DIR = Path(__file__).resolve().parent.parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-# Ensure nanobot compatibility
-try:
-    import nanobot
-except ImportError:
-    import swarmbot.nanobot
-    sys.modules["nanobot"] = swarmbot.nanobot
-
 from loguru import logger
 
 # --- Imports ---
